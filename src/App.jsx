@@ -4,13 +4,14 @@ import { HashRouter as Router, Route, Routes } from 'react-router-dom';
 
 // Pages
 import LandingPage from './pages/LandingPage';
-// import EventsPage from './pages/EventsPage';
+import EventsPage from './pages/EventsPage';
 // import EventDetailsPage from './pages/EventDetailsPage';
 // import CreateEventPage from './pages/CreateEventPage';
 // import ProfilePage from './pages/ProfilePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage'
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import GenericCategoryPage from './pages/categories/GenericCategoryPage';
 // import UniversityEventsPage from './pages/UniversityEventsPage';
 
 function App() {
@@ -23,7 +24,9 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/forgot-password" element={<ResetPasswordPage />} />
-            {/* <Route path="/events" element={<EventsPage />} />
+            <Route path="/events" element={<EventsPage />} />
+            <Route path="/category/:slug" element={<GenericCategoryPage />} />
+            {/* 
             <Route path="/event/:id" element={<EventDetailsPage />} />
             <Route path="/create-event" element={<CreateEventPage />} />
             <Route path="/profile" element={<ProfilePage />} />

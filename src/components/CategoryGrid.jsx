@@ -52,7 +52,7 @@ export default function CategoryGrid() {
             return (
               <Link
                 key={index}
-                to={`/events?category=${category.slug}`}
+                to={`/category/${category.slug}`}
                 className="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition-all duration-300 hover:border-cyan-400"
               >
                 <div className="flex flex-col items-center text-center">
