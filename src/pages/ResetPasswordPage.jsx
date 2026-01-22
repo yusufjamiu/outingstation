@@ -1,48 +1,49 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
-import { Lock, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { Lock, ArrowLeft } from 'lucide-react';
 import OutingStation from '../assets/OutingStation.png';
 
 export default function ResetPasswordPage() {
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState(1); // 1 = enter email, 2 = enter OTP & new password
-  const navigate = useNavigate();
 
-  const handleSendOTP = async (e) => {
+  const handleSendReset = async (e) => {
     e.preventDefault();
 
     try {
       setError('');
-      setSuccess('');
       setLoading(true);
       
       // Send password reset email
       await sendPasswordResetEmail(auth, email);
       
-      setSuccess(`We've sent an OTP to ${email.replace(/(.{3})(.*)(@.*)/, '$1*********$3')}, kindly input it along your new password below.`);
-      setStep(2);
+      setSuccess(true);
     } catch (error) {
-      setError('Failed to send reset email: ' + error.message);
+      if (error.code === 'auth/user-not-found') {
+        setError('No account found with this email address.');
+      } else if (error.code === 'auth/invalid-email') {
+        setError('Please enter a valid email address.');
+      } else {
+        setError('Failed to send reset email. Please try again.');
+      }
     }
     setLoading(false);
   };
 
-  const handleReset = async (e) => {
-    e.preventDefault();
-    
-    // Note: Firebase doesn't use OTP for password reset in the traditional way
-    // This is a UI representation. In reality, users click the link in their email
-    // For a real OTP system, you'd need a custom backend
-    
-    setError('Please check your email and click the password reset link to complete the process.');
+  const handleResend = async () => {
+    try {
+      setError('');
+      setLoading(true);
+      await sendPasswordResetEmail(auth, email);
+      setError('');
+    } catch (error) {
+      setError('Failed to resend email. Please try again.');
+    }
+    setLoading(false);
   };
 
   return (
@@ -73,13 +74,13 @@ export default function ResetPasswordPage() {
             <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
               Reset Password
             </h1>
-            {step === 1 ? (
+            {!success ? (
               <p className="text-gray-600">
-                Enter your email address and we'll send you a code to reset your password.
+                Enter your email address and we'll send you a link to reset your password.
               </p>
             ) : (
               <p className="text-gray-600">
-                {success}
+                We've sent a password reset link to <span className="font-semibold">{email.replace(/(.{3})(.*)(@.*)/, '$1*********$3')}</span>. Please check your email and click the link to reset your password.
               </p>
             )}
           </div>
@@ -90,9 +91,15 @@ export default function ResetPasswordPage() {
             </div>
           )}
 
-          {step === 1 ? (
-            /* Step 1: Enter Email */
-            <form onSubmit={handleSendOTP} className="space-y-5">
+          {success && (
+            <div className="bg-green-50 text-green-600 p-4 rounded-xl mb-6 text-sm">
+              Password reset email sent successfully! Check your inbox.
+            </div>
+          )}
+
+          {!success ? (
+            /* Email Input Form */
+            <form onSubmit={handleSendReset} className="space-y-5">
               <div>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
@@ -112,7 +119,7 @@ export default function ResetPasswordPage() {
                 disabled={loading}
                 className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-4 rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50"
               >
-                {loading ? 'Sending...' : 'Send Reset Code'}
+                {loading ? 'Sending...' : 'Send Reset Link'}
               </button>
 
               <p className="text-center text-gray-600 text-sm">
@@ -123,62 +130,27 @@ export default function ResetPasswordPage() {
               </p>
             </form>
           ) : (
-            /* Step 2: Enter OTP & New Password */
-            <form onSubmit={handleReset} className="space-y-5">
-              <div>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full pl-12 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                    placeholder="New Password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                  <input
-                    type="text"
-                    required
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value)}
-                    className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                    placeholder="OTP"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-4 rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50"
+            /* Success State */
+            <div className="space-y-5">
+              <Link
+                to="/login"
+                className="w-full block text-center bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-4 rounded-xl font-semibold hover:shadow-lg transition-all"
               >
-                {loading ? 'Resetting...' : 'Reset'}
-              </button>
+                Back to Login
+              </Link>
 
               <p className="text-center text-gray-600 text-sm">
-                Didn't receive a code?{' '}
+                Didn't receive the email?{' '}
                 <button
                   type="button"
-                  onClick={() => setStep(1)}
-                  className="text-cyan-500 font-semibold hover:text-cyan-600"
+                  onClick={handleResend}
+                  disabled={loading}
+                  className="text-cyan-500 font-semibold hover:text-cyan-600 disabled:opacity-50"
                 >
-                  Resend
+                  {loading ? 'Sending...' : 'Resend'}
                 </button>
               </p>
-            </form>
+            </div>
           )}
         </div>
       </div>
