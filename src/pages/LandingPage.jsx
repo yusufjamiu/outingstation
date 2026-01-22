@@ -52,15 +52,15 @@ export default function LandingPage() {
                 <option>Dubai</option>
               </select>
 
-              <button className="hidden lg:block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 md:px-12 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow">
+              <button className="hidden md:block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full">
                 Explore
-              </button>
+                </button>
             </div>
 
             {/* Mobile Explore Button */}
-            <button className="lg:hidden w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow">
-              Explore
-            </button>
+            <button className="md:hidden w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full">
+  Explore
+</button>
             
             <button className="w-full lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
               <Grid size={20} />
