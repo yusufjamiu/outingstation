@@ -59,8 +59,8 @@ export default function LandingPage() {
 
             {/* Mobile Explore Button */}
             <button className="md:hidden w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full">
-  Explore
-</button>
+              Explore
+            </button>
             
             <button className="w-full lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
               <Grid size={20} />
