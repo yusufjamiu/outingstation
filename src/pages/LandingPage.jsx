@@ -19,7 +19,7 @@ export default function LandingPage() {
 
       {/* Hero Section */}
       <section className="bg-gradient-to-br from-cyan-50 to-white px-4">
-      <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-cyan-50 pt-8 pb-8 px-4 md:px-6 relative overflow-hidden">
+      <div className="bg-gradient-to-br from-cyan-50 via-white to-cyan-50 pt-8 pb-8 px-4 md:px-6 relative overflow-hidden">
         {/* Decorative circles */}
         <div className="absolute top-40 left-10 w-64 h-64 bg-cyan-100 rounded-full opacity-30 blur-3xl"></div>
         <div className="absolute bottom-20 right-20 w-96 h-96 bg-cyan-100 rounded-full opacity-20 blur-3xl"></div>
