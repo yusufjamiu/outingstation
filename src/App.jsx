@@ -12,7 +12,13 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage'
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import GenericCategoryPage from './pages/categories/GenericCategoryPage';
-// import UniversityEventsPage from './pages/UniversityEventsPage';
+import CategoryBrowsePage from './pages/categories/CategoryBrowsePage';
+import CampusEventsPage from './pages/categories/CampusEventsPage';
+import WebinarEventsPage from './pages/categories/WebinarEventsPage';
+import UserDashboard from './pages/dashboard/UserDashboard';
+import SavedEvents from './pages/dashboard/SavedEvents';
+import CategoryBrowsePageAuth from './pages/dashboard/CategoryBrowsePageAuth';
+import Settings from './pages/dashboard/Settings';
 
 function App() {
   return (
@@ -26,12 +32,17 @@ function App() {
             <Route path="/forgot-password" element={<ResetPasswordPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/category/:slug" element={<GenericCategoryPage />} />
+            <Route path="/categories" element={<CategoryBrowsePage />} />
+            <Route path="/campus-events" element={<CampusEventsPage />} />
+            <Route path="/webinar-events" element={<WebinarEventsPage />} />
+            <Route path="/dashboard" element={<UserDashboard />} />
+            <Route path="/saved-events" element={<SavedEvents />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/dashboard/categories" element={<CategoryBrowsePageAuth />} />
             {/* 
             <Route path="/event/:id" element={<EventDetailsPage />} />
             <Route path="/create-event" element={<CreateEventPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
-            
-            <Route path="/university/:universityId" element={<UniversityEventsPage />} /> */}
+            <Route path="/profile" element={<ProfilePage />} /> */}
           </Routes>
         </div>
       </Router>

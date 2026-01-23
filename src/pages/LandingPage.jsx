@@ -62,10 +62,12 @@ export default function LandingPage() {
               Explore
             </button>
             
+            <Link to="/categories">
             <button className="w-full lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
-              <Grid size={20} />
+              <Grid size={20} /> 
               Browse by Category
-            </button>
+              </button>
+              </Link>
           </div>
 
           {/* Images Grid */}

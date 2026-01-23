@@ -96,7 +96,7 @@ const UniversitySelector = () => {
         {/* Browse All Button */}
         <div className="text-center">
           <Link 
-            to="/events?category=university"
+            to="/campus-events"
             className="inline-flex items-center gap-2 text-gray-600 font-medium hover:text-cyan-500 transition-colors group"
           >
             Browse all universities

@@ -139,7 +139,7 @@ export default function GenericCategoryPage() {
               <button className="relative p-2 hover:bg-gray-100 rounded-lg transition">
                 <Bell size={24} className="text-gray-600" />
               </button>
-              <img src={user.avatar} alt={user.name} className="w-10 h-10 rounded-full cursor-pointer" />
+              {/* <img src={user.avatar} alt={user.name} className="w-10 h-10 rounded-full cursor-pointer" /> */}
             </div>
           </div>
         </div>
