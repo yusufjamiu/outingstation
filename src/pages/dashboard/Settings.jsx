@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Search, Bell, X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Menu } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 
@@ -14,7 +14,7 @@ export default function Settings() {
     name: 'Brahim Wins',
     email: 'brahiimwins23@gmail.com',
     city: 'Lagos, Nigeria',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Brahim',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User',
     joinedDate: '21 Jan, 2026',
     savedEvents: 12
   });
@@ -211,9 +211,13 @@ export default function Settings() {
                   <p className="text-gray-600 text-xs sm:text-sm mb-4">
                     Review the events you've saved to list and plan your next outing.
                   </p>
-                  <button className="w-full sm:w-auto px-5 sm:px-6 py-2 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition text-sm sm:text-base">
-                    View
-                  </button>
+                  
+                  <Link 
+  to="/saved-events"
+  className="w-full sm:w-auto px-5 sm:px-6 py-2 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition text-sm sm:text-base inline-block text-center"
+>
+  View
+</Link>
                 </div>
               </div>
 

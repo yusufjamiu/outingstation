@@ -5,7 +5,7 @@ import {
   Briefcase, Palette, UtensilsCrossed, Dumbbell, GraduationCap, 
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv 
 } from 'lucide-react';
-// import { UserSidebar } from '../../components/UserSidebar';
+
 
 export default function GenericCategoryPage() {
   const { slug } = useParams();

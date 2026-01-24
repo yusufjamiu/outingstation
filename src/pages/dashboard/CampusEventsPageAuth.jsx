@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Bell, Heart, ChevronDown } from 'lucide-react';
-import UserSidebar from '../../components/UserSidebar';
+import { Search, Bell, Heart, ChevronDown, Menu } from 'lucide-react';
+import { UserSidebar } from '../../components/UserSidebar';
 
-export default function CampusEventsPageAuth() {
+export default function CampusEvents() {
+  const navigate = useNavigate();
   const [selectedUniversity, setSelectedUniversity] = useState('University of Lagos');
   const [showUniversityDropdown, setShowUniversityDropdown] = useState(false);
-  const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [savedEventIds, setSavedEventIds] = useState([3]); // Event 3 is saved by default
   
   // User from AuthContext - hardcoded for now
   const user = {
     name: 'Saleem',
     city: 'Lagos',
-    avatar: 'https://placehold.co/40x40?text=S'
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User'
   };
 
   const universities = [
@@ -24,9 +26,20 @@ export default function CampusEventsPageAuth() {
     'University of Ilorin (Unilorin)'
   ];
 
-  const handleSaveClick = (eventId) => {
-    // User is logged in - save to Firebase
-    console.log('Saved event:', eventId);
+  // Click handler to navigate to event details
+  const handleEventClick = (eventId) => {
+    navigate(`/event/${eventId}`);
+  };
+
+  // Save/unsave event handler
+  const handleSaveClick = (e, eventId) => {
+    e.stopPropagation(); // Prevent card click when saving
+    
+    if (savedEventIds.includes(eventId)) {
+      setSavedEventIds(savedEventIds.filter(id => id !== eventId));
+    } else {
+      setSavedEventIds([...savedEventIds, eventId]);
+    }
     // TODO: Update savedEvents in Firebase
   };
 
@@ -37,19 +50,17 @@ export default function CampusEventsPageAuth() {
       category: 'Unilag',
       date: 'Mon, Jan 12',
       time: '3:00 PM',
-      image: 'https://source.unsplash.com/800x600/?university,students',
-      isFree: true,
-      isSaved: false
+      image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&q=80',
+      isFree: true
     },
     {
       id: 2,
-      title: 'Inaugural Lecture : AI Future',
+      title: 'Inaugural Lecture: AI Future',
       category: 'Fitness',
       date: 'Tue, Jan 12',
       time: '3:00 PM',
-      image: 'https://source.unsplash.com/800x600/?lecture,technology',
-      isFree: true,
-      isSaved: false
+      image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80',
+      isFree: true
     },
     {
       id: 3,
@@ -57,28 +68,40 @@ export default function CampusEventsPageAuth() {
       category: 'Unilag',
       date: 'Fri, Jan 12',
       time: '3:00 PM',
-      image: 'https://source.unsplash.com/800x600/?basketball,sports',
-      isFree: true,
-      isSaved: true
+      image: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800&q=80',
+      isFree: true
     }
   ];
 
   return (
     <div className="flex h-screen bg-gray-50">
       {/* User Sidebar */}
-      <UserSidebar activeTab="category" user={user} />
+      <UserSidebar 
+        activeTab="category" 
+        user={user}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       <main className="flex-1 overflow-y-auto">
         {/* Top Bar with Search */}
         <div className="bg-white border-b border-gray-200 px-8 py-4">
           <div className="flex items-center justify-between">
+            {/* Hamburger Menu - Mobile */}
+            <button 
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg mr-2"
+            >
+              <Menu size={24} />
+            </button>
+
             <div className="flex-1 max-w-xl">
               <div className="relative">
                 <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                 <input
                   type="text"
                   placeholder="Search location, event & more"
-                  className="w-full pl-12 pr-4 py-3 bg-gray-50 border-0 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+                  className="w-full pl-12 pr-4 py-3 bg-gray-50 border-0 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
                 />
               </div>
             </div>
@@ -108,7 +131,7 @@ export default function CampusEventsPageAuth() {
             <div className="relative">
               <button 
                 onClick={() => setShowUniversityDropdown(!showUniversityDropdown)}
-                className="px-6 py-3 bg-white border border-gray-300 rounded-lg flex items-center gap-2 hover:border-primary transition"
+                className="px-6 py-3 bg-white border border-gray-300 rounded-lg flex items-center gap-2 hover:border-cyan-400 transition"
               >
                 <span className="font-medium">Select University</span>
                 <ChevronDown size={20} />
@@ -138,14 +161,14 @@ export default function CampusEventsPageAuth() {
           {/* University Banner */}
           <div className="relative rounded-2xl overflow-hidden mb-8 shadow-lg">
             <img 
-              src="https://source.unsplash.com/1200x400/?university,campus"
+              src="https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80"
               alt="University of Lagos"
               className="w-full h-80 object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black/70 to-transparent"></div>
             
             <div className="absolute bottom-8 left-8 text-white">
-              <div className="bg-primary text-white text-sm px-3 py-1 rounded-full inline-block mb-3">
+              <div className="bg-cyan-400 text-white text-sm px-3 py-1 rounded-full inline-block mb-3">
                 Featured Campus
               </div>
               <h2 className="text-4xl font-bold mb-2">{selectedUniversity}</h2>
@@ -159,7 +182,7 @@ export default function CampusEventsPageAuth() {
           <div className="flex gap-4 mb-8">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Date:</label>
-              <select className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">
+              <select className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none">
                 <option>Any</option>
                 <option>Today</option>
                 <option>This Week</option>
@@ -169,7 +192,7 @@ export default function CampusEventsPageAuth() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Status:</label>
-              <select className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">
+              <select className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none">
                 <option>All</option>
                 <option>Free</option>
                 <option>Paid</option>
@@ -178,7 +201,7 @@ export default function CampusEventsPageAuth() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Location:</label>
-              <select className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">
+              <select className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none">
                 <option>On-Campus</option>
                 <option>Off-Campus</option>
               </select>
@@ -192,7 +215,11 @@ export default function CampusEventsPageAuth() {
           {/* Events Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {events.map((event) => (
-              <div key={event.id} className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer">
+              <div 
+                key={event.id} 
+                onClick={() => handleEventClick(event.id)}
+                className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
+              >
                 <div className="relative h-56">
                   <img 
                     src={event.image} 
@@ -209,18 +236,18 @@ export default function CampusEventsPageAuth() {
 
                   {/* Save Icon - user is logged in */}
                   <button 
-                    onClick={() => handleSaveClick(event.id)}
-                    className="absolute top-3 right-3 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition"
+                    onClick={(e) => handleSaveClick(e, event.id)}
+                    className="absolute top-3 right-3 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
                   >
                     <Heart 
                       size={20} 
-                      className={event.isSaved ? 'text-red-500 fill-red-500' : 'text-gray-600'} 
+                      className={savedEventIds.includes(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-600'} 
                     />
                   </button>
 
                   {event.isFree && (
                     <div className="absolute bottom-3 right-3">
-                      <span className="bg-green-500 text-white text-xs px-3 py-1 rounded-full font-semibold">
+                      <span className="bg-emerald-500 text-white text-xs px-3 py-1 rounded-lg font-semibold">
                         Free
                       </span>
                     </div>
@@ -228,7 +255,7 @@ export default function CampusEventsPageAuth() {
                 </div>
 
                 <div className="p-5">
-                  <h3 className="text-lg font-bold text-gray-900 mb-3 group-hover:text-primary transition">
+                  <h3 className="text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition">
                     {event.title}
                   </h3>
                   

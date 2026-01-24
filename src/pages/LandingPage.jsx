@@ -261,9 +261,12 @@ export default function LandingPage() {
           From guest lectures to campus parties, find out what's happening at your school. Connect with your community and never miss a beat.
         </p>
 
-        <button className="bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-10 py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow text-base md:text-lg">
-          Select University
-        </button>
+        <Link 
+  to="/campus-events"
+  className="inline-block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-10 py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow text-base md:text-lg"
+>
+  Select University
+</Link>
       </div>
 
     </div>

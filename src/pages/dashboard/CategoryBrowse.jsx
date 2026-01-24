@@ -4,13 +4,13 @@ import { Search, Bell, Menu, Video, School, ShoppingBag, Briefcase, Palette, Ute
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 
-export default function CategoryBrowsePageAuth() {
+export default function CategoryBrowse() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   const user = {
     name: 'Saleem',
     city: 'Lagos',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Saleem'
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User'
   };
 
   const mainCategories = [
@@ -19,14 +19,14 @@ export default function CategoryBrowsePageAuth() {
       description: 'Discover events happening in your university and campuses around you.',
       icon: School,
       color: 'bg-blue-100 text-blue-600',
-      link: '/dashboard/campus-events'
+      link: '/dashboard/uni-events'
     },
     {
       title: 'Webinar & Virtual Event',
       description: 'Join online webinars, workshops and immersive virtual experiences.',
       icon: Video,
       color: 'bg-purple-100 text-purple-600',
-      link: '/dashboard/webinar-events'
+      link: '/dashboard/web-events'
     },
     {
       title: 'Shopping & Outing',
@@ -172,18 +172,18 @@ export default function CategoryBrowsePageAuth() {
                 <Link 
                   key={index}
                   to={category.link}
-                  className="bg-white border border-gray-200 rounded-xl sm:rounded-2xl p-4 sm:p-6 hover:shadow-lg hover:border-primary transition group"
+                  className="bg-white border border-gray-200 rounded-xl sm:rounded-2xl p-4 sm:p-6 hover:shadow-lg hover:border-cyan-400 transition group"
                 >
                   <div className={`w-12 h-12 sm:w-14 sm:h-14 ${category.color} rounded-full flex items-center justify-center mb-3 sm:mb-4`}>
                     <Icon size={24} className="sm:w-7 sm:h-7" />
                   </div>
-                  <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-1.5 sm:mb-2 group-hover:text-primary transition line-clamp-1">
+                  <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-1.5 sm:mb-2 group-hover:text-cyan-500 transition line-clamp-1">
                     {category.title}
                   </h3>
                   <p className="text-gray-600 text-xs sm:text-sm mb-3 sm:mb-4 line-clamp-2">
                     {category.description}
                   </p>
-                  <button className="text-primary text-xs sm:text-sm font-semibold flex items-center gap-1 sm:gap-2 group-hover:gap-2 sm:group-hover:gap-3 transition-all">
+                  <button className="text-cyan-500 text-xs sm:text-sm font-semibold flex items-center gap-1 sm:gap-2 group-hover:gap-2 sm:group-hover:gap-3 transition-all">
                     View All Events →
                   </button>
                 </Link>

@@ -1,10 +1,13 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Bell, Heart, ChevronRight, Calendar, Clock, MapPin, Menu } from 'lucide-react';
 import { UserSidebar } from "../../components/UserSidebar";
 
 export default function UserDashboard() {
+  const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState('All');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [savedEventIds, setSavedEventIds] = useState([]); // Track saved events
   
   const user = {
     name: 'Saleem',
@@ -87,6 +90,24 @@ export default function UserDashboard() {
     }
   ];
 
+  // Click handler to navigate to event details
+  const handleEventClick = (eventId) => {
+    navigate(`/event/${eventId}`);
+  };
+
+  // Save/unsave event handler
+  const handleSaveEvent = (e, eventId) => {
+    e.stopPropagation(); // Prevent card click when saving
+    
+    if (savedEventIds.includes(eventId)) {
+      // Remove from saved
+      setSavedEventIds(savedEventIds.filter(id => id !== eventId));
+    } else {
+      // Add to saved
+      setSavedEventIds([...savedEventIds, eventId]);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       <UserSidebar 
@@ -161,7 +182,10 @@ export default function UserDashboard() {
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-5">Trending This Week</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
               {/* Featured Large Card */}
-              <div className="md:col-span-1 relative group cursor-pointer">
+              <div 
+                onClick={() => handleEventClick(trendingEvents[0].id)}
+                className="md:col-span-1 relative group cursor-pointer"
+              >
                 <div className="relative h-64 sm:h-80 rounded-xl overflow-hidden">
                   <img 
                     src={trendingEvents[0].image} 
@@ -170,8 +194,18 @@ export default function UserDashboard() {
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
                   
-                  <button className="absolute top-3 sm:top-4 right-3 sm:right-4 p-1.5 sm:p-2 bg-white rounded-full hover:bg-gray-100">
-                    <Heart size={16} className="sm:w-5 sm:h-5 text-gray-700" />
+                  <button 
+                    onClick={(e) => handleSaveEvent(e, trendingEvents[0].id)}
+                    className="absolute top-3 sm:top-4 right-3 sm:right-4 p-1.5 sm:p-2 bg-white rounded-full hover:bg-gray-100 z-10"
+                  >
+                    <Heart 
+                      size={16} 
+                      className={`sm:w-5 sm:h-5 ${
+                        savedEventIds.includes(trendingEvents[0].id)
+                          ? 'text-red-500 fill-red-500'
+                          : 'text-gray-700'
+                      }`}
+                    />
                   </button>
 
                   <span className="absolute top-3 sm:top-4 left-3 sm:left-4 px-2.5 sm:px-3 py-1 bg-white/90 rounded-full text-xs font-semibold text-cyan-500">
@@ -206,7 +240,11 @@ export default function UserDashboard() {
 
               {/* Two Medium Cards */}
               {trendingEvents.slice(1).map((event) => (
-                <div key={event.id} className="relative group cursor-pointer">
+                <div 
+                  key={event.id} 
+                  onClick={() => handleEventClick(event.id)}
+                  className="relative group cursor-pointer"
+                >
                   <div className="relative h-64 sm:h-80 rounded-xl overflow-hidden">
                     <img 
                       src={event.image} 
@@ -215,8 +253,18 @@ export default function UserDashboard() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
                     
-                    <button className="absolute top-3 sm:top-4 right-3 sm:right-4 p-1.5 sm:p-2 bg-white rounded-full hover:bg-gray-100">
-                      <Heart size={16} className="sm:w-5 sm:h-5 text-gray-700" />
+                    <button 
+                      onClick={(e) => handleSaveEvent(e, event.id)}
+                      className="absolute top-3 sm:top-4 right-3 sm:right-4 p-1.5 sm:p-2 bg-white rounded-full hover:bg-gray-100 z-10"
+                    >
+                      <Heart 
+                        size={16} 
+                        className={`sm:w-5 sm:h-5 ${
+                          savedEventIds.includes(event.id)
+                            ? 'text-red-500 fill-red-500'
+                            : 'text-gray-700'
+                        }`}
+                      />
                     </button>
 
                     <span className="absolute top-3 sm:top-4 left-3 sm:left-4 px-2.5 sm:px-3 py-1 bg-white/90 rounded-full text-xs font-semibold text-cyan-500">
@@ -263,7 +311,11 @@ export default function UserDashboard() {
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-5">Picked For You</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
               {pickedEvents.map((event) => (
-                <div key={event.id} className="relative group cursor-pointer">
+                <div 
+                  key={event.id} 
+                  onClick={() => handleEventClick(event.id)}
+                  className="relative group cursor-pointer"
+                >
                   <div className="relative h-40 sm:h-48 rounded-xl overflow-hidden">
                     <img 
                       src={event.image} 
@@ -272,8 +324,18 @@ export default function UserDashboard() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"></div>
                     
-                    <button className="absolute top-2 sm:top-3 right-2 sm:right-3 p-1 sm:p-1.5 bg-white rounded-full hover:bg-gray-100">
-                      <Heart size={14} className="sm:w-4 sm:h-4 text-gray-700" />
+                    <button 
+                      onClick={(e) => handleSaveEvent(e, event.id)}
+                      className="absolute top-2 sm:top-3 right-2 sm:right-3 p-1 sm:p-1.5 bg-white rounded-full hover:bg-gray-100 z-10"
+                    >
+                      <Heart 
+                        size={14} 
+                        className={`sm:w-4 sm:h-4 ${
+                          savedEventIds.includes(event.id)
+                            ? 'text-red-500 fill-red-500'
+                            : 'text-gray-700'
+                        }`}
+                      />
                     </button>
 
                     <span className="absolute top-2 sm:top-3 left-2 sm:left-3 px-2 sm:px-2.5 py-0.5 sm:py-1 bg-white/90 rounded-full text-xs font-semibold text-amber-500">
