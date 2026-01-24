@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Search, Bell, Heart, Menu } from 'lucide-react';
 import { 
   Briefcase, Palette, UtensilsCrossed, Dumbbell, GraduationCap, 
@@ -16,7 +16,7 @@ export default function GenericCategory() {
   const user = {
     name: 'Saleem',
     city: 'Lagos',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Saleem'
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User'
   };
 
   // Click handler to navigate to event details
@@ -154,7 +154,13 @@ export default function GenericCategory() {
                 <Bell size={20} className="text-gray-600" />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
-              <img src={user.avatar} alt={user.name} className="w-8 h-8 sm:w-10 sm:h-10 rounded-full" />
+              <Link to="/settings">
+  <img 
+    src={user.avatar} 
+    alt={user.name} 
+    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition" 
+  />
+</Link>
             </div>
           </div>
         </header>

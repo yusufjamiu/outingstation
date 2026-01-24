@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Search, Bell, Heart, ChevronDown, Menu } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 
@@ -111,7 +111,13 @@ export default function CampusEvents() {
                 <Bell size={24} className="text-gray-600" />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
-              <img src={user.avatar} alt={user.name} className="w-10 h-10 rounded-full cursor-pointer" />
+              <Link to="/settings">
+  <img 
+    src={user.avatar} 
+    alt={user.name} 
+    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition" 
+  />
+</Link>
             </div>
           </div>
         </div>
