@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Search, Bell, Heart, ChevronDown } from 'lucide-react';
+import { Search, Bell, Heart } from 'lucide-react';
 import { 
   Briefcase, Palette, UtensilsCrossed, Dumbbell, GraduationCap, 
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv 
 } from 'lucide-react';
-
+import Navbar from "../../components/Navbar";
+import Footer from "../../components/Footer";
 
 export default function GenericCategoryPage() {
   const { slug } = useParams();
@@ -14,20 +15,17 @@ export default function GenericCategoryPage() {
   // ❗ auth will come from context later
   const currentUser = null; // user not logged in
 
-  const user = {
-    name: 'Saleem',
-    city: 'Lagos',
-    avatar: 'https://placehold.co/40x40?text=S'
-  };
-
-  const handleSaveClick = (eventId) => {
+  const handleSaveClick = (e, eventId) => {
+    e.stopPropagation();
     if (!currentUser) {
       navigate('/login');
       return;
     }
-
-    // later: save to favorites
     console.log('Saved event:', eventId);
+  };
+
+  const handleEventClick = (eventId) => {
+    navigate(`/event/${eventId}`);
   };
 
   // Category mapping
@@ -57,7 +55,7 @@ export default function GenericCategoryPage() {
       date: 'Mon, Jan 12',
       time: '6:00 PM',
       location: 'Lagos, Nigeria',
-      image: 'https://source.unsplash.com/800x600/?business,startup',
+      image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80',
       isFree: false,
       price: '₦5,000',
       isSaved: false
@@ -68,7 +66,7 @@ export default function GenericCategoryPage() {
       date: 'Tue, Jan 13',
       time: '3:00 PM',
       location: 'Abuja, Nigeria',
-      image: 'https://source.unsplash.com/800x600/?marketing,digital',
+      image: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?w=800&q=80',
       isFree: true,
       isSaved: false
     },
@@ -78,7 +76,7 @@ export default function GenericCategoryPage() {
       date: 'Wed, Jan 14',
       time: '10:00 AM',
       location: 'Lagos, Nigeria',
-      image: 'https://source.unsplash.com/800x600/?ai,technology',
+      image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&q=80',
       isFree: false,
       price: '₦15,000',
       isSaved: true
@@ -89,7 +87,7 @@ export default function GenericCategoryPage() {
       date: 'Thu, Jan 15',
       time: '2:00 PM',
       location: 'Lagos, Nigeria',
-      image: 'https://source.unsplash.com/800x600/?blockchain,crypto',
+      image: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&q=80',
       isFree: true,
       isSaved: false
     },
@@ -99,7 +97,7 @@ export default function GenericCategoryPage() {
       date: 'Fri, Jan 16',
       time: '5:00 PM',
       location: 'Ibadan, Nigeria',
-      image: 'https://source.unsplash.com/800x600/?design,product',
+      image: 'https://images.unsplash.com/photo-1561070791-2526d30994b5?w=800&q=80',
       isFree: false,
       price: '₦8,000',
       isSaved: false
@@ -110,151 +108,131 @@ export default function GenericCategoryPage() {
       date: 'Sat, Jan 17',
       time: '11:00 AM',
       location: 'Lagos, Nigeria',
-      image: 'https://source.unsplash.com/800x600/?cloud,computing',
+      image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80',
       isFree: true,
       isSaved: false
     }
   ];
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* <UserSidebar activeTab="category" user={user} /> */}
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
 
-      <main className="flex-1 overflow-y-auto">
-        {/* Top Bar */}
-        <div className="bg-white border-b border-gray-200 px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex-1 max-w-xl">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="text"
-                  placeholder="Search location, event & more"
-                  className="w-full pl-12 pr-4 py-3 bg-gray-50 border-0 rounded-lg focus:ring-2 focus:ring-primary outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <button className="relative p-2 hover:bg-gray-100 rounded-lg transition">
-                <Bell size={24} className="text-gray-600" />
-              </button>
-              {/* <img src={user.avatar} alt={user.name} className="w-10 h-10 rounded-full cursor-pointer" /> */}
-            </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        {/* Header */}
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className={`w-14 h-14 sm:w-16 sm:h-16 ${currentCategory.color} rounded-2xl flex items-center justify-center flex-shrink-0`}>
+            <CategoryIcon size={28} className="sm:w-8 sm:h-8 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">{currentCategory.name}</h1>
+            <p className="text-sm sm:text-base text-gray-600">
+              Discover amazing {currentCategory.name.toLowerCase()} events happening around you
+            </p>
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-8">
-          {/* Header */}
-          <div className="mb-8 flex items-center gap-4">
-            <div className={`w-16 h-16 ${currentCategory.color} rounded-2xl flex items-center justify-center`}>
-              <CategoryIcon size={32} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-1">{currentCategory.name}</h1>
-              <p className="text-gray-600">
-                Discover amazing {currentCategory.name.toLowerCase()} events happening around you
-              </p>
-            </div>
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <div className="flex-1 sm:flex-initial">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Date:</label>
+            <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
+              <option>Any</option>
+              <option>Today</option>
+              <option>Tomorrow</option>
+              <option>This Week</option>
+              <option>This Weekend</option>
+              <option>This Month</option>
+            </select>
           </div>
 
-          {/* Filters */}
-          <div className="flex gap-4 mb-8">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Date:</label>
-              <select className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">
-                <option>Any</option>
-                <option>Today</option>
-                <option>Tomorrow</option>
-                <option>This Week</option>
-                <option>This Weekend</option>
-                <option>This Month</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Location:</label>
-              <select className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">
-                <option>All Cities</option>
-                <option>Lagos</option>
-                <option>Abuja</option>
-                <option>Riyadh</option>
-                <option>Jeddah</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Price:</label>
-              <select className="px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">
-                <option>Any Price</option>
-                <option>Free</option>
-                <option>Paid</option>
-              </select>
-            </div>
-
-            <div className="ml-auto flex items-end">
-              <p className="text-gray-600 font-medium">{events.length} Events Available</p>
-            </div>
+          <div className="flex-1 sm:flex-initial">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Location:</label>
+            <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
+              <option>All Cities</option>
+              <option>Lagos</option>
+              <option>Abuja</option>
+              <option>Riyadh</option>
+              <option>Jeddah</option>
+            </select>
           </div>
 
-          {/* Events Grid */}
-          <div className="grid grid-cols-3 gap-6">
-            {events.map((event) => (
-              <div key={event.id} className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer">
-                <div className="relative h-56">
-                  <img 
-                    src={event.image} 
-                    alt={event.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  />
-                  
-                  {/* Category Badge */}
-                  <div className="absolute top-3 left-3">
-                    <span className={`${currentCategory.color} text-white text-xs px-3 py-1 rounded-full`}>
-                      #{currentCategory.name}
-                    </span>
-                  </div>
+          <div className="flex-1 sm:flex-initial">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Price:</label>
+            <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
+              <option>Any Price</option>
+              <option>Free</option>
+              <option>Paid</option>
+            </select>
+          </div>
 
-                  {/* Save Icon */}
-                  <button
-                    onClick={() => handleSaveClick(event.id)}
-                    className="absolute top-3 right-3 w-10 h-10 bg-white rounded-full flex items-center justify-center"
-                  >
-                    <Heart
-                      size={20}
-                      className={event.isSaved ? 'text-red-500 fill-red-500' : 'text-gray-600'}
-                    />
-                  </button>
+          <div className="sm:ml-auto flex items-end">
+            <p className="text-sm sm:text-base text-gray-600 font-medium">{events.length} Events Available</p>
+          </div>
+        </div>
 
-                  {/* Price Badge */}
-                  <div className="absolute bottom-3 right-3">
-                    <span className={`${event.isFree ? 'bg-green-500' : 'bg-blue-500'} text-white text-xs px-3 py-1 rounded-full font-semibold`}>
-                      {event.isFree ? 'Free' : event.price}
-                    </span>
-                  </div>
+        {/* Events Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
+          {events.map((event) => (
+            <div 
+              key={event.id}
+              onClick={() => handleEventClick(event.id)}
+              className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
+            >
+              <div className="relative h-48 sm:h-56">
+                <img 
+                  src={event.image} 
+                  alt={event.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                />
+                
+                {/* Category Badge */}
+                <div className="absolute top-3 left-3">
+                  <span className={`${currentCategory.color} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
+                    #{currentCategory.name}
+                  </span>
                 </div>
 
-                <div className="p-5">
-                  <h3 className="text-lg font-bold text-gray-900 mb-3 group-hover:text-primary transition line-clamp-2">
-                    {event.title}
-                  </h3>
-                  
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <span>📅 {event.date}</span>
-                      <span>🕒 {event.time}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span>📍 {event.location}</span>
-                    </div>
+                {/* Save Icon */}
+                <button
+                  onClick={(e) => handleSaveClick(e, event.id)}
+                  className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
+                >
+                  <Heart
+                    size={18}
+                    className={`sm:w-5 sm:h-5 ${event.isSaved ? 'text-red-500 fill-red-500' : 'text-gray-600'}`}
+                  />
+                </button>
+
+                {/* Price Badge */}
+                <div className="absolute bottom-3 right-3">
+                  <span className={`${event.isFree ? 'bg-emerald-500' : 'bg-blue-500'} text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold`}>
+                    {event.isFree ? 'Free' : event.price}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-4 sm:p-5">
+                <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
+                  {event.title}
+                </h3>
+                
+                <div className="space-y-2 text-xs sm:text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <span>📅 {event.date}</span>
+                    <span>🕒 {event.time}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>📍 {event.location}</span>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </main>
+
+      <Footer />
     </div>
   );
 }

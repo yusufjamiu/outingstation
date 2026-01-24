@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Search, Bell, Calendar, Clock, MapPin, ChevronRight, ArrowUpDown, X, Bookmark, Menu } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 
 export default function SavedEvents() {
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [savedEvents, setSavedEvents] = useState([
     {
@@ -96,7 +97,13 @@ export default function SavedEvents() {
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Saleem'
   };
 
-  const handleRemoveClick = (event) => {
+  // Click handler to navigate to event details
+  const handleEventClick = (eventId) => {
+    navigate(`/event/${eventId}`);
+  };
+
+  const handleRemoveClick = (e, event) => {
+    e.stopPropagation(); // Prevent navigation when clicking remove
     setEventToRemove(event);
   };
 
@@ -149,12 +156,12 @@ export default function SavedEvents() {
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
               <Link to="/settings">
-  <img 
-    src={user.avatar} 
-    alt={user.name} 
-    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition" 
-  />
-</Link>
+                <img 
+                  src={user.avatar} 
+                  alt={user.name} 
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition" 
+                />
+              </Link>
             </div>
           </div>
         </header>
@@ -180,8 +187,12 @@ export default function SavedEvents() {
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5 mb-8">
                 {savedEvents.map((event) => (
-                  <div key={event.id} className="relative group">
-                    <div className="relative h-48 sm:h-56 rounded-xl overflow-hidden cursor-pointer">
+                  <div 
+                    key={event.id} 
+                    onClick={() => handleEventClick(event.id)}
+                    className="relative group cursor-pointer"
+                  >
+                    <div className="relative h-48 sm:h-56 rounded-xl overflow-hidden">
                       <img 
                         src={event.image} 
                         alt={event.title}
@@ -190,8 +201,8 @@ export default function SavedEvents() {
                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
                       
                       <button 
-                        onClick={() => handleRemoveClick(event)}
-                        className="absolute top-2 sm:top-3 right-2 sm:right-3 p-1.5 sm:p-2 bg-white rounded-full hover:bg-gray-100 transition"
+                        onClick={(e) => handleRemoveClick(e, event)}
+                        className="absolute top-2 sm:top-3 right-2 sm:right-3 p-1.5 sm:p-2 bg-white rounded-full hover:bg-gray-100 transition z-10"
                       >
                         <Bookmark size={14} className="sm:w-4 sm:h-4 text-red-500 fill-red-500" />
                       </button>
@@ -253,10 +264,13 @@ export default function SavedEvents() {
                   Your weekends are looking little too quiet. Start exploring now
                   until you fill up schedule with amazing experiences
                 </p>
-                <button className="px-6 sm:px-8 py-2.5 sm:py-3 bg-cyan-400 text-white rounded-full font-medium hover:bg-cyan-500 transition inline-flex items-center gap-2 text-sm sm:text-base">
+                <Link 
+                  to="/dashboard/categories"
+                  className="inline-flex items-center gap-2 px-6 sm:px-8 py-2.5 sm:py-3 bg-cyan-400 text-white rounded-full font-medium hover:bg-cyan-500 transition text-sm sm:text-base"
+                >
                   Browse Categories
                   <ChevronRight size={16} className="sm:w-4.5 sm:h-4.5" />
-                </button>
+                </Link>
               </div>
             </div>
           )}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Twitter, Linkedin, Facebook } from 'lucide-react';
+import { Twitter, Linkedin, Facebook, Instagram } from 'lucide-react';
 import OutingStation from '../assets/OutingStation.png';
 
 const Footer = () => {
@@ -30,8 +30,8 @@ const Footer = () => {
                 <ul className="space-y-2 text-sm text-white/90">
                   <li><Link to="/events">Browse Events</Link></li>
                   <li><Link to="/categories">Categories</Link></li>
-                  <li><Link to="/university">University Events</Link></li>
-                  <li><Link to="/webinars">Virtual & Webinar Events</Link></li>
+                  <li><Link to="/campus-events">University Events</Link></li>
+                  <li><Link to="/webinar-events">Virtual & Webinar Events</Link></li>
                 </ul>
               </div>
 
@@ -73,9 +73,10 @@ const Footer = () => {
 
   {/* Social Icons — left on mobile */}
   <div className="flex gap-6">
-    <a href="#" className="hover:text-white/80"><Twitter size={22} /></a>
-    <a href="#" className="hover:text-white/80"><Linkedin size={22} /></a>
+    <a href="https://x.com/OutingStation" className="hover:text-white/80"><Twitter size={22} /></a>
+    <a href="https://www.linkedin.com/company/outingstation" className="hover:text-white/80"><Linkedin size={22} /></a>
     <a href="#" className="hover:text-white/80"><Facebook size={22} /></a>
+    <a href="https://www.instagram.com/outingstation/" className="hover:text-white/80"><Instagram size={22} /></a>
   </div>
 
   {/* Legal Links — right on mobile */}

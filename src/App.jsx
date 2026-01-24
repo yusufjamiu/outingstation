@@ -3,6 +3,7 @@ import { HashRouter as Router, Route, Routes } from 'react-router-dom';
 // import { AuthProvider } from './context/AuthContext';
 
 // Pages
+import ScrollToTop from './components/ScrollToTop';
 import LandingPage from './pages/LandingPage';
 import EventsPage from './pages/EventsPage';
 import EventDetails from "./pages/events/EventDetails";
@@ -26,6 +27,7 @@ function App() {
   return (
     // <AuthProvider>
       <Router>
+        <ScrollToTop />
         <div className="App">
           <Routes>
             <Route path="/" element={<LandingPage />} />
