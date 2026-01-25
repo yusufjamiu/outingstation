@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Bell, X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Menu } from 'lucide-react';
+import { Search, Bell, X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Menu, Phone } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 
 export default function Settings() {
@@ -13,6 +13,7 @@ export default function Settings() {
   const [profileData, setProfileData] = useState({
     name: 'Brahim Wins',
     email: 'brahiimwins23@gmail.com',
+    phone: '+234 800 123 4567',
     city: 'Lagos, Nigeria',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User',
     joinedDate: '21 Jan, 2026',
@@ -22,6 +23,7 @@ export default function Settings() {
   const [formData, setFormData] = useState({
     name: profileData.name,
     email: profileData.email,
+    phone: profileData.phone,
     city: profileData.city
   });
 
@@ -30,6 +32,7 @@ export default function Settings() {
     setFormData({
       name: profileData.name,
       email: profileData.email,
+      phone: profileData.phone,
       city: profileData.city
     });
   };
@@ -39,6 +42,7 @@ export default function Settings() {
     setFormData({
       name: profileData.name,
       email: profileData.email,
+      phone: profileData.phone,
       city: profileData.city
     });
   };
@@ -48,6 +52,7 @@ export default function Settings() {
       ...profileData,
       name: formData.name,
       email: formData.email,
+      phone: formData.phone,
       city: formData.city
     });
     setIsEditing(false);
@@ -89,7 +94,6 @@ export default function Settings() {
         {/* Header */}
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sticky top-0 z-30">
           <div className="flex items-center justify-between">
-            {/* Hamburger Menu - Mobile */}
             <button 
               onClick={() => setSidebarOpen(true)}
               className="lg:hidden p-2 hover:bg-gray-100 rounded-lg mr-2"
@@ -118,9 +122,7 @@ export default function Settings() {
           </div>
         </header>
 
-        {/* Main Content */}
         <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
-          {/* Success Notification */}
           {showSavedNotification && (
             <div className="fixed top-20 sm:top-24 left-1/2 transform -translate-x-1/2 z-50 animate-in slide-in-from-top duration-300">
               <div className="bg-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg shadow-lg border-t-4 border-cyan-400">
@@ -129,7 +131,6 @@ export default function Settings() {
             </div>
           )}
 
-          {/* Close Button */}
           <div className="flex justify-end mb-4">
             <button 
               onClick={() => navigate('/dashboard')}
@@ -139,7 +140,6 @@ export default function Settings() {
             </button>
           </div>
 
-          {/* Page Header */}
           <div className="mb-6 sm:mb-8">
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
               {isEditing ? 'Edit Profile' : 'Profile'}
@@ -150,9 +150,7 @@ export default function Settings() {
           </div>
 
           {!isEditing ? (
-            // View Mode
             <>
-              {/* Profile Card */}
               <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-gray-200 mb-4 sm:mb-6">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
@@ -162,10 +160,11 @@ export default function Settings() {
                       className="w-20 h-20 sm:w-24 sm:h-24 rounded-full"
                     />
                     <div className="text-center sm:text-left">
-                      <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">
-                        {profileData.name}
-                      </h2>
-                      <p className="text-sm sm:text-base text-gray-600 mb-3 sm:mb-4 break-all">{profileData.email}</p>
+                      <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">{profileData.name}</h2>
+                      <p className="text-sm sm:text-base text-gray-600 mb-1 break-all">{profileData.email}</p>
+                      {profileData.phone && (
+                        <p className="text-sm sm:text-base text-gray-600 mb-3 sm:mb-4">{profileData.phone}</p>
+                      )}
                       
                       <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6 text-xs sm:text-sm">
                         <div className="flex items-center gap-2 text-gray-700">
@@ -190,7 +189,6 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Stats Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
                 <div className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-200">
                   <div className="flex items-center gap-4 mb-4">
@@ -198,30 +196,24 @@ export default function Settings() {
                       <Bookmark size={20} className="sm:w-6 sm:h-6 text-cyan-500" />
                     </div>
                   </div>
-                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-1">
-                    {profileData.savedEvents} Saved Events
-                  </h3>
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-1">{profileData.savedEvents} Saved Events</h3>
                   <p className="text-gray-600 text-xs sm:text-sm">Events you're interested in.</p>
                 </div>
 
                 <div className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-200">
-                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-2">
-                    Your Collection
-                  </h3>
+                  <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-2">Your Collection</h3>
                   <p className="text-gray-600 text-xs sm:text-sm mb-4">
                     Review the events you've saved to list and plan your next outing.
                   </p>
-                  
                   <Link 
-  to="/saved-events"
-  className="w-full sm:w-auto px-5 sm:px-6 py-2 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition text-sm sm:text-base inline-block text-center"
->
-  View
-</Link>
+                    to="/saved-events"
+                    className="w-full sm:w-auto px-5 sm:px-6 py-2 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition text-sm sm:text-base inline-block text-center"
+                  >
+                    View
+                  </Link>
                 </div>
               </div>
 
-              {/* Logout Button */}
               <button 
                 onClick={handleLogoutClick}
                 className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition text-sm sm:text-base"
@@ -231,9 +223,7 @@ export default function Settings() {
               </button>
             </>
           ) : (
-            // Edit Mode
             <div className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 lg:p-8 shadow-sm border border-gray-200">
-              {/* Avatar Section */}
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 mb-6 sm:mb-8 pb-6 sm:pb-8 border-b border-gray-200">
                 <img 
                   src={profileData.avatar} 
@@ -246,64 +236,70 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Form Fields */}
               <div className="space-y-5 sm:space-y-6 mb-6 sm:mb-8">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
-                  {/* Full Name */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-900 mb-2">
-                      Full Name
-                    </label>
+                    <label className="block text-sm font-medium text-gray-900 mb-2">Full Name *</label>
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
                       <input
                         type="text"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        required
                         className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent text-sm sm:text-base"
                       />
                     </div>
                   </div>
 
-                  {/* Email */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-900 mb-2">
-                      Email
-                    </label>
+                    <label className="block text-sm font-medium text-gray-900 mb-2">Email *</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
                       <input
                         type="email"
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        required
                         className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent text-sm sm:text-base"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* City */}
                 <div>
                   <label className="block text-sm font-medium text-gray-900 mb-2">
-                    City
+                    Phone Number <span className="text-gray-400 text-xs">(Optional)</span>
                   </label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                    <input
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="+234 800 000 0000"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent text-sm sm:text-base"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-900 mb-2">City *</label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
                     <input
                       type="text"
                       value={formData.city}
                       onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      required
                       className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent text-sm sm:text-base"
                     />
                     <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    We'll show you events based on this city.
-                  </p>
+                  <p className="text-xs text-gray-500 mt-2">We'll show you events based on this city.</p>
                 </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
                 <button 
                   onClick={handleCancelEdit}
@@ -323,7 +319,6 @@ export default function Settings() {
         </div>
       </main>
 
-      {/* Logout Confirmation Modal */}
       {showLogoutModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full relative animate-in fade-in zoom-in duration-200">
@@ -340,9 +335,7 @@ export default function Settings() {
               </div>
             </div>
 
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 text-center mb-2 sm:mb-3">
-              Logout?
-            </h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 text-center mb-2 sm:mb-3">Logout?</h2>
             <p className="text-sm sm:text-base text-gray-600 text-center mb-6 sm:mb-8">
               Are you sure you want to logout. You'll have to sign in back to access your saved events and continue your actions.
             </p>
