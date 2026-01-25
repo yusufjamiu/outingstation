@@ -13,15 +13,21 @@ export default function AdminEventForm() {
     title: '',
     description: '',
     category: '',
+    eventType: 'regular', // regular, campus, webinar
     date: '',
     time: '',
     location: '',
     address: '',
+    university: '', // for campus events
+    platform: '', // for webinars
+    platformLink: '', // for webinars
     price: '',
     isFree: false,
     capacity: '',
     imageUrl: '',
-    status: 'draft'
+    status: 'draft',
+    isFeatured: false,
+    isTrending: false
   });
 
   const categories = [
@@ -37,6 +43,25 @@ export default function AdminEventForm() {
     'Gaming & Esport',
     'Music & Concerts',
     'Cinema & Show'
+  ];
+
+  const universities = [
+    'University of Lagos (Unilag)',
+    'King Saud University (KSU)',
+    'University of Ibadan (UI)',
+    'University of Ghana (Legon)',
+    'Covenant University (CU)',
+    'University of Ilorin (Unilorin)'
+  ];
+
+  const platforms = [
+    'Zoom',
+    'Google Meet',
+    'Microsoft Teams',
+    'Twitter Space',
+    'YouTube Live',
+    'Facebook Live',
+    'Other'
   ];
 
   const handleChange = (e) => {
@@ -61,7 +86,7 @@ export default function AdminEventForm() {
 
       <main className="flex-1 overflow-auto">
         {/* Top Bar */}
-        <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
+        <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sticky top-0 z-30">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button 
@@ -124,22 +149,41 @@ export default function AdminEventForm() {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Category *
-                    </label>
-                    <select
-                      name="category"
-                      value={formData.category}
-                      onChange={handleChange}
-                      required
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                    >
-                      <option value="">Select category</option>
-                      {categories.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Event Type *
+                      </label>
+                      <select
+                        name="eventType"
+                        value={formData.eventType}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                      >
+                        <option value="regular">Regular Event</option>
+                        <option value="campus">Campus Event</option>
+                        <option value="webinar">Webinar/Virtual</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Category *
+                      </label>
+                      <select
+                        name="category"
+                        value={formData.category}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                      >
+                        <option value="">Select category</option>
+                        {categories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -174,41 +218,108 @@ export default function AdminEventForm() {
                 </div>
               </div>
 
-              {/* Location */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Location</h3>
-                
-                <div className="space-y-4">
+              {/* Campus Event Fields */}
+              {formData.eventType === 'campus' && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Campus Event Details</h3>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      City *
+                      University *
                     </label>
-                    <input
-                      type="text"
-                      name="location"
-                      value={formData.location}
+                    <select
+                      name="university"
+                      value={formData.university}
                       onChange={handleChange}
                       required
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder="e.g. Lagos, Nigeria"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Full Address
-                    </label>
-                    <input
-                      type="text"
-                      name="address"
-                      value={formData.address}
-                      onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder="Full venue address"
-                    />
+                    >
+                      <option value="">Select university</option>
+                      {universities.map(uni => (
+                        <option key={uni} value={uni}>{uni}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* Webinar Event Fields */}
+              {formData.eventType === 'webinar' && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Webinar Details</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Platform *
+                      </label>
+                      <select
+                        name="platform"
+                        value={formData.platform}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                      >
+                        <option value="">Select platform</option>
+                        {platforms.map(platform => (
+                          <option key={platform} value={platform}>{platform}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Meeting Link
+                      </label>
+                      <input
+                        type="url"
+                        name="platformLink"
+                        value={formData.platformLink}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        placeholder="https://zoom.us/j/123456789"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">Link will be shared with registered attendees</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Location (for regular and campus events) */}
+              {formData.eventType !== 'webinar' && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Location</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        City *
+                      </label>
+                      <input
+                        type="text"
+                        name="location"
+                        value={formData.location}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        placeholder="e.g. Lagos, Nigeria"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Full Address
+                      </label>
+                      <input
+                        type="text"
+                        name="address"
+                        value={formData.address}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        placeholder="Full venue address"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Pricing */}
               <div>
@@ -280,24 +391,56 @@ export default function AdminEventForm() {
                 </div>
               </div>
 
-              {/* Status */}
+              {/* Visibility & Promotion */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Publication</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Visibility & Promotion</h3>
                 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Status
-                  </label>
-                  <select
-                    name="status"
-                    value={formData.status}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                  >
-                    <option value="draft">Draft</option>
-                    <option value="published">Published</option>
-                    <option value="pending">Pending Review</option>
-                  </select>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Status
+                    </label>
+                    <select
+                      name="status"
+                      value={formData.status}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                    >
+                      <option value="draft">Draft</option>
+                      <option value="published">Published</option>
+                      <option value="pending">Pending Review</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        name="isFeatured"
+                        checked={formData.isFeatured}
+                        onChange={handleChange}
+                        className="w-4 h-4 text-cyan-500 border-gray-300 rounded focus:ring-cyan-400"
+                      />
+                      <label className="text-sm font-medium text-gray-700">
+                        Featured Event
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 ml-6">Show this event in featured section on homepage</p>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        name="isTrending"
+                        checked={formData.isTrending}
+                        onChange={handleChange}
+                        className="w-4 h-4 text-cyan-500 border-gray-300 rounded focus:ring-cyan-400"
+                      />
+                      <label className="text-sm font-medium text-gray-700">
+                        Trending This Week
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 ml-6">Show this event in trending section</p>
+                  </div>
                 </div>
               </div>
 
