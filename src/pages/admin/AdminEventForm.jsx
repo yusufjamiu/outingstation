@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Menu, Save, X } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -9,6 +9,7 @@ export default function AdminEventForm() {
   const isEdit = Boolean(id);
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [universities, setUniversities] = useState([]); // Dynamic universities
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -30,6 +31,38 @@ export default function AdminEventForm() {
     isTrending: false
   });
 
+  // Load universities when component mounts
+  useEffect(() => {
+    loadUniversities();
+  }, []);
+
+  // Load universities from localStorage (will be Firebase later)
+  const loadUniversities = () => {
+    try {
+      const stored = localStorage.getItem('universities');
+      if (stored) {
+        const universitiesData = JSON.parse(stored);
+        setUniversities(universitiesData);
+        console.log('✅ Loaded universities:', universitiesData.length);
+      } else {
+        // Fallback to default universities if none exist
+        const defaultUniversities = [
+          { id: 1, name: 'University of Lagos (Unilag)', location: 'Lagos, Nigeria' },
+          { id: 2, name: 'King Saud University (KSU)', location: 'Riyadh, Saudi Arabia' },
+          { id: 3, name: 'University of Ibadan (UI)', location: 'Ibadan, Nigeria' },
+          { id: 4, name: 'University of Ghana (Legon)', location: 'Accra, Ghana' },
+          { id: 5, name: 'Covenant University (CU)', location: 'Ota, Nigeria' },
+          { id: 6, name: 'University of Ilorin (Unilorin)', location: 'Ilorin, Nigeria' }
+        ];
+        setUniversities(defaultUniversities);
+        console.log('ℹ️ Using default universities');
+      }
+    } catch (error) {
+      console.error('Error loading universities:', error);
+      setUniversities([]);
+    }
+  };
+
   const categories = [
     'Business & Tech',
     'Art & Culture',
@@ -43,15 +76,6 @@ export default function AdminEventForm() {
     'Gaming & Esport',
     'Music & Concerts',
     'Cinema & Show'
-  ];
-
-  const universities = [
-    'University of Lagos (Unilag)',
-    'King Saud University (KSU)',
-    'University of Ibadan (UI)',
-    'University of Ghana (Legon)',
-    'Covenant University (CU)',
-    'University of Ilorin (Unilorin)'
   ];
 
   const platforms = [
@@ -218,7 +242,7 @@ export default function AdminEventForm() {
                 </div>
               </div>
 
-              {/* Campus Event Fields */}
+              {/* Campus Event Fields - DYNAMIC UNIVERSITIES */}
               {formData.eventType === 'campus' && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Campus Event Details</h3>
@@ -235,9 +259,19 @@ export default function AdminEventForm() {
                     >
                       <option value="">Select university</option>
                       {universities.map(uni => (
-                        <option key={uni} value={uni}>{uni}</option>
+                        <option key={uni.id} value={uni.name}>
+                          {uni.name}
+                        </option>
                       ))}
                     </select>
+                    {universities.length === 0 && (
+                      <p className="mt-2 text-sm text-orange-600">
+                        ⚠️ No universities available. Please add universities in Admin → Universities first.
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      Universities are loaded from Admin → Universities
+                    </p>
                   </div>
                 </div>
               )}

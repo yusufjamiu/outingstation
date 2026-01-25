@@ -1,15 +1,17 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Calendar, Users, Grid, Settings, LogOut, X } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Calendar, Users, Grid, GraduationCap, Bookmark, LogOut, X } from 'lucide-react';
+import OutingStation from '../assets/OutingStation.png';
 
 export function AdminSidebar({ isOpen, onClose }) {
   const location = useLocation();
-  const navigate = useNavigate();
   
   const menuItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard, path: '/admin' },
     { id: 'events', label: 'Manage Events', icon: Calendar, path: '/admin/events' },
     { id: 'users', label: 'Manage Users', icon: Users, path: '/admin/users' },
     { id: 'categories', label: 'Categories', icon: Grid, path: '/admin/categories' },
+    { id: 'universities', label: 'Universities', icon: GraduationCap, path: '/admin/universities' },
+    { id: 'saved-events', label: 'Saved Events', icon: Bookmark, path: '/admin/saved-events-analytics' }, // NEW
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -17,8 +19,8 @@ export function AdminSidebar({ isOpen, onClose }) {
   const handleLogout = () => {
     // Clear admin authentication
     localStorage.removeItem('adminAuth');
-    // Redirect to admin login
-    navigate('/admin/login');
+    // Force page reload to clear React state and redirect
+    window.location.href = '/#/admin/login';
   };
 
   return (
@@ -50,7 +52,13 @@ export function AdminSidebar({ isOpen, onClose }) {
         {/* Logo */}
         <div className="p-6 border-b border-gray-800">
           <h1 className="text-xl font-bold text-cyan-400">Admin Dashboard</h1>
-          <p className="text-xs text-gray-400 mt-1">Outing Station</p>
+          <Link to="/" className="flex items-center">
+            <img
+              src={OutingStation}
+              alt="Outing Station"
+              className="h-12 w-auto"
+            />
+          </Link>
         </div>
 
         {/* Navigation */}

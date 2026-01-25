@@ -1,5 +1,6 @@
 import React from 'react';
 import { HashRouter as Router, Route, Routes } from 'react-router-dom';
+import { SavedEventsProvider } from './context/SavedEventsContext';
 
 // Components
 import ScrollToTop from './components/ScrollToTop';
@@ -34,88 +35,110 @@ import AdminEvents from './pages/admin/AdminEvents';
 import AdminEventForm from './pages/admin/AdminEventForm';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminCategories from './pages/admin/AdminCategories';
+import AdminUniversities from './pages/admin/Adminuniversities';
+import AdminSavedEventsAnalytics from './pages/admin/AdminSavedEventsAnalytics'; // NEW
+
 
 function App() {
   return (
-    <Router>
-      <ScrollToTop />
-      <div className="App">
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/forgot-password" element={<ResetPasswordPage />} />
-          <Route path="/events" element={<EventsPage />} />
-          <Route path="/category/:slug" element={<GenericCategoryPage />} />
-          <Route path="/categories" element={<CategoryBrowsePage />} />
-          <Route path="/campus-events" element={<CampusEventsPage />} />
-          <Route path="/webinar-events" element={<WebinarEventsPage />} />
-          <Route path="/campus" element={<UniversityEventsPage />} />
-          <Route path="/event/:id" element={<EventDetails />} />
-          
-          {/* User Dashboard Routes (for logged-in users) */}
-          <Route path="/dashboard" element={<UserDashboard />} />
-          <Route path="/dashboard/categories" element={<CategoryBrowse />} />
-          <Route path="/dashboard/uni-events" element={<CampusEvents />} />
-          <Route path="/dashboard/web-events" element={<WebinarEvents />} />
-          <Route path="/dashboard/category/:slug" element={<GenericCategory />} />
-          <Route path="/saved-events" element={<SavedEvents />} />
-          <Route path="/settings" element={<Settings />} />
+    <SavedEventsProvider>
+      <Router>
+        <ScrollToTop />
+        <div className="App">
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
+            <Route path="/forgot-password" element={<ResetPasswordPage />} />
+            <Route path="/events" element={<EventsPage />} />
+            <Route path="/category/:slug" element={<GenericCategoryPage />} />
+            <Route path="/categories" element={<CategoryBrowsePage />} />
+            <Route path="/campus-events" element={<CampusEventsPage />} />
+            <Route path="/webinar-events" element={<WebinarEventsPage />} />
+            <Route path="/campus" element={<UniversityEventsPage />} />
+            <Route path="/event/:id" element={<EventDetails />} />
+            
+            {/* User Dashboard Routes (for logged-in users) */}
+            <Route path="/dashboard" element={<UserDashboard />} />
+            <Route path="/dashboard/categories" element={<CategoryBrowse />} />
+            <Route path="/dashboard/uni-events" element={<CampusEvents />} />
+            <Route path="/dashboard/web-events" element={<WebinarEvents />} />
+            <Route path="/dashboard/category/:slug" element={<GenericCategory />} />
+            <Route path="/saved-events" element={<SavedEvents />} />
+            <Route path="/settings" element={<Settings />} />
 
-          {/* Admin Routes (Protected) */}
-          <Route path="/admin/login" element={<AdminLogin />} />
-          <Route 
-            path="/admin" 
-            element={
-              <ProtectedAdminRoute>
-                <AdminDashboard />
-              </ProtectedAdminRoute>
-            } 
-          />
-          <Route 
-            path="/admin/events" 
-            element={
-              <ProtectedAdminRoute>
-                <AdminEvents />
-              </ProtectedAdminRoute>
-            } 
-          />
-          <Route 
-            path="/admin/events/create" 
-            element={
-              <ProtectedAdminRoute>
-                <AdminEventForm />
-              </ProtectedAdminRoute>
-            } 
-          />
-          <Route 
-            path="/admin/events/edit/:id" 
-            element={
-              <ProtectedAdminRoute>
-                <AdminEventForm />
-              </ProtectedAdminRoute>
-            } 
-          />
-          <Route 
-            path="/admin/users" 
-            element={
-              <ProtectedAdminRoute>
-                <AdminUsers />
-              </ProtectedAdminRoute>
-            } 
-          />
-          <Route 
-            path="/admin/categories" 
-            element={
-              <ProtectedAdminRoute>
-                <AdminCategories />
-              </ProtectedAdminRoute>
-            } 
-          />
-        </Routes>
-      </div>
-    </Router>
+            {/* Admin Routes (Protected) */}
+            <Route path="/admin/login" element={<AdminLogin />} />
+            <Route 
+              path="/admin" 
+              element={
+                <ProtectedAdminRoute>
+                  <AdminDashboard />
+                </ProtectedAdminRoute>
+              } 
+            />
+            <Route 
+              path="/admin/events" 
+              element={
+                <ProtectedAdminRoute>
+                  <AdminEvents />
+                </ProtectedAdminRoute>
+              } 
+            />
+            <Route 
+              path="/admin/events/create" 
+              element={
+                <ProtectedAdminRoute>
+                  <AdminEventForm />
+                </ProtectedAdminRoute>
+              } 
+            />
+            <Route 
+              path="/admin/events/edit/:id" 
+              element={
+                <ProtectedAdminRoute>
+                  <AdminEventForm />
+                </ProtectedAdminRoute>
+              } 
+            />
+            <Route 
+              path="/admin/users" 
+              element={
+                <ProtectedAdminRoute>
+                  <AdminUsers />
+                </ProtectedAdminRoute>
+              } 
+            />
+            <Route 
+              path="/admin/categories" 
+              element={
+                <ProtectedAdminRoute>
+                  <AdminCategories />
+                </ProtectedAdminRoute>
+              } 
+            />
+            <Route 
+              path="/admin/universities" 
+              element={
+                <ProtectedAdminRoute>
+                  <AdminUniversities />
+                </ProtectedAdminRoute>
+              } 
+            />
+            {/* NEW: Saved Events Analytics Route */}
+            <Route 
+              path="/admin/saved-events-analytics" 
+              element={
+                <ProtectedAdminRoute>
+                  <AdminSavedEventsAnalytics />
+                </ProtectedAdminRoute>
+              } 
+            />
+          </Routes>
+        </div>
+      </Router>
+    </SavedEventsProvider>
   );
 }
 
