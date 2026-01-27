@@ -17,12 +17,30 @@ export default function AdminEventForm() {
     subCategory: 'events',
     religionType: '',
     eventType: 'regular',
+    
+    // Event Duration
+    eventDuration: 'single', // single, multi, recurring
+    
+    // Single Day Event
     date: '',
     time: '',
+    
+    // Multi-Day Event
+    startDate: '',
+    endDate: '',
+    dailyStartTime: '',
+    dailyEndTime: '',
+    
+    // Recurring Event
+    recurringPattern: 'weekly', // daily, weekly, weekends
+    recurringDay: 'Monday', // for weekly
+    recurringTime: '',
+    
     // For places
-    placeAvailability: 'Always Open', // Always Open, Weekends Only, Mon-Fri, Custom
+    placeAvailability: 'Always Open',
     openingTime: '',
     closingTime: '',
+    
     location: '',
     address: '',
     university: '',
@@ -268,80 +286,236 @@ export default function AdminEventForm() {
                 </div>
               </div>
 
-              {/* Date & Time - Different for Events vs Places */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  {isPlace ? 'Availability & Hours' : 'Date & Time'}
-                </h3>
-                
-                <div className="space-y-4">
-                  {isPlace ? (
-                    // PLACES: Availability + Time Range
-                    <>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Availability *
-                        </label>
-                        <select
-                          name="placeAvailability"
-                          value={formData.placeAvailability}
-                          onChange={handleChange}
-                          required
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                        >
-                          <option value="Always Open">Always Open (Daily)</option>
-                          <option value="Weekends Only">Weekends Only (Sat-Sun)</option>
-                          <option value="Mon-Fri">Mon-Fri (Weekdays)</option>
-                          <option value="Mon-Sat">Mon-Sat</option>
-                          <option value="Weekdays">Weekdays (Mon-Thu)</option>
-                          <option value="Custom">Custom Schedule</option>
-                        </select>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Select when this place is open to visitors
+              {/* Date & Time Section */}
+              {!isPlace ? (
+                // FOR EVENTS: Event Duration Options
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Event Schedule</h3>
+                  
+                  <div className="space-y-4">
+                    {/* Event Duration Type */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Event Duration *
+                      </label>
+                      <select
+                        name="eventDuration"
+                        value={formData.eventDuration}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                      >
+                        <option value="single">Single Day Event</option>
+                        <option value="multi">Multi-Day Event</option>
+                        <option value="recurring">Recurring Event</option>
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {formData.eventDuration === 'single' && 'Event happens on one specific day'}
+                        {formData.eventDuration === 'multi' && 'Event spans multiple consecutive days'}
+                        {formData.eventDuration === 'recurring' && 'Event repeats on a regular schedule'}
+                      </p>
+                    </div>
+
+                    {/* SINGLE DAY EVENT */}
+                    {formData.eventDuration === 'single' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Date *
+                          </label>
+                          <input
+                            type="date"
+                            name="date"
+                            value={formData.date}
+                            onChange={handleChange}
+                            required
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Time *
+                          </label>
+                          <input
+                            type="time"
+                            name="time"
+                            value={formData.time}
+                            onChange={handleChange}
+                            required
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* MULTI-DAY EVENT */}
+                    {formData.eventDuration === 'multi' && (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Start Date *
+                            </label>
+                            <input
+                              type="date"
+                              name="startDate"
+                              value={formData.startDate}
+                              onChange={handleChange}
+                              required
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              End Date *
+                            </label>
+                            <input
+                              type="date"
+                              name="endDate"
+                              value={formData.endDate}
+                              onChange={handleChange}
+                              required
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Daily Start Time *
+                            </label>
+                            <input
+                              type="time"
+                              name="dailyStartTime"
+                              value={formData.dailyStartTime}
+                              onChange={handleChange}
+                              required
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Daily End Time *
+                            </label>
+                            <input
+                              type="time"
+                              name="dailyEndTime"
+                              value={formData.dailyEndTime}
+                              onChange={handleChange}
+                              required
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                            />
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Example: Conference from Jan 15-17, daily from 9:00 AM - 5:00 PM
                         </p>
-                      </div>
+                      </>
+                    )}
 
-                      <div className="grid grid-cols-2 gap-4">
+                    {/* RECURRING EVENT */}
+                    {formData.eventDuration === 'recurring' && (
+                      <>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Opening Time *
+                            Recurring Pattern *
+                          </label>
+                          <select
+                            name="recurringPattern"
+                            value={formData.recurringPattern}
+                            onChange={handleChange}
+                            required
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                          >
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="weekends">Weekends Only (Sat-Sun)</option>
+                            <option value="weekdays">Weekdays Only (Mon-Fri)</option>
+                          </select>
+                        </div>
+
+                        {formData.recurringPattern === 'weekly' && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Day of Week *
+                            </label>
+                            <select
+                              name="recurringDay"
+                              value={formData.recurringDay}
+                              onChange={handleChange}
+                              required
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                            >
+                              <option value="Monday">Monday</option>
+                              <option value="Tuesday">Tuesday</option>
+                              <option value="Wednesday">Wednesday</option>
+                              <option value="Thursday">Thursday</option>
+                              <option value="Friday">Friday</option>
+                              <option value="Saturday">Saturday</option>
+                              <option value="Sunday">Sunday</option>
+                            </select>
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Time *
                           </label>
                           <input
                             type="time"
-                            name="openingTime"
-                            value={formData.openingTime}
+                            name="recurringTime"
+                            value={formData.recurringTime}
                             onChange={handleChange}
                             required
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                           />
                         </div>
+                        <p className="text-xs text-gray-500">
+                          Example: Yoga class every Monday at 6:00 PM
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                // FOR PLACES: Availability
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Availability & Hours</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Availability *
+                      </label>
+                      <select
+                        name="placeAvailability"
+                        value={formData.placeAvailability}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                      >
+                        <option value="Always Open">Always Open (Daily)</option>
+                        <option value="Weekends Only">Weekends Only (Sat-Sun)</option>
+                        <option value="Mon-Fri">Mon-Fri (Weekdays)</option>
+                        <option value="Mon-Sat">Mon-Sat</option>
+                        <option value="Weekdays">Weekdays (Mon-Thu)</option>
+                        <option value="Custom">Custom Schedule</option>
+                      </select>
+                    </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Closing Time *
-                          </label>
-                          <input
-                            type="time"
-                            name="closingTime"
-                            value={formData.closingTime}
-                            onChange={handleChange}
-                            required
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                          />
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    // EVENTS: Single Date + Time
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Date *
+                          Opening Time *
                         </label>
                         <input
-                          type="date"
-                          name="date"
-                          value={formData.date}
+                          type="time"
+                          name="openingTime"
+                          value={formData.openingTime}
                           onChange={handleChange}
                           required
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
@@ -350,21 +524,21 @@ export default function AdminEventForm() {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Time *
+                          Closing Time *
                         </label>
                         <input
                           type="time"
-                          name="time"
-                          value={formData.time}
+                          name="closingTime"
+                          value={formData.closingTime}
                           onChange={handleChange}
                           required
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                         />
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Campus Event Fields */}
               {formData.eventType === 'campus' && !isPlace && (
@@ -432,7 +606,7 @@ export default function AdminEventForm() {
                 </div>
               )}
 
-              {/* Location (for regular, campus events, and places) */}
+              {/* Location */}
               {formData.eventType !== 'webinar' && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Location</h3>
