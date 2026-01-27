@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Search, Bell, Heart } from 'lucide-react';
+import { Heart } from 'lucide-react';
 import { 
   Briefcase, Palette, UtensilsCrossed, Dumbbell, GraduationCap, 
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv 
@@ -11,8 +11,9 @@ import Footer from "../../components/Footer";
 export default function GenericCategoryPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('events'); // events or places
+  const [religionFilter, setReligionFilter] = useState('all'); // all, Christianity, Islam, Others
 
-  // ❗ auth will come from context later
   const currentUser = null; // user not logged in
 
   const handleSaveClick = (e, eventId) => {
@@ -30,25 +31,25 @@ export default function GenericCategoryPage() {
 
   // Category mapping
   const categoryMap = {
-    'business-tech': { name: 'Business & Tech', icon: Briefcase, color: 'bg-blue-500' },
-    'art-culture': { name: 'Art & Culture', icon: Palette, color: 'bg-purple-500' },
-    'food-dining': { name: 'Food & Dining', icon: UtensilsCrossed, color: 'bg-orange-500' },
-    'sport-fitness': { name: 'Sport & Fitness', icon: Dumbbell, color: 'bg-green-500' },
-    'education-workshop': { name: 'Education & Workshop', icon: GraduationCap, color: 'bg-indigo-500' },
-    'religion-community': { name: 'Religion & Community', icon: HeartIcon, color: 'bg-pink-500' },
-    'nightlife-parties': { name: 'Nightlife & Parties', icon: Music, color: 'bg-purple-600' },
-    'family-kids-fun': { name: 'Family & Kids Fun', icon: Baby, color: 'bg-yellow-500' },
-    'networking-social': { name: 'Networking & Social', icon: Users, color: 'bg-teal-500' },
-    'gaming-esport': { name: 'Gaming & Esport', icon: Gamepad2, color: 'bg-red-500' },
-    'music-concerts': { name: 'Music & Concerts', icon: Mic2, color: 'bg-pink-600' },
-    'cinema-show': { name: 'Cinema & Show', icon: Tv, color: 'bg-gray-700' }
+    'business-tech': { name: 'Business & Tech', icon: Briefcase, color: 'bg-blue-500', hasPlaces: false, isReligion: false },
+    'art-culture': { name: 'Art & Culture', icon: Palette, color: 'bg-purple-500', hasPlaces: true, isReligion: false },
+    'food-dining': { name: 'Food & Dining', icon: UtensilsCrossed, color: 'bg-orange-500', hasPlaces: true, isReligion: false },
+    'sport-fitness': { name: 'Sport & Fitness', icon: Dumbbell, color: 'bg-green-500', hasPlaces: true, isReligion: false },
+    'education-workshop': { name: 'Education & Workshop', icon: GraduationCap, color: 'bg-indigo-500', hasPlaces: false, isReligion: false },
+    'religion-community': { name: 'Religion & Community', icon: HeartIcon, color: 'bg-pink-500', hasPlaces: false, isReligion: true },
+    'nightlife-parties': { name: 'Nightlife & Parties', icon: Music, color: 'bg-purple-600', hasPlaces: true, isReligion: false },
+    'family-kids-fun': { name: 'Family & Kids Fun', icon: Baby, color: 'bg-yellow-500', hasPlaces: true, isReligion: false },
+    'networking-social': { name: 'Networking & Social', icon: Users, color: 'bg-teal-500', hasPlaces: false, isReligion: false },
+    'gaming-esport': { name: 'Gaming & Esport', icon: Gamepad2, color: 'bg-red-500', hasPlaces: false, isReligion: false },
+    'music-concerts': { name: 'Music & Concerts', icon: Mic2, color: 'bg-pink-600', hasPlaces: false, isReligion: false },
+    'cinema-show': { name: 'Cinema & Show', icon: Tv, color: 'bg-gray-700', hasPlaces: false, isReligion: false }
   };
 
   const currentCategory = categoryMap[slug] || categoryMap['business-tech'];
   const CategoryIcon = currentCategory.icon;
 
   // Mock events - in real app, fetch from Firebase filtered by category
-  const events = [
+  const allEvents = [
     {
       id: 1,
       title: 'Tech Startup Pitch Night',
@@ -58,7 +59,8 @@ export default function GenericCategoryPage() {
       image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80',
       isFree: false,
       price: '₦5,000',
-      isSaved: false
+      isSaved: false,
+      subCategory: 'events'
     },
     {
       id: 2,
@@ -68,10 +70,23 @@ export default function GenericCategoryPage() {
       location: 'Abuja, Nigeria',
       image: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?w=800&q=80',
       isFree: true,
-      isSaved: false
+      isSaved: false,
+      subCategory: 'events'
     },
     {
       id: 3,
+      title: 'The Creative Hub',
+      date: 'Always Open',
+      time: '9:00 AM - 6:00 PM',
+      location: 'Lagos, Nigeria',
+      image: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80',
+      isFree: false,
+      price: '₦2,000',
+      isSaved: false,
+      subCategory: 'places'
+    },
+    {
+      id: 4,
       title: 'AI & Machine Learning Bootcamp',
       date: 'Wed, Jan 14',
       time: '10:00 AM',
@@ -79,40 +94,13 @@ export default function GenericCategoryPage() {
       image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&q=80',
       isFree: false,
       price: '₦15,000',
-      isSaved: true
-    },
-    {
-      id: 4,
-      title: 'Blockchain & Web3 Summit',
-      date: 'Thu, Jan 15',
-      time: '2:00 PM',
-      location: 'Lagos, Nigeria',
-      image: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&q=80',
-      isFree: true,
-      isSaved: false
-    },
-    {
-      id: 5,
-      title: 'Product Design Masterclass',
-      date: 'Fri, Jan 16',
-      time: '5:00 PM',
-      location: 'Ibadan, Nigeria',
-      image: 'https://images.unsplash.com/photo-1561070791-2526d30994b5?w=800&q=80',
-      isFree: false,
-      price: '₦8,000',
-      isSaved: false
-    },
-    {
-      id: 6,
-      title: 'Cloud Computing Workshop',
-      date: 'Sat, Jan 17',
-      time: '11:00 AM',
-      location: 'Lagos, Nigeria',
-      image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80',
-      isFree: true,
-      isSaved: false
+      isSaved: true,
+      subCategory: 'events'
     }
   ];
+
+  // Filter events based on active tab
+  const events = allEvents.filter(event => event.subCategory === activeTab);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -127,10 +115,85 @@ export default function GenericCategoryPage() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">{currentCategory.name}</h1>
             <p className="text-sm sm:text-base text-gray-600">
-              Discover amazing {currentCategory.name.toLowerCase()} events happening around you
+              Discover amazing {currentCategory.name.toLowerCase()} {currentCategory.hasPlaces ? 'events & places' : 'events'} happening around you
             </p>
           </div>
         </div>
+
+        {/* Events/Places Tabs - Only for categories with places */}
+        {currentCategory.hasPlaces && (
+          <div className="flex gap-2 mb-6 border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab('events')}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === 'events'
+                  ? 'border-b-2 border-cyan-500 text-cyan-500'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Events
+            </button>
+            <button
+              onClick={() => setActiveTab('places')}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === 'places'
+                  ? 'border-b-2 border-cyan-500 text-cyan-500'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Places
+            </button>
+          </div>
+        )}
+
+        {/* Religion Filter - Only for Religion & Community */}
+        {currentCategory.isReligion && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Religion:</label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setReligionFilter('all')}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  religionFilter === 'all'
+                    ? 'bg-cyan-500 text-white'
+                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setReligionFilter('Christianity')}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  religionFilter === 'Christianity'
+                    ? 'bg-cyan-500 text-white'
+                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Christianity
+              </button>
+              <button
+                onClick={() => setReligionFilter('Islam')}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  religionFilter === 'Islam'
+                    ? 'bg-cyan-500 text-white'
+                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Islam
+              </button>
+              <button
+                onClick={() => setReligionFilter('Others')}
+                className={`px-4 py-2 rounded-lg font-medium transition ${
+                  religionFilter === 'Others'
+                    ? 'bg-cyan-500 text-white'
+                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Others
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
@@ -167,7 +230,9 @@ export default function GenericCategoryPage() {
           </div>
 
           <div className="sm:ml-auto flex items-end">
-            <p className="text-sm sm:text-base text-gray-600 font-medium">{events.length} Events Available</p>
+            <p className="text-sm sm:text-base text-gray-600 font-medium">
+              {events.length} {activeTab === 'places' ? 'Places' : 'Events'} Available
+            </p>
           </div>
         </div>
 
@@ -230,6 +295,13 @@ export default function GenericCategoryPage() {
             </div>
           ))}
         </div>
+
+        {/* Empty State */}
+        {events.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-gray-500 text-lg">No {activeTab} available in this category yet.</p>
+          </div>
+        )}
       </main>
 
       <Footer />

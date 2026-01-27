@@ -11,7 +11,9 @@ export default function GenericCategory() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [savedEventIds, setSavedEventIds] = useState([3]); // Event 3 is saved by default
+  const [savedEventIds, setSavedEventIds] = useState([3]);
+  const [activeTab, setActiveTab] = useState('events'); // events or places
+  const [religionFilter, setReligionFilter] = useState('all');
 
   const user = {
     name: 'Saleem',
@@ -19,14 +21,12 @@ export default function GenericCategory() {
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User'
   };
 
-  // Click handler to navigate to event details
   const handleEventClick = (eventId) => {
     navigate(`/event/${eventId}`);
   };
 
-  // Save/unsave event handler
   const handleSaveClick = (e, eventId) => {
-    e.stopPropagation(); // Prevent card click when saving
+    e.stopPropagation();
     
     if (savedEventIds.includes(eventId)) {
       setSavedEventIds(savedEventIds.filter(id => id !== eventId));
@@ -38,25 +38,25 @@ export default function GenericCategory() {
 
   // Category mapping
   const categoryMap = {
-    'business-tech': { name: 'Business & Tech', icon: Briefcase, color: 'bg-blue-500' },
-    'art-culture': { name: 'Art & Culture', icon: Palette, color: 'bg-purple-500' },
-    'food-dining': { name: 'Food & Dining', icon: UtensilsCrossed, color: 'bg-orange-500' },
-    'sport-fitness': { name: 'Sport & Fitness', icon: Dumbbell, color: 'bg-green-500' },
-    'education-workshop': { name: 'Education & Workshop', icon: GraduationCap, color: 'bg-indigo-500' },
-    'religion-community': { name: 'Religion & Community', icon: HeartIcon, color: 'bg-pink-500' },
-    'nightlife-parties': { name: 'Nightlife & Parties', icon: Music, color: 'bg-purple-600' },
-    'family-kids-fun': { name: 'Family & Kids Fun', icon: Baby, color: 'bg-yellow-500' },
-    'networking-social': { name: 'Networking & Social', icon: Users, color: 'bg-teal-500' },
-    'gaming-esport': { name: 'Gaming & Esport', icon: Gamepad2, color: 'bg-red-500' },
-    'music-concerts': { name: 'Music & Concerts', icon: Mic2, color: 'bg-pink-600' },
-    'cinema-show': { name: 'Cinema & Show', icon: Tv, color: 'bg-gray-700' }
+    'business-tech': { name: 'Business & Tech', icon: Briefcase, color: 'bg-blue-500', hasPlaces: false, isReligion: false },
+    'art-culture': { name: 'Art & Culture', icon: Palette, color: 'bg-purple-500', hasPlaces: true, isReligion: false },
+    'food-dining': { name: 'Food & Dining', icon: UtensilsCrossed, color: 'bg-orange-500', hasPlaces: true, isReligion: false },
+    'sport-fitness': { name: 'Sport & Fitness', icon: Dumbbell, color: 'bg-green-500', hasPlaces: true, isReligion: false },
+    'education-workshop': { name: 'Education & Workshop', icon: GraduationCap, color: 'bg-indigo-500', hasPlaces: false, isReligion: false },
+    'religion-community': { name: 'Religion & Community', icon: HeartIcon, color: 'bg-pink-500', hasPlaces: false, isReligion: true },
+    'nightlife-parties': { name: 'Nightlife & Parties', icon: Music, color: 'bg-purple-600', hasPlaces: true, isReligion: false },
+    'family-kids-fun': { name: 'Family & Kids Fun', icon: Baby, color: 'bg-yellow-500', hasPlaces: true, isReligion: false },
+    'networking-social': { name: 'Networking & Social', icon: Users, color: 'bg-teal-500', hasPlaces: false, isReligion: false },
+    'gaming-esport': { name: 'Gaming & Esport', icon: Gamepad2, color: 'bg-red-500', hasPlaces: false, isReligion: false },
+    'music-concerts': { name: 'Music & Concerts', icon: Mic2, color: 'bg-pink-600', hasPlaces: false, isReligion: false },
+    'cinema-show': { name: 'Cinema & Show', icon: Tv, color: 'bg-gray-700', hasPlaces: false, isReligion: false }
   };
 
   const currentCategory = categoryMap[slug] || categoryMap['business-tech'];
   const CategoryIcon = currentCategory.icon;
 
-  // Mock events - in real app, fetch from Firebase filtered by category
-  const events = [
+  // Mock events
+  const allEvents = [
     {
       id: 1,
       title: 'Tech Startup Pitch Night',
@@ -65,7 +65,8 @@ export default function GenericCategory() {
       location: 'Lagos, Nigeria',
       image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80',
       isFree: false,
-      price: '₦5,000'
+      price: '₦5,000',
+      subCategory: 'events'
     },
     {
       id: 2,
@@ -74,51 +75,37 @@ export default function GenericCategory() {
       time: '3:00 PM',
       location: 'Abuja, Nigeria',
       image: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?w=800&q=80',
-      isFree: true
+      isFree: true,
+      subCategory: 'events'
     },
     {
       id: 3,
+      title: 'The Creative Hub',
+      date: 'Always Open',
+      time: '9:00 AM - 6:00 PM',
+      location: 'Lagos, Nigeria',
+      image: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80',
+      isFree: false,
+      price: '₦2,000',
+      subCategory: 'places'
+    },
+    {
+      id: 4,
       title: 'AI & Machine Learning Bootcamp',
       date: 'Wed, Jan 14',
       time: '10:00 AM',
       location: 'Lagos, Nigeria',
       image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&q=80',
       isFree: false,
-      price: '₦15,000'
-    },
-    {
-      id: 4,
-      title: 'Blockchain & Web3 Summit',
-      date: 'Thu, Jan 15',
-      time: '2:00 PM',
-      location: 'Lagos, Nigeria',
-      image: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 5,
-      title: 'Product Design Masterclass',
-      date: 'Fri, Jan 16',
-      time: '5:00 PM',
-      location: 'Ibadan, Nigeria',
-      image: 'https://images.unsplash.com/photo-1561070791-2526d30994b5?w=800&q=80',
-      isFree: false,
-      price: '₦8,000'
-    },
-    {
-      id: 6,
-      title: 'Cloud Computing Workshop',
-      date: 'Sat, Jan 17',
-      time: '11:00 AM',
-      location: 'Lagos, Nigeria',
-      image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&q=80',
-      isFree: true
+      price: '₦15,000',
+      subCategory: 'events'
     }
   ];
 
+  const events = allEvents.filter(event => event.subCategory === activeTab);
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* User Sidebar */}
       <UserSidebar 
         activeTab="category" 
         user={user}
@@ -130,7 +117,6 @@ export default function GenericCategory() {
         {/* Top Bar */}
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sticky top-0 z-30">
           <div className="flex items-center justify-between">
-            {/* Hamburger Menu - Mobile */}
             <button 
               onClick={() => setSidebarOpen(true)}
               className="lg:hidden p-2 hover:bg-gray-100 rounded-lg mr-2"
@@ -155,12 +141,12 @@ export default function GenericCategory() {
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
               <Link to="/settings">
-  <img 
-    src={user.avatar} 
-    alt={user.name} 
-    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition" 
-  />
-</Link>
+                <img 
+                  src={user.avatar} 
+                  alt={user.name} 
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition" 
+                />
+              </Link>
             </div>
           </div>
         </header>
@@ -175,10 +161,85 @@ export default function GenericCategory() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">{currentCategory.name}</h1>
               <p className="text-sm sm:text-base text-gray-600">
-                Discover amazing {currentCategory.name.toLowerCase()} events happening around you
+                Discover amazing {currentCategory.name.toLowerCase()} {currentCategory.hasPlaces ? 'events & places' : 'events'} happening around you
               </p>
             </div>
           </div>
+
+          {/* Events/Places Tabs */}
+          {currentCategory.hasPlaces && (
+            <div className="flex gap-2 mb-6 border-b border-gray-200">
+              <button
+                onClick={() => setActiveTab('events')}
+                className={`px-6 py-3 font-medium transition-colors ${
+                  activeTab === 'events'
+                    ? 'border-b-2 border-cyan-500 text-cyan-500'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Events
+              </button>
+              <button
+                onClick={() => setActiveTab('places')}
+                className={`px-6 py-3 font-medium transition-colors ${
+                  activeTab === 'places'
+                    ? 'border-b-2 border-cyan-500 text-cyan-500'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Places
+              </button>
+            </div>
+          )}
+
+          {/* Religion Filter */}
+          {currentCategory.isReligion && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Religion:</label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setReligionFilter('all')}
+                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                    religionFilter === 'all'
+                      ? 'bg-cyan-500 text-white'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setReligionFilter('Christianity')}
+                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                    religionFilter === 'Christianity'
+                      ? 'bg-cyan-500 text-white'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Christianity
+                </button>
+                <button
+                  onClick={() => setReligionFilter('Islam')}
+                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                    religionFilter === 'Islam'
+                      ? 'bg-cyan-500 text-white'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Islam
+                </button>
+                <button
+                  onClick={() => setReligionFilter('Others')}
+                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                    religionFilter === 'Others'
+                      ? 'bg-cyan-500 text-white'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Others
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
@@ -215,7 +276,9 @@ export default function GenericCategory() {
             </div>
 
             <div className="sm:ml-auto flex items-end">
-              <p className="text-sm sm:text-base text-gray-600 font-medium">{events.length} Events Available</p>
+              <p className="text-sm sm:text-base text-gray-600 font-medium">
+                {events.length} {activeTab === 'places' ? 'Places' : 'Events'} Available
+              </p>
             </div>
           </div>
 
@@ -234,14 +297,12 @@ export default function GenericCategory() {
                     className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                   />
                   
-                  {/* Category Badge */}
                   <div className="absolute top-3 left-3">
                     <span className={`${currentCategory.color} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
                       #{currentCategory.name}
                     </span>
                   </div>
 
-                  {/* Save Icon */}
                   <button
                     onClick={(e) => handleSaveClick(e, event.id)}
                     className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
@@ -252,7 +313,6 @@ export default function GenericCategory() {
                     />
                   </button>
 
-                  {/* Price Badge */}
                   <div className="absolute bottom-3 right-3">
                     <span className={`${event.isFree ? 'bg-emerald-500' : 'bg-blue-500'} text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold`}>
                       {event.isFree ? 'Free' : event.price}
@@ -278,6 +338,13 @@ export default function GenericCategory() {
               </div>
             ))}
           </div>
+
+          {/* Empty State */}
+          {events.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-gray-500 text-lg">No {activeTab} available in this category yet.</p>
+            </div>
+          )}
         </div>
       </main>
     </div>

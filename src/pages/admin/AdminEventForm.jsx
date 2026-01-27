@@ -9,19 +9,25 @@ export default function AdminEventForm() {
   const isEdit = Boolean(id);
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [universities, setUniversities] = useState([]); // Dynamic universities
+  const [universities, setUniversities] = useState([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     category: '',
-    eventType: 'regular', // regular, campus, webinar
+    subCategory: 'events',
+    religionType: '',
+    eventType: 'regular',
     date: '',
     time: '',
+    // For places
+    placeAvailability: 'Always Open', // Always Open, Weekends Only, Mon-Fri, Custom
+    openingTime: '',
+    closingTime: '',
     location: '',
     address: '',
-    university: '', // for campus events
-    platform: '', // for webinars
-    platformLink: '', // for webinars
+    university: '',
+    platform: '',
+    platformLink: '',
     price: '',
     isFree: false,
     capacity: '',
@@ -31,21 +37,17 @@ export default function AdminEventForm() {
     isTrending: false
   });
 
-  // Load universities when component mounts
   useEffect(() => {
     loadUniversities();
   }, []);
 
-  // Load universities from localStorage (will be Firebase later)
   const loadUniversities = () => {
     try {
       const stored = localStorage.getItem('universities');
       if (stored) {
         const universitiesData = JSON.parse(stored);
         setUniversities(universitiesData);
-        console.log('✅ Loaded universities:', universitiesData.length);
       } else {
-        // Fallback to default universities if none exist
         const defaultUniversities = [
           { id: 1, name: 'University of Lagos (Unilag)', location: 'Lagos, Nigeria' },
           { id: 2, name: 'King Saud University (KSU)', location: 'Riyadh, Saudi Arabia' },
@@ -55,7 +57,6 @@ export default function AdminEventForm() {
           { id: 6, name: 'University of Ilorin (Unilorin)', location: 'Ilorin, Nigeria' }
         ];
         setUniversities(defaultUniversities);
-        console.log('ℹ️ Using default universities');
       }
     } catch (error) {
       console.error('Error loading universities:', error);
@@ -76,6 +77,14 @@ export default function AdminEventForm() {
     'Gaming & Esport',
     'Music & Concerts',
     'Cinema & Show'
+  ];
+
+  const categoriesWithPlaces = [
+    'Family & Kids Fun',
+    'Food & Dining',
+    'Sport & Fitness',
+    'Art & Culture',
+    'Nightlife & Parties'
   ];
 
   const platforms = [
@@ -104,12 +113,15 @@ export default function AdminEventForm() {
     navigate('/admin/events');
   };
 
+  const showSubCategory = categoriesWithPlaces.includes(formData.category);
+  const showReligionType = formData.category === 'Religion & Community';
+  const isPlace = formData.subCategory === 'places';
+
   return (
     <div className="flex h-screen bg-gray-50">
       <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="flex-1 overflow-auto">
-        {/* Top Bar */}
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sticky top-0 z-30">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -133,7 +145,6 @@ export default function AdminEventForm() {
           </div>
         </header>
 
-        {/* Form */}
         <div className="p-4 sm:p-6 lg:p-8">
           <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
@@ -145,7 +156,7 @@ export default function AdminEventForm() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Event Title *
+                      {isPlace ? 'Place Name' : 'Event Title'} *
                     </label>
                     <input
                       type="text"
@@ -154,7 +165,7 @@ export default function AdminEventForm() {
                       onChange={handleChange}
                       required
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder="Enter event title"
+                      placeholder={isPlace ? 'e.g. The Creative Hub' : 'Enter event title'}
                     />
                   </div>
 
@@ -169,27 +180,29 @@ export default function AdminEventForm() {
                       required
                       rows={4}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder="Describe your event"
+                      placeholder={isPlace ? 'Describe the place and what visitors can expect' : 'Describe your event'}
                     />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Event Type *
-                      </label>
-                      <select
-                        name="eventType"
-                        value={formData.eventType}
-                        onChange={handleChange}
-                        required
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      >
-                        <option value="regular">Regular Event</option>
-                        <option value="campus">Campus Event</option>
-                        <option value="webinar">Webinar/Virtual</option>
-                      </select>
-                    </div>
+                    {!isPlace && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Event Type *
+                        </label>
+                        <select
+                          name="eventType"
+                          value={formData.eventType}
+                          onChange={handleChange}
+                          required
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        >
+                          <option value="regular">Regular Event</option>
+                          <option value="campus">Campus Event</option>
+                          <option value="webinar">Webinar/Virtual</option>
+                        </select>
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -210,40 +223,151 @@ export default function AdminEventForm() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Sub-Category */}
+                  {showSubCategory && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Date *
+                        Sub-Category *
                       </label>
-                      <input
-                        type="date"
-                        name="date"
-                        value={formData.date}
+                      <select
+                        name="subCategory"
+                        value={formData.subCategory}
                         onChange={handleChange}
                         required
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      />
+                      >
+                        <option value="events">Events</option>
+                        <option value="places">Places</option>
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Choose "Events" for time-based activities or "Places" for venues/spots to visit
+                      </p>
                     </div>
+                  )}
 
+                  {/* Religion Type */}
+                  {showReligionType && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Time *
+                        Religion Type *
                       </label>
-                      <input
-                        type="time"
-                        name="time"
-                        value={formData.time}
+                      <select
+                        name="religionType"
+                        value={formData.religionType}
                         onChange={handleChange}
                         required
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      />
+                      >
+                        <option value="">Select religion type</option>
+                        <option value="Christianity">Christianity</option>
+                        <option value="Islam">Islam</option>
+                        <option value="Others">Others</option>
+                      </select>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              {/* Campus Event Fields - DYNAMIC UNIVERSITIES */}
-              {formData.eventType === 'campus' && (
+              {/* Date & Time - Different for Events vs Places */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  {isPlace ? 'Availability & Hours' : 'Date & Time'}
+                </h3>
+                
+                <div className="space-y-4">
+                  {isPlace ? (
+                    // PLACES: Availability + Time Range
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Availability *
+                        </label>
+                        <select
+                          name="placeAvailability"
+                          value={formData.placeAvailability}
+                          onChange={handleChange}
+                          required
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        >
+                          <option value="Always Open">Always Open (Daily)</option>
+                          <option value="Weekends Only">Weekends Only (Sat-Sun)</option>
+                          <option value="Mon-Fri">Mon-Fri (Weekdays)</option>
+                          <option value="Mon-Sat">Mon-Sat</option>
+                          <option value="Weekdays">Weekdays (Mon-Thu)</option>
+                          <option value="Custom">Custom Schedule</option>
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Select when this place is open to visitors
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Opening Time *
+                          </label>
+                          <input
+                            type="time"
+                            name="openingTime"
+                            value={formData.openingTime}
+                            onChange={handleChange}
+                            required
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Closing Time *
+                          </label>
+                          <input
+                            type="time"
+                            name="closingTime"
+                            value={formData.closingTime}
+                            onChange={handleChange}
+                            required
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    // EVENTS: Single Date + Time
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Date *
+                        </label>
+                        <input
+                          type="date"
+                          name="date"
+                          value={formData.date}
+                          onChange={handleChange}
+                          required
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Time *
+                        </label>
+                        <input
+                          type="time"
+                          name="time"
+                          value={formData.time}
+                          onChange={handleChange}
+                          required
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Campus Event Fields */}
+              {formData.eventType === 'campus' && !isPlace && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Campus Event Details</h3>
                   <div>
@@ -264,20 +388,12 @@ export default function AdminEventForm() {
                         </option>
                       ))}
                     </select>
-                    {universities.length === 0 && (
-                      <p className="mt-2 text-sm text-orange-600">
-                        ⚠️ No universities available. Please add universities in Admin → Universities first.
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-gray-500">
-                      Universities are loaded from Admin → Universities
-                    </p>
                   </div>
                 </div>
               )}
 
               {/* Webinar Event Fields */}
-              {formData.eventType === 'webinar' && (
+              {formData.eventType === 'webinar' && !isPlace && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Webinar Details</h3>
                   <div className="space-y-4">
@@ -311,13 +427,12 @@ export default function AdminEventForm() {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                         placeholder="https://zoom.us/j/123456789"
                       />
-                      <p className="mt-1 text-xs text-gray-500">Link will be shared with registered attendees</p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Location (for regular and campus events) */}
+              {/* Location (for regular, campus events, and places) */}
               {formData.eventType !== 'webinar' && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Location</h3>
@@ -369,14 +484,14 @@ export default function AdminEventForm() {
                       className="w-4 h-4 text-cyan-500 border-gray-300 rounded focus:ring-cyan-400"
                     />
                     <label className="text-sm font-medium text-gray-700">
-                      This is a free event
+                      {isPlace ? 'Free entry' : 'This is a free event'}
                     </label>
                   </div>
 
                   {!formData.isFree && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Price (₦)
+                        {isPlace ? 'Entry Fee (₦)' : 'Price (₦)'}
                       </label>
                       <input
                         type="number"
@@ -391,7 +506,7 @@ export default function AdminEventForm() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Capacity
+                      {isPlace ? 'Capacity (max visitors at once)' : 'Capacity'}
                     </label>
                     <input
                       type="number"
@@ -399,7 +514,7 @@ export default function AdminEventForm() {
                       value={formData.capacity}
                       onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder="Maximum attendees"
+                      placeholder={isPlace ? 'Maximum visitors at once' : 'Maximum attendees'}
                     />
                   </div>
                 </div>
@@ -456,10 +571,10 @@ export default function AdminEventForm() {
                         className="w-4 h-4 text-cyan-500 border-gray-300 rounded focus:ring-cyan-400"
                       />
                       <label className="text-sm font-medium text-gray-700">
-                        Featured Event
+                        Featured {isPlace ? 'Place' : 'Event'}
                       </label>
                     </div>
-                    <p className="text-xs text-gray-500 ml-6">Show this event in featured section on homepage</p>
+                    <p className="text-xs text-gray-500 ml-6">Show in featured section on homepage</p>
 
                     <div className="flex items-center gap-2">
                       <input
@@ -473,7 +588,7 @@ export default function AdminEventForm() {
                         Trending This Week
                       </label>
                     </div>
-                    <p className="text-xs text-gray-500 ml-6">Show this event in trending section</p>
+                    <p className="text-xs text-gray-500 ml-6">Show in trending section</p>
                   </div>
                 </div>
               </div>
@@ -485,7 +600,7 @@ export default function AdminEventForm() {
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition font-medium"
                 >
                   <Save size={20} />
-                  <span>{isEdit ? 'Update Event' : 'Create Event'}</span>
+                  <span>{isEdit ? 'Update' : 'Create'} {isPlace ? 'Place' : 'Event'}</span>
                 </button>
                 <button
                   type="button"
