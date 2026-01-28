@@ -55,7 +55,7 @@ const Footer = () => {
                 <h3 className="font-bold text-lg mb-4">Company</h3>
                 <ul className="space-y-2 text-sm text-white/90">
                   <li><Link to="/about">About OutingStation</Link></li>
-                  <li><Link to="/how-it-works">How It Works</Link></li>
+                  <li><Link to="/about">How It Works</Link></li>
                   <li><Link to="/contact">Contact Us</Link></li>
                   <li><Link to="/faqs">FAQS</Link></li>
                 </ul>

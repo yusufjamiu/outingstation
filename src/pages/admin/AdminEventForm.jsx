@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Menu, Save, X } from 'lucide-react';
+import { Menu, Save, X, Plus, Trash2 } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -13,13 +13,13 @@ export default function AdminEventForm() {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    category: '',
+    categories: [], // Changed to array for multiple categories
     subCategory: 'events',
     religionType: '',
     eventType: 'regular',
     
     // Event Duration
-    eventDuration: 'single', // single, multi, recurring
+    eventDuration: 'single',
     
     // Single Day Event
     date: '',
@@ -32,8 +32,8 @@ export default function AdminEventForm() {
     dailyEndTime: '',
     
     // Recurring Event
-    recurringPattern: 'weekly', // daily, weekly, weekends
-    recurringDay: 'Monday', // for weekly
+    recurringPattern: 'weekly',
+    recurringDay: 'Monday',
     recurringTime: '',
     
     // For places
@@ -43,6 +43,13 @@ export default function AdminEventForm() {
     
     location: '',
     address: '',
+    mapLocation: '', // Google Maps link or coordinates
+    
+    // Organizer Info (Optional)
+    organizerName: '',
+    organizerPhone: '',
+    organizerEmail: '',
+    
     university: '',
     platform: '',
     platformLink: '',
@@ -82,7 +89,7 @@ export default function AdminEventForm() {
     }
   };
 
-  const categories = [
+  const allCategories = [
     'Business & Tech',
     'Art & Culture',
     'Food & Dining',
@@ -123,16 +130,37 @@ export default function AdminEventForm() {
     }));
   };
 
+  // Handle multiple category selection
+  const handleCategoryToggle = (category) => {
+    setFormData(prev => {
+      const categories = prev.categories.includes(category)
+        ? prev.categories.filter(c => c !== category)
+        : [...prev.categories, category];
+      return { ...prev, categories };
+    });
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    // Validate at least one category is selected
+    if (formData.categories.length === 0) {
+      alert('Please select at least one category');
+      return;
+    }
+    
     // TODO: Save to Firebase
     console.log('Saving event:', formData);
     alert(isEdit ? 'Event updated successfully!' : 'Event created successfully!');
     navigate('/admin/events');
   };
 
-  const showSubCategory = categoriesWithPlaces.includes(formData.category);
-  const showReligionType = formData.category === 'Religion & Community';
+  // Check if any selected category has places option
+  const showSubCategory = formData.categories.some(cat => categoriesWithPlaces.includes(cat));
+  
+  // Check if Religion & Community is selected
+  const showReligionType = formData.categories.includes('Religion & Community');
+  
   const isPlace = formData.subCategory === 'places';
 
   return (
@@ -202,43 +230,65 @@ export default function AdminEventForm() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {!isPlace && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Event Type *
-                        </label>
-                        <select
-                          name="eventType"
-                          value={formData.eventType}
-                          onChange={handleChange}
-                          required
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                        >
-                          <option value="regular">Regular Event</option>
-                          <option value="campus">Campus Event</option>
-                          <option value="webinar">Webinar/Virtual</option>
-                        </select>
-                      </div>
-                    )}
-
+                  {!isPlace && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Category *
+                        Event Type *
                       </label>
                       <select
-                        name="category"
-                        value={formData.category}
+                        name="eventType"
+                        value={formData.eventType}
                         onChange={handleChange}
                         required
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                       >
-                        <option value="">Select category</option>
-                        {categories.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
+                        <option value="regular">Regular Event</option>
+                        <option value="campus">Campus Event</option>
+                        <option value="webinar">Webinar/Virtual</option>
                       </select>
                     </div>
+                  )}
+
+                  {/* Multiple Category Selection */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Categories * (Select one or more)
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-4 border border-gray-300 rounded-lg max-h-60 overflow-y-auto">
+                      {allCategories.map(category => (
+                        <label
+                          key={category}
+                          className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.categories.includes(category)}
+                            onChange={() => handleCategoryToggle(category)}
+                            className="w-4 h-4 text-cyan-500 border-gray-300 rounded focus:ring-cyan-400"
+                          />
+                          <span className="text-sm text-gray-700">{category}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {formData.categories.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {formData.categories.map(cat => (
+                          <span
+                            key={cat}
+                            className="inline-flex items-center gap-1 px-3 py-1 bg-cyan-100 text-cyan-700 rounded-full text-sm"
+                          >
+                            {cat}
+                            <button
+                              type="button"
+                              onClick={() => handleCategoryToggle(cat)}
+                              className="hover:text-cyan-900"
+                            >
+                              <X size={14} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Sub-Category */}
@@ -606,6 +656,62 @@ export default function AdminEventForm() {
                 </div>
               )}
 
+              {/* Organizer Information (Optional) */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Organizer Information <span className="text-sm font-normal text-gray-500">(Optional)</span>
+                </h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Organizer Name
+                    </label>
+                    <input
+                      type="text"
+                      name="organizerName"
+                      value={formData.organizerName}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                      placeholder="Event organizer or company name"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Organizer Phone
+                      </label>
+                      <input
+                        type="tel"
+                        name="organizerPhone"
+                        value={formData.organizerPhone}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        placeholder="+234 800 000 0000"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Organizer Email
+                      </label>
+                      <input
+                        type="email"
+                        name="organizerEmail"
+                        value={formData.organizerEmail}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        placeholder="organizer@example.com"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Contact information for attendees to reach the organizer
+                  </p>
+                </div>
+              </div>
+
               {/* Location */}
               {formData.eventType !== 'webinar' && (
                 <div>
@@ -640,6 +746,23 @@ export default function AdminEventForm() {
                         placeholder="Full venue address"
                       />
                     </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Map Location <span className="text-sm font-normal text-gray-500">(Optional)</span>
+                      </label>
+                      <input
+                        type="url"
+                        name="mapLocation"
+                        value={formData.mapLocation}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        placeholder="Google Maps link or coordinates (e.g. https://maps.google.com/...)"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Paste Google Maps share link or coordinates for precise location
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -661,6 +784,7 @@ export default function AdminEventForm() {
                       {isPlace ? 'Free entry' : 'This is a free event'}
                     </label>
                   </div>
+                  
 
                   {!formData.isFree && (
                     <div>
@@ -676,7 +800,26 @@ export default function AdminEventForm() {
                         placeholder="0"
                       />
                     </div>
+                    
                   )}
+
+                  {/* Ticket Link (Optional) */}
+<div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Ticket Purchase Link <span className="text-sm font-normal text-gray-500">(Optional)</span>
+  </label>
+  <input
+    type="url"
+    name="ticketLink"
+    value={formData.ticketLink}
+    onChange={handleChange}
+    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+    placeholder="https://eventbrite.com/your-event or ticket vendor link"
+  />
+  <p className="mt-1 text-xs text-gray-500">
+    Add link to external ticketing platform (Eventbrite, Ticket Rocket, etc.)
+  </p>
+</div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">

@@ -18,6 +18,12 @@ import CategoryBrowsePage from './pages/categories/CategoryBrowsePage';
 import CampusEventsPage from './pages/categories/CampusEventsPage';
 import UniversityEventsPage from "./pages/categories/UniversityEventsPage";
 import WebinarEventsPage from './pages/categories/WebinarEventsPage';
+import ContactUs from './pages/ContactUs';
+import TermsOfService from './pages/TermsOfService';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import CookiePolicy from './pages/CookiePolicy';
+import FAQ from './pages/FAQ';
+import AboutUs from './pages/AboutUs';
 
 // User Dashboard Pages
 import UserDashboard from './pages/dashboard/UserDashboard';
@@ -58,6 +64,12 @@ function App() {
             <Route path="/webinar-events" element={<WebinarEventsPage />} />
             <Route path="/campus" element={<UniversityEventsPage />} />
             <Route path="/event/:id" element={<EventDetails />} />
+            <Route path="/contact" element={<ContactUs />} />
+            <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/cookies" element={<CookiePolicy />} />
+            <Route path="/faqs" element={<FAQ />} />
+            <Route path="/about" element={<AboutUs />} />
             
             {/* User Dashboard Routes (for logged-in users) */}
             <Route path="/dashboard" element={<UserDashboard />} />
