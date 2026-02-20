@@ -8,7 +8,7 @@ import UniversitySelector from '../components/UniversitySelector';
 import WebinarSection from '../components/WebinarSection';
 import HowItWorks from '../components/HowItWorks';
 import campusImage from '../assets/campus.jpg';
-import studentsImage from '../assets/Students.jpg';
+import studentsImage from '../assets/students.jpg';
 import concertImage from '../assets/concertImage.jpg';
 import heroImage3 from '../assets/heroImage3.jpg';
 import heroImage2 from '../assets/heroImage2.jpg';
