@@ -1,12 +1,114 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Bell, Heart } from 'lucide-react';
+import { Heart, Calendar, Clock, MapPin } from 'lucide-react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../../firebase';
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 
 export default function WebinarEventsPage() {
   const navigate = useNavigate();
-  const currentUser = null; // Not logged in
+  const currentUser = null;
+
+  const [allWebinars, setAllWebinars] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Filter states
+  const [dateFilter, setDateFilter] = useState('any');
+  const [topicFilter, setTopicFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  useEffect(() => {
+    loadWebinars();
+  }, []);
+
+  const loadWebinars = async () => {
+    try {
+      setLoading(true);
+      const snapshot = await getDocs(collection(db, 'events'));
+      
+      const eventsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Filter webinar events only
+      const webinarEvents = eventsData.filter(e => 
+        e.eventType === 'webinar' && e.status === 'published'
+      );
+
+      setAllWebinars(webinarEvents);
+    } catch (err) {
+      console.error('Error loading webinars:', err);
+    }
+    setLoading(false);
+  };
+
+  // Apply all filters
+  const getFilteredWebinars = () => {
+    let filtered = [...allWebinars];
+
+    // Date filter
+    if (dateFilter !== 'any') {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      filtered = filtered.filter(e => {
+        if (!e.date) return false;
+        const eventDate = e.date.toDate ? e.date.toDate() : new Date(e.date);
+        
+        switch (dateFilter) {
+          case 'today':
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            return eventDate >= today && eventDate < tomorrow;
+          
+          case 'this-week':
+            const weekEnd = new Date(today);
+            weekEnd.setDate(weekEnd.getDate() + 7);
+            return eventDate >= today && eventDate < weekEnd;
+          
+          case 'this-month':
+            const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            return eventDate >= today && eventDate <= monthEnd;
+          
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Topic filter (by category)
+    if (topicFilter !== 'all') {
+      filtered = filtered.filter(e => {
+        const category = e.category?.toLowerCase() || '';
+        
+        switch (topicFilter) {
+          case 'technology':
+            return category.includes('tech') || category.includes('gaming');
+          case 'business':
+            return category.includes('business') || category.includes('networking');
+          case 'education':
+            return category.includes('education');
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Status filter (free/paid)
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'free') {
+        filtered = filtered.filter(e => e.isFree === true);
+      } else if (statusFilter === 'paid') {
+        filtered = filtered.filter(e => e.isFree === false);
+      }
+    }
+
+    return filtered;
+  };
+
+  const webinars = getFilteredWebinars();
 
   const handleSaveClick = (e, webinarId) => {
     e.stopPropagation();
@@ -14,75 +116,22 @@ export default function WebinarEventsPage() {
       navigate('/login');
       return;
     }
-    console.log('Saved webinar:', webinarId);
   };
 
   const handleEventClick = (webinarId) => {
     navigate(`/event/${webinarId}`);
   };
 
-  const webinars = [
-    {
-      id: 1,
-      title: 'Python/Java Basics Workshop',
-      category: 'Online',
-      date: 'Mon, Jan 12',
-      time: '3:00 PM',
-      platform: 'Google Meet',
-      image: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 2,
-      title: 'Tech Realm While Using AI',
-      category: 'Online',
-      date: 'Tue, Jan 12',
-      time: '3:00 PM',
-      platform: 'Twitter Space',
-      image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 3,
-      title: 'Remote Leadership Summit',
-      category: 'Live',
-      date: 'Fri, Jan 12',
-      time: '3:00 PM',
-      platform: 'Zoom',
-      image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 4,
-      title: '2026 Job Hunting Navigation',
-      category: 'Live',
-      date: 'Sat, Jan 13',
-      time: '2:00 PM',
-      platform: 'Google Meet',
-      image: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 5,
-      title: 'PhD Scholarship Application',
-      category: 'Online',
-      date: 'Sun, Jan 14',
-      time: '4:00 PM',
-      platform: 'Zoom',
-      image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 6,
-      title: 'Freshmen Mega Orientation',
-      category: 'Online',
-      date: 'Mon, Jan 15',
-      time: '10:00 AM',
-      platform: 'Microsoft Teams',
-      image: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&q=80',
-      isFree: true
+  const getDate = (event) => {
+    if (event.date) {
+      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
+      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     }
-  ];
+    return 'TBD';
+  };
+
+  const getTime = (event) => event.time || 'TBD';
+  const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&q=80';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -92,7 +141,7 @@ export default function WebinarEventsPage() {
         <div className="mb-6 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Webinar & Virtual Events</h1>
           <p className="text-sm sm:text-base text-gray-600">
-            Discover online workshop, conferences, and live sessions. Connect with experts and learn new things from various parts in the world
+            Discover online workshops, conferences, and live sessions. Connect with experts and learn new things from various parts of the world
           </p>
         </div>
 
@@ -100,30 +149,42 @@ export default function WebinarEventsPage() {
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
           <div className="flex-1 sm:flex-initial">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Date:</label>
-            <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
-              <option>Any</option>
-              <option>Today</option>
-              <option>This Week</option>
-              <option>This Month</option>
+            <select 
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            >
+              <option value="any">Any</option>
+              <option value="today">Today</option>
+              <option value="this-week">This Week</option>
+              <option value="this-month">This Month</option>
             </select>
           </div>
 
           <div className="flex-1 sm:flex-initial">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Topic:</label>
-            <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
-              <option>All</option>
-              <option>Technology</option>
-              <option>Business</option>
-              <option>Education</option>
+            <select 
+              value={topicFilter}
+              onChange={(e) => setTopicFilter(e.target.value)}
+              className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            >
+              <option value="all">All</option>
+              <option value="technology">Technology</option>
+              <option value="business">Business</option>
+              <option value="education">Education</option>
             </select>
           </div>
 
           <div className="flex-1 sm:flex-initial">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Status:</label>
-            <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
-              <option>All</option>
-              <option>Free</option>
-              <option>Paid</option>
+            <select 
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            >
+              <option value="all">All</option>
+              <option value="free">Free</option>
+              <option value="paid">Paid</option>
             </select>
           </div>
 
@@ -132,65 +193,94 @@ export default function WebinarEventsPage() {
           </div>
         </div>
 
-        {/* Webinars Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-          {webinars.map((webinar) => (
-            <div 
-              key={webinar.id}
-              onClick={() => handleEventClick(webinar.id)}
-              className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
-            >
-              <div className="relative h-48 sm:h-56">
-                <img 
-                  src={webinar.image} 
-                  alt={webinar.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                />
-                
-                <div className="absolute top-3 left-3">
-                  <span className={`${webinar.category === 'Live' ? 'bg-red-500' : 'bg-blue-500'} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
-                    📹 {webinar.category}
-                  </span>
-                </div>
-
-                <button 
-                  onClick={(e) => handleSaveClick(e, webinar.id)}
-                  className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
-                >
-                  <Heart size={18} className="sm:w-5 sm:h-5 text-gray-600" />
-                </button>
-
-                {webinar.isFree && (
-                  <div className="absolute bottom-3 right-3">
-                    <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
-                      Free
+        {/* Loading State */}
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
+          </div>
+        ) : webinars.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
+            {webinars.map((webinar) => (
+              <div 
+                key={webinar.id}
+                onClick={() => handleEventClick(webinar.id)}
+                className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
+              >
+                <div className="relative h-48 sm:h-56">
+                  <img 
+                    src={getImage(webinar)} 
+                    alt={webinar.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                  />
+                  
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-purple-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-full">
+                      📹 Virtual
                     </span>
                   </div>
-                )}
-              </div>
 
-              <div className="p-4 sm:p-5">
-                <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
-                  {webinar.title}
-                </h3>
-                
-                <div className="space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
-                  <div className="flex items-center gap-2">
-                    <span>📅 {webinar.date}</span>
-                    <span>🕒 {webinar.time}</span>
+                  <button 
+                    onClick={(e) => handleSaveClick(e, webinar.id)}
+                    className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
+                  >
+                    <Heart size={18} className="sm:w-5 sm:h-5 text-gray-600" />
+                  </button>
+
+                  {webinar.isFree && (
+                    <div className="absolute bottom-3 right-3">
+                      <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
+                        Free
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 sm:p-5">
+                  <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
+                    {webinar.title}
+                  </h3>
+                  
+                  <div className="space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar size={14} />
+                      <span>{getDate(webinar)}</span>
+                      <Clock size={14} />
+                      <span>{getTime(webinar)}</span>
+                    </div>
+                    {webinar.platform && (
+                      <div className="flex items-center gap-2">
+                        <MapPin size={14} />
+                        <span>{webinar.platform}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-cyan-500 text-xs sm:text-sm">
+                      📍 {webinar.platform || 'Online'}
+                    </span>
+                    {webinar.platformLink && (
+                      <a 
+                        href={webinar.platformLink}
+                        onClick={(e) => e.stopPropagation()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-500 font-semibold text-xs sm:text-sm hover:underline"
+                      >
+                        Join →
+                      </a>
+                    )}
                   </div>
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-cyan-500 text-xs sm:text-sm">📍 {webinar.platform}</span>
-                  <button className="text-cyan-500 font-semibold text-xs sm:text-sm hover:underline">
-                    View →
-                  </button>
-                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-gray-500 text-lg">No webinars available with current filters.</p>
+            <p className="text-gray-400 text-sm mt-2">Try adjusting your filters or check back later for new virtual events!</p>
+          </div>
+        )}
       </main>
 
       <Footer />

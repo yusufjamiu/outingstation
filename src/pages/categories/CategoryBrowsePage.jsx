@@ -127,18 +127,18 @@ export default function CategoryBrowsePage() {
               <Link 
                 key={index}
                 to={category.link}
-                className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 hover:shadow-lg hover:border-primary transition group"
+                className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 hover:shadow-lg hover:border-cyan-400 transition group"
               >
                 <div className={`w-14 h-14 sm:w-16 sm:h-16 ${category.color} rounded-full flex items-center justify-center mb-4 sm:mb-6`}>
                   <Icon size={28} className="sm:w-8 sm:h-8" />
                 </div>
-                <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-2 sm:mb-3 group-hover:text-primary transition">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-2 sm:mb-3 group-hover:text-cyan-500 transition">
                   {category.title}
                 </h3>
                 <p className="text-gray-600 text-sm sm:text-base mb-4 sm:mb-6 line-clamp-2">
                   {category.description}
                 </p>
-                <button className="text-primary text-sm sm:text-base font-semibold flex items-center gap-2 group-hover:gap-3 transition-all">
+                <button className="text-cyan-500 text-sm sm:text-base font-semibold flex items-center gap-2 group-hover:gap-3 transition-all">
                   View All Events →
                 </button>
               </Link>

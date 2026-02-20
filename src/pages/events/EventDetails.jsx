@@ -1,434 +1,626 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Search, Bell, X, Calendar, MapPin, Share2, Heart, ChevronRight, Phone, Mail, User, ExternalLink, Ticket } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { 
+  Calendar, Clock, MapPin, DollarSign, Users, Share2, Heart, 
+  ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft, CheckCircle, Navigation
+} from 'lucide-react';
+import { doc, getDoc, collection, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { useAuth } from '../../context/AuthContext';
+import Navbar from '../../components/Navbar';
+import Footer from '../../components/Footer';
+
+const openInMaps = (event) => {
+  // Use the mapLocation field from Firebase
+  if (event.mapLocation) {
+    window.open(event.mapLocation, '_blank');
+    return;
+  }
+  
+  // Fallback: Search using address
+  const location = event.address || event.location;
+  if (!location) {
+    toast.error('No location information available');
+    return;
+  }
+  
+  const query = encodeURIComponent(location);
+  window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+};
+
+const handleRegister = (event, currentUser, navigate) => {
+  if (!currentUser) {
+    toast.error('Please login to register for this event');
+    navigate('/login');
+    return;
+  }
+  
+  // Check if event is free
+  if (event.isFree) {
+   toast.success(`Free Event - Registration Successful!\n\nThis is a FREE event. See you there!`, { 
+  icon: '🎉',
+  duration: 5000 
+});
+    return;
+  }
+  
+  // If paid and has ticket link, open it
+  if (event.ticketLink) {
+   toast((t) => (
+  <div className="flex flex-col gap-3">
+    <div>
+      <p className="font-semibold">🎟️ Ticket Required</p>
+      <p className="text-sm text-gray-600 mt-1">{event.title}</p>
+      <p className="text-sm font-semibold text-cyan-600 mt-1">
+        Price: ₦{event.price?.toLocaleString()}
+      </p>
+    </div>
+    <div className="flex gap-2">
+      <button
+        onClick={() => {
+          window.open(event.ticketLink, '_blank');
+          toast.dismiss(t.id);
+        }}
+        className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
+      >
+        Buy Tickets
+      </button>
+      <button
+        onClick={() => toast.dismiss(t.id)}
+        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+      >
+        Cancel
+      </button>
+    </div>
+  </div>
+), { duration: Infinity });
+    if (confirmBuy) {
+      window.open(event.ticketLink, '_blank');
+    }
+    return;
+  }
+  
+  // Paid event without ticket link
+  toast.success('Registration Successful!', { icon: '🎉' })
+  
+  // TODO: Future implementation:
+  // - Save registration to Firebase
+  // - Send confirmation email
+  // - Add to user's registered events list
+};
 
 export default function EventDetails() {
-  const navigate = useNavigate();
   const { id } = useParams();
-
-  const user = null; // guest for now (replace with Firebase Auth later)
+  const navigate = useNavigate();
+  const { currentUser } = useAuth();
 
   const [event, setEvent] = useState(null);
-  const [isSaved, setIsSaved] = useState(false);
+  const [similarEvents, setSimilarEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
 
-  // Simulate fetching event by ID
   useEffect(() => {
-    const mockEvent = {
-      id,
-      title: 'Tech Meet Up 2026: A Mega Circle of Genius Techies',
-      image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80',
-      
-      // Multiple categories
-      categories: ['Business & Tech', 'Networking & Social', 'Education'],
-      
-      // Event type
-      eventType: 'regular', // regular, campus, webinar
-      subCategory: 'events', // events or places
-      
-      // Event Duration - can be single, multi, or recurring
-      eventDuration: 'single', // or 'multi' or 'recurring'
-      
-      // Single day event
-      date: 'Sat, Feb 12, 2026',
-      time: '2:00 PM - 5:00 PM',
-      
-      // Multi-day event (if eventDuration is 'multi')
-      // startDate: 'Mon, Feb 15, 2026',
-      // endDate: 'Wed, Feb 17, 2026',
-      // dailyTime: '10:00 AM - 8:00 PM',
-      
-      // Recurring event (if eventDuration is 'recurring')
-      // recurringPattern: 'Every Monday',
-      // recurringTime: '6:00 PM',
-      
-      // Location
-      venue: 'TIMX Tech Hub Hall',
-      address: '0001 Main Street, Ikeja, Lagos, Nigeria',
-      city: 'Lagos, Nigeria',
-      mapLocation: 'https://maps.google.com/?q=6.4549,3.3841', // Google Maps link
-      mapPreview: 'https://images.unsplash.com/photo-1524661135-423995f22d0b?w=400&q=80',
-      
-      // Organizer info
-      organizer: {
-        name: 'Mars Techies Space',
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=MarsTechiess',
-        phone: '+234 800 123 4567',
-        email: 'info@marstechies.com'
-      },
-      
-      // Pricing
-      isFree: true,
-      price: 0,
-      capacity: 200,
-      
-      // Description
-      description: `Join us for an immersive evening dedicated to the pulse of modern technology and the people building it. In an industry that moves at breakneck speed, it's easy to get lost in documentation; this event is designed to pull us away from our screens and into a space of collaborative learning and genuine connection.`,
-      
-      highlights: [
-        {
-          title: 'Expert Insight:',
-          description: 'A featured session led by industry veterans who have scaled systems to millions of users.'
-        },
-        {
-          title: 'Interactive Demo:',
-          description: 'A live technical walkthrough of modern tools and frameworks.'
-        },
-        {
-          title: 'Community Lightning Talks:',
-          description: 'Short talks from developers sharing real-world experiences.'
-        }
-      ],
-      
-      // For webinars
-      platform: null, // 'Zoom', 'Google Meet', etc.
-      platformLink: null,
-      
-      // For campus events
-      university: null
-    };
+    loadEventDetails();
+    checkIfSaved();
+  }, [id, currentUser]);
 
-    setEvent(mockEvent);
-  }, [id]);
+  const loadEventDetails = async () => {
+    try {
+      setLoading(true);
+      
+      // Load event
+      const eventDoc = await getDoc(doc(db, 'events', id));
+      
+      if (!eventDoc.exists()) {
+        navigate('/events');
+        return;
+      }
 
-  if (!event) return null;
+      const eventData = { id: eventDoc.id, ...eventDoc.data() };
+      setEvent(eventData);
 
-  const handleSave = () => {
-    if (!user) {
-      alert('Login or enter your phone number to save this event.');
+      // Load similar events (same category)
+      const eventsSnapshot = await getDocs(collection(db, 'events'));
+      const allEvents = eventsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      const similar = allEvents
+        .filter(e => 
+          e.id !== id && 
+          e.category === eventData.category && 
+          e.status === 'published'
+        )
+        .slice(0, 3);
+
+      setSimilarEvents(similar);
+    } catch (err) {
+      console.error('Error loading event:', err);
+    }
+    setLoading(false);
+  };
+
+  const checkIfSaved = async () => {
+    if (!currentUser) {
+      setSaved(false);
       return;
     }
-    setIsSaved(!isSaved);
+
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (userDoc.exists()) {
+        const savedEvents = userDoc.data().savedEvents || [];
+        setSaved(savedEvents.includes(id));
+      }
+    } catch (err) {
+      console.error('Error checking saved status:', err);
+    }
   };
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: event.title,
-        text: `Check out this event: ${event.title}`,
-        url: window.location.href,
+  const handleSaveToggle = async () => {
+    if (!currentUser) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      
+      if (saved) {
+        await updateDoc(userRef, {
+          savedEvents: arrayRemove(id)
+        });
+        setSaved(false);
+      } else {
+        await updateDoc(userRef, {
+          savedEvents: arrayUnion(id)
+        });
+        setSaved(true);
+      }
+    } catch (err) {
+      console.error('Error toggling save:', err);
+    }
+  };
+
+  const handleShare = (platform) => {
+    const url = window.location.href;
+    const text = `Check out this event: ${event.title}`;
+    
+    const shareUrls = {
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
+      twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(text + ' ' + url)}`,
+      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`,
+      copy: url
+    };
+
+    if (platform === 'copy') {
+      navigator.clipboard.writeText(url);
+      toast.success('Link copied!', { icon: '📋' });
+    } else {
+      window.open(shareUrls[platform], '_blank');
+    }
+    
+    setShowShareMenu(false);
+  };
+
+  const getDate = (event) => {
+    if (!event) return 'TBD';
+    if (event.date) {
+      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
+      return date.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
       });
     }
+    return 'TBD';
   };
 
-  // Format date display based on event duration
-  const getDateDisplay = () => {
-    if (event.eventDuration === 'single') {
-      return event.date;
-    } else if (event.eventDuration === 'multi') {
-      return `${event.startDate} - ${event.endDate}`;
-    } else if (event.eventDuration === 'recurring') {
-      return event.recurringPattern;
-    }
+  const getTime = (event) => {
+    if (!event) return '';
+    return event.time || event.dailyStartTime || event.recurringTime || 'TBD';
   };
 
-  // Format time display
-  const getTimeDisplay = () => {
-    if (event.eventDuration === 'single') {
-      return event.time;
-    } else if (event.eventDuration === 'multi') {
-      return `Daily: ${event.dailyTime}`;
-    } else if (event.eventDuration === 'recurring') {
-      return event.recurringTime;
-    }
+  const getImage = (event) => {
+    return event?.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80';
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="flex justify-center items-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!event) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <div className="max-w-4xl mx-auto px-4 py-20 text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Event Not Found</h1>
+          <Link to="/events" className="text-cyan-500 hover:underline">
+            Back to Events
+          </Link>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sticky top-0 z-30">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <div className="flex-1 max-w-xl">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-              <input
-                type="text"
-                placeholder="Search location, event & more"
-                className="w-full pl-10 pr-4 py-2.5 bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm"
-              />
-            </div>
-          </div>
+      <Navbar />
 
-          <div className="flex items-center gap-4 ml-6">
-            <button className="p-2 hover:bg-gray-100 rounded-full relative">
-              <Bell size={20} className="text-gray-600" />
-            </button>
-            <div className="w-10 h-10 rounded-full bg-gray-200" />
-          </div>
-        </div>
-      </header>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        {/* Back Button */}
+        <button 
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition"
+        >
+          <ArrowLeft size={20} />
+          <span>Back</span>
+        </button>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Event Image */}
-            <div className="relative rounded-2xl overflow-hidden h-80">
-              <img src={event.image} alt={event.title} className="w-full h-full object-cover" />
+          {/* Main Content */}
+          <div className="lg:col-span-2">
+            {/* Hero Image */}
+            <div className="relative rounded-2xl overflow-hidden mb-6 shadow-lg">
+              <img 
+                src={getImage(event)} 
+                alt={event.title}
+                className="w-full h-64 sm:h-96 object-cover"
+              />
               
-              {/* Multiple Category Badges */}
-              <div className="absolute top-4 right-4 flex flex-wrap gap-2 justify-end max-w-md">
-                {event.categories.map((category, index) => (
-                  <span 
-                    key={index}
-                    className="px-3 py-1.5 bg-white/90 backdrop-blur rounded-full text-xs font-semibold text-cyan-500"
-                  >
-                    #{category}
-                  </span>
-                ))}
+              {/* Category Badge */}
+              <div className="absolute top-4 left-4">
+                <span className="bg-white/90 backdrop-blur-sm text-cyan-500 px-4 py-2 rounded-full text-sm font-semibold">
+                  #{event.category}
+                </span>
               </div>
-              
+
               {/* Event Type Badge */}
-              {event.eventType === 'webinar' && (
-                <span className="absolute top-4 left-4 px-3 py-1.5 bg-blue-500 text-white rounded-full text-xs font-semibold">
-                  Virtual Event
-                </span>
+              {event.eventType && (
+                <div className="absolute top-4 right-4">
+                  <span className="bg-purple-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
+                    {event.eventType === 'campus' && '🎓 Campus'}
+                    {event.eventType === 'webinar' && '📹 Virtual'}
+                    {event.eventType === 'regular' && '🎉 Event'}
+                  </span>
+                </div>
               )}
-              {event.eventType === 'campus' && (
-                <span className="absolute top-4 left-4 px-3 py-1.5 bg-purple-500 text-white rounded-full text-xs font-semibold">
-                  Campus Event
-                </span>
+
+              {/* Free Badge */}
+              {event.isFree && (
+                <div className="absolute bottom-4 right-4">
+                  <span className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold">
+                    Free Event
+                  </span>
+                </div>
               )}
             </div>
 
-            {/* Event Title & Organizer */}
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">{event.title}</h1>
-
-              <div className="flex items-center gap-3">
-                <img src={event.organizer.avatar} alt="" className="w-12 h-12 rounded-full" />
-                <div>
-                  <p className="text-xs text-gray-500 uppercase">Organized By</p>
-                  <p className="font-semibold">{event.organizer.name}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* About Event */}
-            <div className="bg-white rounded-2xl p-6 border">
-              <h2 className="text-2xl font-bold mb-4">About This Event</h2>
-              <p className="text-gray-600 mb-6 whitespace-pre-line">{event.description}</p>
-
-              {event.highlights && event.highlights.length > 0 && (
-                <ul className="space-y-3">
-                  {event.highlights.map((h, i) => (
-                    <li key={i} className="text-gray-700">
-                      <strong className="text-gray-900">{h.title}</strong> {h.description}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Organizer Contact Info */}
-            {(event.organizer.phone || event.organizer.email) && (
-              <div className="bg-white rounded-2xl p-6 border">
-                <h2 className="text-xl font-bold mb-4">Contact Organizer</h2>
-                <div className="space-y-3">
-                  {event.organizer.phone && (
-                    <a 
-                      href={`tel:${event.organizer.phone}`}
-                      className="flex items-center gap-3 text-gray-700 hover:text-cyan-500 transition"
-                    >
-                      <Phone size={20} className="text-cyan-500" />
-                      <span>{event.organizer.phone}</span>
-                    </a>
-                  )}
-                  {event.organizer.email && (
-                    <a 
-                      href={`mailto:${event.organizer.email}`}
-                      className="flex items-center gap-3 text-gray-700 hover:text-cyan-500 transition"
-                    >
-                      <Mail size={20} className="text-cyan-500" />
-                      <span>{event.organizer.email}</span>
-                    </a>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* For Webinars - Platform Info */}
-            {event.eventType === 'webinar' && event.platform && (
-              <div className="bg-blue-50 rounded-2xl p-6 border border-blue-200">
-                <h2 className="text-xl font-bold mb-3 text-blue-900">Join Online</h2>
-                <p className="text-blue-800 mb-4">
-                  This is a virtual event. Join via <strong>{event.platform}</strong>
-                </p>
-                {event.platformLink && (
-                  <a
-                    href={event.platformLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition"
-                  >
-                    Join Meeting
-                    <ExternalLink size={18} />
-                  </a>
-                )}
-              </div>
-            )}
-
-            {/* For Campus Events - University Info */}
-            {event.eventType === 'campus' && event.university && (
-              <div className="bg-purple-50 rounded-2xl p-6 border border-purple-200">
-                <h2 className="text-xl font-bold mb-2 text-purple-900">Campus Event</h2>
-                <p className="text-purple-800">
-                  Hosted at <strong>{event.university}</strong>
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Right Sidebar */}
-          <div>
-            <div className="bg-white rounded-2xl p-6 border sticky top-24 space-y-6">
-              <button
-                onClick={() => navigate(-1)}
-                className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full"
-              >
-                <X size={18} />
-              </button>
-
-              {/* Ticket Price */}
-              <div>
-                <p className="text-sm text-gray-500 mb-2">Ticket Price</p>
-                <span className={`inline-block px-4 py-2 rounded-lg font-bold ${
-                  event.isFree 
-                    ? 'bg-emerald-100 text-emerald-600' 
-                    : 'bg-cyan-100 text-cyan-600'
-                }`}>
-                  {event.isFree ? 'FREE' : `₦${event.price.toLocaleString()}`}
-                </span>
-              </div>
-
-              {/* Date & Time */}
-              <div className="border-b pb-6">
-                <div className="flex gap-3">
-                  <Calendar className="text-cyan-500 flex-shrink-0" size={24} />
-                  <div>
-                    <p className="font-semibold text-gray-900">{getDateDisplay()}</p>
-                    <p className="text-cyan-500 text-sm">{getTimeDisplay()}</p>
-                    
-                    {/* Event Duration Badge */}
-                    {event.eventDuration === 'multi' && (
-                      <span className="inline-block mt-2 px-2 py-1 bg-orange-100 text-orange-600 rounded text-xs font-medium">
-                        Multi-Day Event
-                      </span>
-                    )}
-                    {event.eventDuration === 'recurring' && (
-                      <span className="inline-block mt-2 px-2 py-1 bg-green-100 text-green-600 rounded text-xs font-medium">
-                        Recurring Event
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Location - Only for non-webinar events */}
-              {event.eventType !== 'webinar' && (
-                <div>
-                  <div className="flex gap-3 mb-3">
-                    <MapPin className="text-cyan-500 flex-shrink-0" size={24} />
-                    <div>
-                      <p className="font-semibold text-gray-900">{event.venue}</p>
-                      <p className="text-sm text-gray-600">{event.address}</p>
-                      <p className="text-xs text-gray-500 mt-1">{event.city}</p>
-                    </div>
-                  </div>
-
-                  {/* Map Preview */}
-                  {event.mapPreview && (
-                    <div className="relative">
-                      <img 
-                        src={event.mapPreview} 
-                        alt="Location map" 
-                        className="h-32 w-full rounded-lg object-cover border" 
-                      />
-                      
-                      {/* Map Link Overlay */}
-                      {event.mapLocation && (
-                        <a
-                          href={event.mapLocation}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition rounded-lg"
-                        >
-                          <span className="px-4 py-2 bg-white rounded-lg font-medium text-sm flex items-center gap-2">
-                            <MapPin size={16} />
-                            View on Map
-                          </span>
-                        </a>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* Direct Map Link (if no preview) */}
-                  {!event.mapPreview && event.mapLocation && (
-                    <a
-                      href={event.mapLocation}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 text-cyan-500 hover:text-cyan-600 text-sm font-medium"
-                    >
-                      <MapPin size={16} />
-                      View Location on Map
-                    </a>
-                  )}
-                </div>
-              )}
-
-              {/* Capacity Info */}
-              {event.capacity && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <User size={16} />
-                  <span>Capacity: {event.capacity} attendees</span>
-                </div>
-              )}
-
-              {/* Buy Ticket Button - ONLY shows if ticketLink exists */}
-{event.ticketLink && (
-  <a
-    href={event.ticketLink}
-    target="_blank"
-    rel="noopener noreferrer"
-    className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg font-semibold hover:from-cyan-600 hover:to-blue-600 transition flex items-center justify-center gap-2"
-  >
-    <Ticket size={20} />
-    Buy Tickets
-  </a>
-)}
-
-              {/* Visit Event Button */}
-              <button className="w-full py-3 bg-cyan-400 text-white rounded-lg font-semibold hover:bg-cyan-500 transition flex items-center justify-center gap-2">
-                {event.eventType === 'webinar' ? 'Register for Event' : 'Visit Event'}
-                <ChevronRight size={18} />
-              </button>
-
-              {/* Share & Save Buttons */}
-              <div className="grid grid-cols-2 gap-3">
+            {/* Title & Actions */}
+            <div className="flex items-start justify-between mb-6">
+              <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 flex-1">
+                {event.title}
+              </h1>
+              
+              <div className="flex gap-2 ml-4">
                 <button
-                  onClick={handleShare}
-                  className="flex items-center justify-center gap-2 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-                >
-                  <Share2 size={18} /> Share
-                </button>
-
-                <button
-                  onClick={handleSave}
-                  className={`flex items-center justify-center gap-2 py-2.5 border rounded-lg transition ${
-                    isSaved 
-                      ? 'bg-red-50 border-red-300 text-red-600' 
-                      : 'border-gray-300 hover:bg-gray-50'
+                  onClick={handleSaveToggle}
+                  className={`p-3 rounded-full transition ${
+                    saved 
+                      ? 'bg-red-50 text-red-500' 
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  <Heart size={18} className={isSaved ? 'fill-red-500 text-red-500' : ''} />
-                  {isSaved ? 'Saved' : 'Save'}
+                  {saved ? (
+                    <Heart size={24} className="fill-current" />
+                  ) : (
+                    <Heart size={24} />
+                  )}
+                </button>
+
+                <div className="relative">
+                  <button
+                    onClick={() => setShowShareMenu(!showShareMenu)}
+                    className="p-3 bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200 transition"
+                  >
+                    <Share2 size={24} />
+                  </button>
+
+                  {showShareMenu && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-40"
+                        onClick={() => setShowShareMenu(false)}
+                      ></div>
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                        <button
+                          onClick={() => handleShare('facebook')}
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+                        >
+                          Share on Facebook
+                        </button>
+                        <button
+                          onClick={() => handleShare('twitter')}
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+                        >
+                          Share on Twitter
+                        </button>
+                        <button
+                          onClick={() => handleShare('whatsapp')}
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+                        >
+                          Share on WhatsApp
+                        </button>
+                        <button
+                          onClick={() => handleShare('linkedin')}
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+                        >
+                          Share on LinkedIn
+                        </button>
+                        <hr className="my-2" />
+                        <button
+                          onClick={() => handleShare('copy')}
+                          className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+                        >
+                          Copy Link
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">About This Event</h2>
+              <p className="text-gray-700 leading-relaxed whitespace-pre-line">
+                {event.description || 'No description available.'}
+              </p>
+            </div>
+
+            {/* Additional Details */}
+            {(event.university || event.platform || event.religion) && (
+              <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Additional Information</h2>
+                <div className="space-y-3">
+                  {event.university && (
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold text-gray-700">University:</span>
+                      <span className="text-gray-600">{event.university}</span>
+                    </div>
+                  )}
+                  {event.platform && (
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold text-gray-700">Platform:</span>
+                      <span className="text-gray-600">{event.platform}</span>
+                    </div>
+                  )}
+                  {event.platformLink && (
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold text-gray-700">Join Link:</span>
+                      <a 
+                        href={event.platformLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-500 hover:underline flex items-center gap-1"
+                      >
+                        Join Meeting <ExternalLink size={16} />
+                      </a>
+                    </div>
+                  )}
+                  {event.religion && (
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold text-gray-700">Religion:</span>
+                      <span className="text-gray-600">{event.religion}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Organizer Info */}
+            {(event.organizerName || event.organizerEmail || event.organizerPhone) && (
+              <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Organizer</h2>
+                <div className="space-y-3">
+                  {event.organizerName && (
+                    <div className="flex items-center gap-3">
+                      <Users size={20} className="text-gray-400" />
+                      <span className="text-gray-700">{event.organizerName}</span>
+                    </div>
+                  )}
+                  {event.organizerEmail && (
+                    <div className="flex items-center gap-3">
+                      <Mail size={20} className="text-gray-400" />
+                      <a 
+                        href={`mailto:${event.organizerEmail}`}
+                        className="text-cyan-500 hover:underline"
+                      >
+                        {event.organizerEmail}
+                      </a>
+                    </div>
+                  )}
+                  {event.organizerPhone && (
+                    <div className="flex items-center gap-3">
+                      <Phone size={20} className="text-gray-400" />
+                      <a 
+                        href={`tel:${event.organizerPhone}`}
+                        className="text-cyan-500 hover:underline"
+                      >
+                        {event.organizerPhone}
+                      </a>
+                    </div>
+                  )}
+                  {event.organizerWebsite && (
+                    <div className="flex items-center gap-3">
+                      <Globe size={20} className="text-gray-400" />
+                      <a 
+                        href={event.organizerWebsite}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-500 hover:underline"
+                      >
+                        Visit Website
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <div className="lg:col-span-1">
+            {/* Event Details Card */}
+            <div className="bg-white rounded-xl p-6 shadow-lg sticky top-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6">Event Details</h2>
+              
+              <div className="space-y-4 mb-6">
+                {/* Date */}
+                <div className="flex items-start gap-3">
+                  <Calendar size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">Date</p>
+                    <p className="text-gray-600 text-sm">{getDate(event)}</p>
+                  </div>
+                </div>
+
+                {/* Time */}
+                {getTime(event) && (
+                  <div className="flex items-start gap-3">
+                    <Clock size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm">Time</p>
+                      <p className="text-gray-600 text-sm">{getTime(event)}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Location */}
+                <div className="flex items-start gap-3">
+                  <MapPin size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 text-sm">Location</p>
+                    {event.address ? (
+                      <>
+                        <p className="text-gray-600 text-sm mb-1">{event.address}</p>
+                        {event.location && (
+                          <p className="text-gray-500 text-xs mb-2">📍 {event.location}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-gray-600 text-sm mb-2">{event.location || 'Online'}</p>
+                    )}
+                    {(event.mapLocation || event.address) && 
+                     event.location?.toLowerCase() !== 'online' && (
+                      <button
+                        onClick={() => openInMaps(event)}
+                        className="text-cyan-500 text-xs font-medium hover:underline flex items-center gap-1"
+                      >
+                        <Navigation size={14} />
+                        Open in Maps
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Price */}
+                <div className="flex items-start gap-3">
+                  <DollarSign size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">Price</p>
+                    <p className="text-gray-600 text-sm">
+                      {event.isFree ? (
+                        <span className="text-emerald-600 font-semibold">Free Event</span>
+                      ) : (
+                        <span className="font-semibold">₦{event.price?.toLocaleString() || 'Contact Organizer'}</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* CTA Buttons */}
+              <div className="space-y-3">
+                <button 
+                  onClick={() => handleRegister(event, currentUser, navigate)}
+                  className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
+                >
+                  <CheckCircle size={20} />
+                  Register for Event
+                </button>
+
+                <button 
+                  onClick={handleSaveToggle}
+                  className={`w-full py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2 ${
+                    saved
+                      ? 'bg-red-50 text-red-500 border-2 border-red-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <Bookmark size={20} className={saved ? 'fill-current' : ''} />
+                  {saved ? 'Saved' : 'Save Event'}
                 </button>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Similar Events */}
+        {similarEvents.length > 0 && (
+          <div className="mt-12">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Similar Events</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {similarEvents.map((similar) => (
+                <Link
+                  key={similar.id}
+                  to={`/event/${similar.id}`}
+                  className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group"
+                >
+                  <div className="relative h-48">
+                    <img 
+                      src={similar.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=600&q=80'} 
+                      alt={similar.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                    {similar.isFree && (
+                      <span className="absolute top-3 right-3 bg-emerald-500 text-white text-xs px-3 py-1 rounded-lg font-semibold">
+                        Free
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h3 className="font-bold text-gray-900 mb-2 group-hover:text-cyan-500 transition line-clamp-2">
+                      {similar.title}
+                    </h3>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Calendar size={14} />
+                      <span>{getDate(similar)}</span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
+
+      <Footer />
     </div>
   );
 }

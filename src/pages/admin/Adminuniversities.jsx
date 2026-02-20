@@ -1,64 +1,62 @@
 import { useState, useEffect } from 'react';
-import { Menu, Plus, Edit, Trash2, GraduationCap, X, Save } from 'lucide-react';
+import { Menu, Plus, Edit, Trash2, GraduationCap, X, Save, Upload } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { uploadToCloudinary } from '../../services/cloudinaryService';
 
 export default function AdminUniversities() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingUniversity, setEditingUniversity] = useState(null);
-  const [formData, setFormData] = useState({ name: '', location: '', slug: '' });
   const [universities, setUniversities] = useState([]);
+  const [uploadingUniImage, setUploadingUniImage] = useState(null);
 
-  // Load universities from localStorage on mount
+  const [formData, setFormData] = useState({
+    name: '',
+    location: '',
+    slug: '',
+    imageUrl: ''
+  });
+
   useEffect(() => {
     loadUniversities();
   }, []);
 
-  // Save to localStorage whenever universities change
-  useEffect(() => {
-    if (universities.length > 0) {
-      localStorage.setItem('universities', JSON.stringify(universities));
-      console.log('💾 Saved to localStorage:', universities.length, 'universities');
-    }
-  }, [universities]);
-
-  const loadUniversities = () => {
+  const loadUniversities = async () => {
     try {
-      const stored = localStorage.getItem('universities');
-      if (stored) {
-        const data = JSON.parse(stored);
-        setUniversities(data);
-        console.log('✅ Loaded from localStorage:', data.length, 'universities');
-      } else {
-        // Initialize with defaults
-        const defaults = [
-          { id: 1, name: 'University of Lagos (Unilag)', location: 'Lagos, Nigeria', slug: 'university-of-lagos-unilag', eventCount: 12 },
-          { id: 2, name: 'King Saud University (KSU)', location: 'Riyadh, Saudi Arabia', slug: 'king-saud-university-ksu', eventCount: 8 },
-          { id: 3, name: 'University of Ibadan (UI)', location: 'Ibadan, Nigeria', slug: 'university-of-ibadan-ui', eventCount: 5 },
-          { id: 4, name: 'University of Ghana (Legon)', location: 'Accra, Ghana', slug: 'university-of-ghana-legon', eventCount: 3 },
-          { id: 5, name: 'Covenant University (CU)', location: 'Ota, Nigeria', slug: 'covenant-university-cu', eventCount: 7 },
-          { id: 6, name: 'University of Ilorin (Unilorin)', location: 'Ilorin, Nigeria', slug: 'university-of-ilorin-unilorin', eventCount: 4 },
-        ];
-        setUniversities(defaults);
-        localStorage.setItem('universities', JSON.stringify(defaults));
-        console.log('ℹ️ Initialized with defaults');
-      }
-    } catch (error) {
-      console.error('❌ Error loading universities:', error);
+      const snapshot = await getDocs(collection(db, 'universities'));
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setUniversities(data);
+    } catch (err) {
+      console.error('Error loading universities:', err);
     }
   };
 
   const generateSlug = (name) => {
-    return name.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+    return name
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .trim();
   };
 
   const handleOpenModal = (university = null) => {
     if (university) {
       setEditingUniversity(university);
-      setFormData({ name: university.name, location: university.location, slug: university.slug });
+      setFormData({
+        name: university.name,
+        location: university.location,
+        slug: university.slug,
+        imageUrl: university.imageUrl || ''
+      });
     } else {
       setEditingUniversity(null);
-      setFormData({ name: '', location: '', slug: '' });
+      setFormData({ name: '', location: '', slug: '', imageUrl: '' });
     }
     setShowModal(true);
   };
@@ -66,36 +64,84 @@ export default function AdminUniversities() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingUniversity(null);
-    setFormData({ name: '', location: '', slug: '' });
+    setFormData({ name: '', location: '', slug: '', imageUrl: '' });
   };
 
   const handleNameChange = (e) => {
     const name = e.target.value;
-    setFormData({ ...formData, name: name, slug: generateSlug(name) });
+    setFormData({ ...formData, name, slug: generateSlug(name) });
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    if (editingUniversity) {
-      setUniversities(universities.map(uni => 
-        uni.id === editingUniversity.id ? { ...uni, ...formData } : uni
-      ));
-      console.log('✏️ Updated:', formData.name);
-    } else {
-      const newUni = { id: Date.now(), ...formData, eventCount: 0 };
-      setUniversities([...universities, newUni]);
-      console.log('➕ Added:', formData.name);
+  // ✅ Cloudinary Image Upload Handler
+  const handleUniversityImageUpload = async (e, universityId) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Please select an image file');
+        return;
+      }
+
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        alert('Image must be less than 10MB');
+        return;
+      }
+
+      setUploadingUniImage(universityId);
+
+      // Upload to Cloudinary
+      console.log('☁️ Uploading university image...');
+      const imageUrl = await uploadToCloudinary(file, 'universities');
+      console.log('✅ Upload complete:', imageUrl);
+
+      // Update university in Firestore
+      const uniRef = doc(db, 'universities', universityId);
+      await updateDoc(uniRef, {
+        imageUrl: imageUrl
+      });
+
+      // Reload universities list
+      await loadUniversities();
+
+      setUploadingUniImage(null);
+      alert('University image updated successfully!');
+
+    } catch (error) {
+      console.error('❌ Upload error:', error);
+      alert(error.message || 'Failed to upload university image');
+      setUploadingUniImage(null);
     }
-    
-    handleCloseModal();
   };
 
-  const handleDelete = (id) => {
-    const uni = universities.find(u => u.id === id);
-    if (window.confirm(`Delete ${uni?.name}? This affects all related events.`)) {
-      setUniversities(universities.filter(u => u.id !== id));
-      console.log('🗑️ Deleted:', uni?.name);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      if (editingUniversity) {
+        await updateDoc(doc(db, 'universities', editingUniversity.id), formData);
+      } else {
+        await addDoc(collection(db, 'universities'), {
+          ...formData,
+          eventCount: 0,
+          createdAt: new Date()
+        });
+      }
+
+      await loadUniversities();
+      handleCloseModal();
+    } catch (error) {
+      console.error('Error saving university:', error);
+      alert('Something went wrong.');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('Delete this university?')) {
+      await deleteDoc(doc(db, 'universities', id));
+      loadUniversities();
     }
   };
 
@@ -104,153 +150,208 @@ export default function AdminUniversities() {
       <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="flex-1 overflow-auto">
-        <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
-                <Menu size={24} />
-              </button>
-              <div>
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Manage Universities</h2>
-                <p className="text-sm text-gray-500 mt-1">Total: {universities.length} universities</p>
-              </div>
-            </div>
-            <button onClick={() => handleOpenModal()} className="flex items-center gap-2 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition">
-              <Plus size={20} />
-              <span>Add University</span>
-            </button>
-          </div>
+        <header className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Manage Universities</h2>
+          <button
+            onClick={() => handleOpenModal()}
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600"
+          >
+            <Plus size={20} />
+            Add University
+          </button>
         </header>
 
-        <div className="p-4 sm:p-6 lg:p-8">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Total Universities</p>
-                  <p className="text-2xl font-bold text-gray-900">{universities.length}</p>
-                </div>
-                <GraduationCap size={40} className="text-cyan-500" />
-              </div>
-            </div>
+        <div className="p-6">
+          {/* University Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {universities.map((uni) => (
+              <div key={uni.id} className="bg-white rounded-xl shadow border overflow-hidden">
+                {/* University Image */}
+                <div className="relative h-48 bg-gray-200">
+                  {uni.imageUrl ? (
+                    <img
+                      src={uni.imageUrl}
+                      alt={uni.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <GraduationCap size={48} className="text-gray-400" />
+                    </div>
+                  )}
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Total Campus Events</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {universities.reduce((sum, uni) => sum + uni.eventCount, 0)}
-                  </p>
+                  {/* Upload Button Overlay */}
+                  <label className="absolute bottom-2 right-2 cursor-pointer">
+                    <div className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition font-medium text-sm flex items-center gap-2 shadow-lg">
+                      {uploadingUniImage === uni.id ? (
+                        <>
+                          <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                          <span>Uploading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload size={16} />
+                          <span>Upload Image</span>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleUniversityImageUpload(e, uni.id)}
+                      disabled={uploadingUniImage === uni.id}
+                      className="hidden"
+                    />
+                  </label>
                 </div>
-                <GraduationCap size={40} className="text-green-500" />
-              </div>
-            </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Avg Events/University</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {universities.length > 0 ? Math.round(universities.reduce((sum, uni) => sum + uni.eventCount, 0) / universities.length) : 0}
-                  </p>
+                {/* University Info */}
+                <div className="p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-bold text-gray-900 mb-1">{uni.name}</h3>
+                      <p className="text-sm text-gray-600 mb-1">{uni.location}</p>
+                      <p className="text-xs text-gray-400 font-mono">{uni.slug}</p>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 mt-4 pt-4 border-t">
+                    <button 
+                      onClick={() => handleOpenModal(uni)} 
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition"
+                    >
+                      <Edit size={16} />
+                      <span className="text-sm font-medium">Edit</span>
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(uni.id)} 
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition"
+                    >
+                      <Trash2 size={16} />
+                      <span className="text-sm font-medium">Delete</span>
+                    </button>
+                  </div>
                 </div>
-                <GraduationCap size={40} className="text-purple-500" />
               </div>
-            </div>
+            ))}
           </div>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <p className="text-sm text-blue-800">
-              💡 <strong>Note:</strong> Universities added here automatically appear in <strong>Create Event</strong> form when you select "Campus Event".
-            </p>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">University</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Slug</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Events</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {universities.map((university) => (
-                    <tr key={university.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <GraduationCap size={20} className="text-cyan-600" />
-                          </div>
-                          <div className="text-sm font-medium text-gray-900">{university.name}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{university.location}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{university.slug}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{university.eventCount} events</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => handleOpenModal(university)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit">
-                            <Edit size={18} />
-                          </button>
-                          <button onClick={() => handleDelete(university.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition" title="Delete">
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {universities.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <GraduationCap size={48} className="mx-auto mb-4 text-gray-300" />
+              <p className="text-lg">No universities yet.</p>
+              <p className="text-sm mt-2">Click "Add University" to get started.</p>
             </div>
-          </div>
+          )}
         </div>
       </main>
 
+      {/* MODAL */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl w-full max-w-lg p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900">
-                {editingUniversity ? 'Edit University' : 'Add New University'}
+              <h3 className="text-xl font-bold">
+                {editingUniversity ? 'Edit University' : 'Add University'}
               </h3>
-              <button onClick={handleCloseModal} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={handleCloseModal} className="p-1 hover:bg-gray-100 rounded">
                 <X size={20} />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">University Name *</label>
-                <input type="text" value={formData.name} onChange={handleNameChange} required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                  placeholder="e.g. University of Lagos (Unilag)" />
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  University Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., University of Lagos"
+                  value={formData.name}
+                  onChange={handleNameChange}
+                  required
+                  className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Location *</label>
-                <input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                  placeholder="e.g. Lagos, Nigeria" />
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Location *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Lagos, Nigeria"
+                  value={formData.location}
+                  onChange={(e) =>
+                    setFormData({ ...formData, location: e.target.value })
+                  }
+                  required
+                  className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Slug (Auto-generated)</label>
-                <input type="text" value={formData.slug} onChange={(e) => setFormData({ ...formData, slug: e.target.value })} required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 font-mono text-sm focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                  placeholder="university-of-lagos-unilag" />
-                <p className="mt-1 text-xs text-gray-500">Used in URLs. Auto-generated from name, can be edited.</p>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Slug * <span className="text-xs text-gray-500">(Auto-generated)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="university-of-lagos"
+                  value={formData.slug}
+                  onChange={(e) =>
+                    setFormData({ ...formData, slug: e.target.value })
+                  }
+                  required
+                  className="w-full border border-gray-300 px-4 py-2 rounded-lg font-mono text-sm focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                />
               </div>
 
-              <div className="flex gap-3 pt-4">
-                <button type="submit" className="flex-1 flex items-center justify-center gap-2 px-6 py-2.5 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition font-medium">
-                  <Save size={20} />
-                  <span>{editingUniversity ? 'Update' : 'Create'}</span>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Image URL <span className="text-xs text-gray-500">(Optional - can upload after creating)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://example.com/image.jpg"
+                  value={formData.imageUrl}
+                  onChange={(e) =>
+                    setFormData({ ...formData, imageUrl: e.target.value })
+                  }
+                  className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  You can upload an image using the "Upload Image" button after creating the university.
+                </p>
+              </div>
+
+              {formData.imageUrl && (
+                <div className="border rounded-lg p-2">
+                  <img 
+                    src={formData.imageUrl} 
+                    alt="Preview" 
+                    className="w-full h-32 object-cover rounded"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  type="submit"
+                  className="flex-1 flex items-center justify-center gap-2 bg-cyan-500 text-white py-2.5 rounded-lg hover:bg-cyan-600 transition font-medium"
+                >
+                  <Save size={18} />
+                  {editingUniversity ? 'Update' : 'Create'}
                 </button>
-                <button type="button" onClick={handleCloseModal} className="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium">
+
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-lg hover:bg-gray-200 transition font-medium"
+                >
                   Cancel
                 </button>
               </div>

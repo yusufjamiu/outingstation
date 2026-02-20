@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -9,10 +10,44 @@ import HowItWorks from '../components/HowItWorks';
 import campusImage from '../assets/campus.jpg';
 import studentsImage from '../assets/Students.jpg';
 import concertImage from '../assets/concertImage.jpg';
+import heroImage3 from '../assets/heroImage3.jpg';
 import heroImage2 from '../assets/heroImage2.jpg';
+import heroImage01 from '../assets/heroImage01.jpg';
 import { Search, MapPin, Grid } from 'lucide-react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export default function LandingPage() {
+  const [userCount, setUserCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadUserCount();
+  }, []);
+
+  const loadUserCount = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'users'));
+      const count = snapshot.size;
+      setUserCount(count);
+    } catch (err) {
+      console.error('Error loading user count:', err);
+      setUserCount(0);
+    }
+    setLoading(false);
+  };
+
+  // Format number with K/M suffix
+  const formatNumber = (num) => {
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1) + 'M';
+    }
+    if (num >= 1000) {
+      return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -48,8 +83,7 @@ export default function LandingPage() {
               <span className="text-gray-400 mx-2 md:mx-4">|</span>
               <select className="outline-none text-gray-600 bg-transparent text-sm md:text-base mr-2 md:mr-6">
                 <option>Lagos</option>
-                <option>Riyadh</option>
-                <option>Dubai</option>
+                <option>Abuja</option>
               </select>
 
               <button className="hidden md:block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full">
@@ -76,17 +110,23 @@ export default function LandingPage() {
             <div className="relative mb-8 md:mb-0">
               <div className="w-56 h-56 md:w-64 md:h-64 bg-gradient-to-br from-orange-200 to-pink-200 rounded-2xl overflow-hidden shadow-xl mx-auto">
                 <img 
-                  src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&h=400&fit=crop" 
+                  src={heroImage01} 
                   alt="Friends outdoors"
                   className="w-full h-full object-cover"
                 />
               </div>
               
-              {/* Trusted Users Card */}
+              {/* Trusted Users Card - WITH FIREBASE DATA */}
               <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-4 md:px-8 py-3 md:py-4 rounded-2xl shadow-xl">
                 <div className="flex items-center gap-2 md:gap-4">
                   <div>
-                    <div className="text-2xl md:text-3xl font-bold">12K</div>
+                    {loading ? (
+                      <div className="text-2xl md:text-3xl font-bold">...</div>
+                    ) : (
+                      <div className="text-2xl md:text-3xl font-bold">
+                        {formatNumber(userCount)}
+                      </div>
+                    )}
                     <div className="text-xs md:text-sm opacity-90">Trusted Users</div>
                   </div>
                   <div className="flex -space-x-2">
@@ -109,7 +149,7 @@ export default function LandingPage() {
               </div>
               <div className="w-56 h-32 md:w-64 md:h-40 bg-gradient-to-br from-amber-200 to-orange-200 rounded-2xl overflow-hidden shadow-xl mx-auto">
                 <img 
-                  src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=400&h=300&fit=crop" 
+                  src={heroImage3} 
                   alt="Workshop"
                   className="w-full h-full object-cover"
                 />

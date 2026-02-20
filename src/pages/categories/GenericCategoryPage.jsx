@@ -1,33 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Heart } from 'lucide-react';
+import { Heart, Calendar, Clock, MapPin } from 'lucide-react';
 import { 
   Briefcase, Palette, UtensilsCrossed, Dumbbell, GraduationCap, 
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv 
 } from 'lucide-react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../../firebase';
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 
 export default function GenericCategoryPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('events'); // events or places
-  const [religionFilter, setReligionFilter] = useState('all'); // all, Christianity, Islam, Others
+  
+  const [activeTab, setActiveTab] = useState('events');
+  const [religionFilter, setReligionFilter] = useState('all');
+  const [allEvents, setAllEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Filter states
+  const [dateFilter, setDateFilter] = useState('any');
+  const [locationFilter, setLocationFilter] = useState('all');
+  const [priceFilter, setPriceFilter] = useState('any');
 
-  const currentUser = null; // user not logged in
-
-  const handleSaveClick = (e, eventId) => {
-    e.stopPropagation();
-    if (!currentUser) {
-      navigate('/login');
-      return;
-    }
-    console.log('Saved event:', eventId);
-  };
-
-  const handleEventClick = (eventId) => {
-    navigate(`/event/${eventId}`);
-  };
+  const currentUser = null; // Public user
 
   // Category mapping
   const categoryMap = {
@@ -35,7 +32,7 @@ export default function GenericCategoryPage() {
     'art-culture': { name: 'Art & Culture', icon: Palette, color: 'bg-purple-500', hasPlaces: true, isReligion: false },
     'food-dining': { name: 'Food & Dining', icon: UtensilsCrossed, color: 'bg-orange-500', hasPlaces: true, isReligion: false },
     'sport-fitness': { name: 'Sport & Fitness', icon: Dumbbell, color: 'bg-green-500', hasPlaces: true, isReligion: false },
-    'education-workshop': { name: 'Education & Workshop', icon: GraduationCap, color: 'bg-indigo-500', hasPlaces: false, isReligion: false },
+    'education': { name: 'Education', icon: GraduationCap, color: 'bg-indigo-500', hasPlaces: false, isReligion: false },
     'religion-community': { name: 'Religion & Community', icon: HeartIcon, color: 'bg-pink-500', hasPlaces: false, isReligion: true },
     'nightlife-parties': { name: 'Nightlife & Parties', icon: Music, color: 'bg-purple-600', hasPlaces: true, isReligion: false },
     'family-kids-fun': { name: 'Family & Kids Fun', icon: Baby, color: 'bg-yellow-500', hasPlaces: true, isReligion: false },
@@ -48,59 +45,120 @@ export default function GenericCategoryPage() {
   const currentCategory = categoryMap[slug] || categoryMap['business-tech'];
   const CategoryIcon = currentCategory.icon;
 
-  // Mock events - in real app, fetch from Firebase filtered by category
-  const allEvents = [
-    {
-      id: 1,
-      title: 'Tech Startup Pitch Night',
-      date: 'Mon, Jan 12',
-      time: '6:00 PM',
-      location: 'Lagos, Nigeria',
-      image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80',
-      isFree: false,
-      price: '₦5,000',
-      isSaved: false,
-      subCategory: 'events'
-    },
-    {
-      id: 2,
-      title: 'Digital Marketing Workshop',
-      date: 'Tue, Jan 13',
-      time: '3:00 PM',
-      location: 'Abuja, Nigeria',
-      image: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?w=800&q=80',
-      isFree: true,
-      isSaved: false,
-      subCategory: 'events'
-    },
-    {
-      id: 3,
-      title: 'The Creative Hub',
-      date: 'Always Open',
-      time: '9:00 AM - 6:00 PM',
-      location: 'Lagos, Nigeria',
-      image: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80',
-      isFree: false,
-      price: '₦2,000',
-      isSaved: false,
-      subCategory: 'places'
-    },
-    {
-      id: 4,
-      title: 'AI & Machine Learning Bootcamp',
-      date: 'Wed, Jan 14',
-      time: '10:00 AM',
-      location: 'Lagos, Nigeria',
-      image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&q=80',
-      isFree: false,
-      price: '₦15,000',
-      isSaved: true,
-      subCategory: 'events'
-    }
-  ];
+  useEffect(() => {
+    loadCategoryEvents();
+  }, [slug]);
 
-  // Filter events based on active tab
-  const events = allEvents.filter(event => event.subCategory === activeTab);
+  const loadCategoryEvents = async () => {
+    try {
+      setLoading(true);
+      const snapshot = await getDocs(collection(db, 'events'));
+      
+      const eventsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Filter published and by category
+      const categoryName = currentCategory.name;
+      const categoryEvents = eventsData.filter(e => 
+        e.status === 'published' && e.category === categoryName
+      );
+
+      setAllEvents(categoryEvents);
+    } catch (err) {
+      console.error('Error loading events:', err);
+    }
+    setLoading(false);
+  };
+
+  // Apply all filters
+  const getFilteredEvents = () => {
+    let filtered = [...allEvents];
+
+    // Tab filter (events/places)
+    if (currentCategory.hasPlaces) {
+      filtered = filtered.filter(e => e.subCategory === activeTab);
+    }
+
+    // Religion filter
+    if (currentCategory.isReligion && religionFilter !== 'all') {
+      filtered = filtered.filter(e => e.religion === religionFilter);
+    }
+
+    // Date filter
+    if (dateFilter !== 'any') {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      filtered = filtered.filter(e => {
+        if (!e.date) return false;
+        const eventDate = e.date.toDate ? e.date.toDate() : new Date(e.date);
+        
+        switch (dateFilter) {
+          case 'today':
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            return eventDate >= today && eventDate < tomorrow;
+          
+          case 'this-week':
+            const weekEnd = new Date(today);
+            weekEnd.setDate(weekEnd.getDate() + 7);
+            return eventDate >= today && eventDate < weekEnd;
+          
+          case 'this-month':
+            const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            return eventDate >= today && eventDate <= monthEnd;
+          
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Location filter
+    if (locationFilter !== 'all') {
+      filtered = filtered.filter(e => 
+        e.location?.toLowerCase().includes(locationFilter.toLowerCase())
+      );
+    }
+
+    // Price filter
+    if (priceFilter !== 'any') {
+      if (priceFilter === 'free') {
+        filtered = filtered.filter(e => e.isFree === true);
+      } else if (priceFilter === 'paid') {
+        filtered = filtered.filter(e => e.isFree === false);
+      }
+    }
+
+    return filtered;
+  };
+
+  const events = getFilteredEvents();
+
+  const handleSaveClick = (e, eventId) => {
+    e.stopPropagation();
+    if (!currentUser) {
+      navigate('/login');
+      return;
+    }
+  };
+
+  const handleEventClick = (eventId) => {
+    navigate(`/event/${eventId}`);
+  };
+
+  const getDate = (event) => {
+    if (event.date) {
+      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
+      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    return 'TBD';
+  };
+
+  const getTime = (event) => event.time || 'TBD';
+  const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -120,7 +178,7 @@ export default function GenericCategoryPage() {
           </div>
         </div>
 
-        {/* Events/Places Tabs - Only for categories with places */}
+        {/* Events/Places Tabs */}
         {currentCategory.hasPlaces && (
           <div className="flex gap-2 mb-6 border-b border-gray-200">
             <button
@@ -146,51 +204,24 @@ export default function GenericCategoryPage() {
           </div>
         )}
 
-        {/* Religion Filter - Only for Religion & Community */}
+        {/* Religion Filter */}
         {currentCategory.isReligion && (
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Religion:</label>
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setReligionFilter('all')}
-                className={`px-4 py-2 rounded-lg font-medium transition ${
-                  religionFilter === 'all'
-                    ? 'bg-cyan-500 text-white'
-                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setReligionFilter('Christianity')}
-                className={`px-4 py-2 rounded-lg font-medium transition ${
-                  religionFilter === 'Christianity'
-                    ? 'bg-cyan-500 text-white'
-                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                Christianity
-              </button>
-              <button
-                onClick={() => setReligionFilter('Islam')}
-                className={`px-4 py-2 rounded-lg font-medium transition ${
-                  religionFilter === 'Islam'
-                    ? 'bg-cyan-500 text-white'
-                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                Islam
-              </button>
-              <button
-                onClick={() => setReligionFilter('Others')}
-                className={`px-4 py-2 rounded-lg font-medium transition ${
-                  religionFilter === 'Others'
-                    ? 'bg-cyan-500 text-white'
-                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                Others
-              </button>
+              {['all', 'Christianity', 'Islam', 'Others'].map((religion) => (
+                <button
+                  key={religion}
+                  onClick={() => setReligionFilter(religion)}
+                  className={`px-4 py-2 rounded-lg font-medium transition ${
+                    religionFilter === religion
+                      ? 'bg-cyan-500 text-white'
+                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {religion === 'all' ? 'All' : religion}
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -199,33 +230,41 @@ export default function GenericCategoryPage() {
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
           <div className="flex-1 sm:flex-initial">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Date:</label>
-            <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
-              <option>Any</option>
-              <option>Today</option>
-              <option>Tomorrow</option>
-              <option>This Week</option>
-              <option>This Weekend</option>
-              <option>This Month</option>
+            <select 
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            >
+              <option value="any">Any</option>
+              <option value="today">Today</option>
+              <option value="this-week">This Week</option>
+              <option value="this-month">This Month</option>
             </select>
           </div>
 
           <div className="flex-1 sm:flex-initial">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Location:</label>
-            <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
-              <option>All Cities</option>
-              <option>Lagos</option>
-              <option>Abuja</option>
-              <option>Riyadh</option>
-              <option>Jeddah</option>
+            <select 
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            >
+              <option value="all">All Cities</option>
+              <option value="lagos">Lagos</option>
+            
             </select>
           </div>
 
           <div className="flex-1 sm:flex-initial">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Price:</label>
-            <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
-              <option>Any Price</option>
-              <option>Free</option>
-              <option>Paid</option>
+            <select 
+              value={priceFilter}
+              onChange={(e) => setPriceFilter(e.target.value)}
+              className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            >
+              <option value="any">Any Price</option>
+              <option value="free">Free</option>
+              <option value="paid">Paid</option>
             </select>
           </div>
 
@@ -236,70 +275,73 @@ export default function GenericCategoryPage() {
           </div>
         </div>
 
-        {/* Events Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-          {events.map((event) => (
-            <div 
-              key={event.id}
-              onClick={() => handleEventClick(event.id)}
-              className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
-            >
-              <div className="relative h-48 sm:h-56">
-                <img 
-                  src={event.image} 
-                  alt={event.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                />
-                
-                {/* Category Badge */}
-                <div className="absolute top-3 left-3">
-                  <span className={`${currentCategory.color} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
-                    #{currentCategory.name}
-                  </span>
-                </div>
-
-                {/* Save Icon */}
-                <button
-                  onClick={(e) => handleSaveClick(e, event.id)}
-                  className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
-                >
-                  <Heart
-                    size={18}
-                    className={`sm:w-5 sm:h-5 ${event.isSaved ? 'text-red-500 fill-red-500' : 'text-gray-600'}`}
+        {/* Loading State */}
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
+          </div>
+        ) : events.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
+            {events.map((event) => (
+              <div 
+                key={event.id}
+                onClick={() => handleEventClick(event.id)}
+                className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
+              >
+                <div className="relative h-48 sm:h-56">
+                  <img 
+                    src={getImage(event)} 
+                    alt={event.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                   />
-                </button>
+                  
+                  <div className="absolute top-3 left-3">
+                    <span className={`${currentCategory.color} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
+                      #{currentCategory.name}
+                    </span>
+                  </div>
 
-                {/* Price Badge */}
-                <div className="absolute bottom-3 right-3">
-                  <span className={`${event.isFree ? 'bg-emerald-500' : 'bg-blue-500'} text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold`}>
-                    {event.isFree ? 'Free' : event.price}
-                  </span>
+                  <button
+                    onClick={(e) => handleSaveClick(e, event.id)}
+                    className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
+                  >
+                    <Heart size={18} className="sm:w-5 sm:h-5 text-gray-600" />
+                  </button>
+
+                  {event.isFree && (
+                    <div className="absolute bottom-3 right-3">
+                      <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
+                        Free
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 sm:p-5">
+                  <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
+                    {event.title}
+                  </h3>
+                  
+                  <div className="space-y-2 text-xs sm:text-sm text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <Calendar size={14} />
+                      <span>{getDate(event)}</span>
+                      <Clock size={14} />
+                      <span>{getTime(event)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <MapPin size={14} />
+                      <span>{event.location || 'Online'}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              <div className="p-4 sm:p-5">
-                <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
-                  {event.title}
-                </h3>
-                
-                <div className="space-y-2 text-xs sm:text-sm text-gray-600">
-                  <div className="flex items-center gap-2">
-                    <span>📅 {event.date}</span>
-                    <span>🕒 {event.time}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span>📍 {event.location}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Empty State */}
-        {events.length === 0 && (
+            ))}
+          </div>
+        ) : (
           <div className="text-center py-12">
-            <p className="text-gray-500 text-lg">No {activeTab} available in this category yet.</p>
+            <p className="text-gray-500 text-lg">No {activeTab} available with current filters.</p>
+            <p className="text-gray-400 text-sm mt-2">Try adjusting your filters</p>
           </div>
         )}
       </main>

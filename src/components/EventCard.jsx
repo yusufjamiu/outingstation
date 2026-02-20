@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Clock, MapPin, Tag } from 'lucide-react';
+import { Calendar, Clock, MapPin } from 'lucide-react';
 
 export default function EventCard({ event }) {
   const formatDate = (timestamp) => {
@@ -11,7 +11,7 @@ export default function EventCard({ event }) {
 
   return (
     <Link to={`/event/${event.id}`}>
-      <div className="event-card group">
+      <div className="event-card group bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition">
         {/* Event Image */}
         <div className="relative h-48 overflow-hidden">
           <img
@@ -20,16 +20,18 @@ export default function EventCard({ event }) {
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
           
-          {/* Category Badge */}
-          <div className="absolute top-3 left-3">
-            <span className="bg-primary/90 text-white text-xs px-3 py-1 rounded-full">
-              #{event.category}
-            </span>
-          </div>
+          {/* Category Badge - Updated for singular category */}
+          {event.category && (
+            <div className="absolute top-3 left-3">
+              <span className="bg-cyan-500 text-white text-xs px-3 py-1 rounded-full font-semibold">
+                #{event.category}
+              </span>
+            </div>
+          )}
 
           {/* Price Badge */}
           <div className="absolute top-3 right-3">
-            <span className={`${event.isFree ? 'bg-green-500' : 'bg-blue-500'} text-white text-xs px-3 py-1 rounded-full font-semibold`}>
+            <span className={`${event.isFree ? 'bg-emerald-500' : 'bg-blue-500'} text-white text-xs px-3 py-1 rounded-full font-semibold`}>
               {event.isFree ? 'Free' : 'Paid'}
             </span>
           </div>
@@ -37,7 +39,7 @@ export default function EventCard({ event }) {
 
         {/* Event Details */}
         <div className="p-5">
-          <h3 className="text-xl font-bold text-gray-900 mb-3 line-clamp-2 group-hover:text-primary transition">
+          <h3 className="text-xl font-bold text-gray-900 mb-3 line-clamp-2 group-hover:text-cyan-500 transition">
             {event.title}
           </h3>
 
@@ -45,13 +47,22 @@ export default function EventCard({ event }) {
             <div className="flex items-center gap-2">
               <Calendar size={16} className="text-gray-400" />
               <span>{formatDate(event.date)}</span>
-              <Clock size={16} className="text-gray-400 ml-2" />
-              <span>{event.time}</span>
+              {event.time && (
+                <>
+                  <Clock size={16} className="text-gray-400 ml-2" />
+                  <span>{event.time}</span>
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
               <MapPin size={16} className="text-gray-400" />
-              <span className="line-clamp-1">{event.location}, {event.city}</span>
+              <span className="line-clamp-1">
+                {event.location && event.city 
+                  ? `${event.location}, ${event.city}`
+                  : event.location || event.city || 'Location TBA'
+                }
+              </span>
             </div>
           </div>
         </div>

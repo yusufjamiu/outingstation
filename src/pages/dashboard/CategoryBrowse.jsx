@@ -1,16 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Bell, Menu, Video, School, ShoppingBag, Briefcase, Palette, UtensilsCrossed, Dumbbell,
+import { Bell, Menu, Video, School, Briefcase, Palette, UtensilsCrossed, Dumbbell,
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
+import { useAuth } from '../../context/AuthContext';
 
 export default function CategoryBrowse() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
+  const { currentUser, userProfile } = useAuth();
+
+  // ✅ Get user data from AuthContext
+  const displayName = userProfile?.name || currentUser?.displayName || 'User';
+  const avatarUrl = userProfile?.avatar || userProfile?.photoURL || currentUser?.photoURL ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=22D3EE&color=fff&size=128`;
+
   const user = {
-    name: 'Saleem',
-    city: 'Lagos',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User'
+    name: displayName,
+    city: userProfile?.city || '',
+    avatar: avatarUrl
   };
 
   const mainCategories = [
@@ -29,94 +36,93 @@ export default function CategoryBrowse() {
       link: '/dashboard/web-events'
     },
     {
-      title: 'Shopping & Outing',
-      description: 'Find local malls, favorite hangouts, cinemas and outing spots.',
-      icon: ShoppingBag,
-      color: 'bg-pink-100 text-pink-600',
-      link: '/dashboard/shopping-events'
-    },
-    {
       title: 'Business & Tech',
       description: 'Discover amazing business & tech events happening around you.',
       icon: Briefcase,
       color: 'bg-blue-100 text-blue-600',
-      link: '/dashboard/category/business-tech'
+      link: '/dashboard/category/Business & Tech'
     },
     {
       title: 'Art & Culture',
       description: 'Discover amazing Art & Culture events happening around you.',
       icon: Palette,
       color: 'bg-purple-100 text-purple-600',
-      link: '/dashboard/category/art-culture'
+      link: '/dashboard/category/Art & Culture'
     },
     {
       title: 'Food & Dining',
       description: 'Discover amazing food & dining events happening around you.',
       icon: UtensilsCrossed,
       color: 'bg-orange-100 text-orange-600',
-      link: '/dashboard/category/food-dining'
+      link: '/dashboard/category/Food & Dining'
     },
     {
       title: 'Sport & Fitness',
       description: 'Discover amazing sport & fitness events happening around you.',
       icon: Dumbbell,
       color: 'bg-green-100 text-green-600',
-      link: '/dashboard/category/sport-fitness'
+      link: '/dashboard/category/Sport & Fitness'
     },
     {
       title: 'Religion & Community',
       description: 'Discover amazing religion & community events happening around you.',
       icon: HeartIcon,
       color: 'bg-pink-100 text-pink-600',
-      link: '/dashboard/category/religion-community'
+      link: '/dashboard/category/Religion & Community'
     },
     {
       title: 'Nightlife & Parties',
       description: 'Discover amazing nightlife & party events happening around you.',
       icon: Music,
       color: 'bg-purple-100 text-purple-600',
-      link: '/dashboard/category/nightlife-parties'
+      link: '/dashboard/category/Nightlife & Parties'
     },
     {
       title: 'Family & Kids Fun',
       description: 'Discover amazing family & kids events happening around you.',
       icon: Baby,
       color: 'bg-yellow-100 text-yellow-600',
-      link: '/dashboard/category/family-kids-fun'
+      link: '/dashboard/category/Family & Kids Fun'
     },
     {
       title: 'Networking & Social',
       description: 'Discover amazing networking & social events happening around you.',
       icon: Users,
       color: 'bg-teal-100 text-teal-600',
-      link: '/dashboard/category/networking-social'
+      link: '/dashboard/category/Networking & Social'
     },
     {
       title: 'Gaming & Esport',
       description: 'Discover amazing gaming & esport events happening around you.',
       icon: Gamepad2,
       color: 'bg-red-100 text-red-600',
-      link: '/dashboard/category/gaming-esport'
+      link: '/dashboard/category/Gaming & Esport'
     },
     {
       title: 'Music & Concerts',
       description: 'Discover amazing music & concert events happening around you.',
       icon: Mic2,
       color: 'bg-pink-100 text-pink-600',
-      link: '/dashboard/category/music-concerts'
+      link: '/dashboard/category/Music & Concerts'
     },
     {
       title: 'Cinema & Show',
       description: 'Discover amazing cinema & show events happening around you.',
       icon: Tv,
       color: 'bg-gray-100 text-gray-600',
-      link: '/dashboard/category/cinema-show'
+      link: '/dashboard/category/Cinema & Show'
+    },
+    {
+      title: 'Education',
+      description: 'Discover amazing education events happening around you.',
+      icon: School,
+      color: 'bg-indigo-100 text-indigo-600',
+      link: '/dashboard/category/Education'
     }
   ];
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* User Sidebar */}
       <UserSidebar 
         activeTab="category" 
         user={user} 
@@ -125,10 +131,8 @@ export default function CategoryBrowse() {
       />
 
       <main className="flex-1 overflow-y-auto">
-        {/* Top Bar */}
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sticky top-0 z-30">
           <div className="flex items-center justify-between">
-            {/* Hamburger Menu - Mobile */}
             <button 
               onClick={() => setSidebarOpen(true)}
               className="lg:hidden p-2 hover:bg-gray-100 rounded-lg mr-2"
@@ -138,12 +142,7 @@ export default function CategoryBrowse() {
 
             <div className="flex-1 max-w-xl">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="text"
-                  placeholder="Search location, events & more"
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm"
-                />
+  
               </div>
             </div>
 
@@ -153,24 +152,22 @@ export default function CategoryBrowse() {
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
               <Link to="/settings">
-  <img 
-    src={user.avatar} 
-    alt={user.name} 
-    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition" 
-  />
-</Link>
+                <img 
+                  src={avatarUrl} 
+                  alt={displayName} 
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition object-cover" 
+                />
+              </Link>
             </div>
           </div>
         </header>
 
-        {/* Content */}
         <div className="p-4 sm:p-6 lg:p-8">
           <div className="mb-6 sm:mb-8">
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Browse by Category</h1>
             <p className="text-sm sm:text-base text-gray-600">Select a category to start exploring</p>
           </div>
 
-          {/* Category Cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
             {mainCategories.map((category, index) => {
               const Icon = category.icon;

@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-// import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, ArrowLeft, Eye, EyeOff } from 'lucide-react';
-import OutingStation from '../assets/OutingStation.png';
+import { useAuth } from '../context/AuthContext';
+import { Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -11,8 +10,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-//   const { login, loginWithGoogle } = useAuth(); // Add loginWithGoogle
+  const { login, loginWithGoogle, currentUser } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (currentUser) navigate('/dashboard');
+  }, [currentUser, navigate]);
 
   const carouselImages = [
     {
@@ -32,114 +36,68 @@ export default function LoginPage() {
     }
   ];
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    try {
-      setError('');
-      setLoading(true);
-      
-      // TODO: Implement Firebase login
-      // await login(email, password);
-      
-      // Mock login for now
-      console.log('Login with:', email);
-      
-      // Redirect to dashboard after successful login
-      navigate('/dashboard');
-    } catch (error) {
-      setError('Failed to login: ' + error.message);
-    }
-    setLoading(false);
-  };
-
-  // Google Sign-In Handler
-  const handleGoogleLogin = async () => {
-    try {
-      setError('');
-      setLoading(true);
-      
-      // TODO: Implement Firebase Google Auth
-      // await loginWithGoogle();
-      
-      // Mock for now
-      console.log('Logging in with Google...');
-      
-      // Redirect to dashboard after OAuth approval
-      navigate('/dashboard');
-    } catch (error) {
-      setError('Failed to login with Google: ' + error.message);
-    }
-    setLoading(false);
-  };
-
-  // Apple Sign-In Handler
-  const handleAppleLogin = async () => {
-    try {
-      setError('');
-      setLoading(true);
-      
-      // TODO: Implement Apple Sign-In
-      // await loginWithApple();
-      
-      // Mock for now
-      console.log('Logging in with Apple...');
-      
-      // Redirect to dashboard after OAuth approval
-      navigate('/dashboard');
-    } catch (error) {
-      setError('Failed to login with Apple: ' + error.message);
-    }
-    setLoading(false);
-  };
-
-  // Auto-advance carousel
-  React.useEffect(() => {
+  useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % carouselImages.length);
     }, 5000);
     return () => clearInterval(timer);
   }, []);
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      setError('');
+      setLoading(true);
+      await login(email, password);
+      navigate('/dashboard');
+    } catch (err) {
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError('Invalid email or password. Please try again.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Too many failed attempts. Please try again later.');
+      } else {
+        setError('Failed to login. Please try again.');
+      }
+    }
+    setLoading(false);
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      setError('');
+      setLoading(true);
+      await loginWithGoogle();
+      navigate('/dashboard');
+    } catch (err) {
+      setError('Failed to sign in with Google. Please try again.');
+    }
+    setLoading(false);
+  };
+
   return (
     <div className="min-h-screen flex">
       {/* Left Side - Form */}
       <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-8">
         <div className="max-w-md w-full">
-          {/* Logo */}
-          <div className="mb-8">
-            <img
-              src={OutingStation}
-              alt="Outing Station"
-              className="h-16 w-auto mb-8"
-            />
-          </div>
 
-          {/* Back to Website Link */}
-          <Link 
-            to="/" 
-            className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-8 transition-colors"
-          >
+          <Link to="/" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-8 transition-colors">
             <ArrowLeft size={20} />
             <span>Back to Website</span>
           </Link>
 
-          {/* Welcome Text */}
           <div className="mb-8">
             <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
               Welcome to <span className="text-cyan-400">OutingStation!</span>
             </h1>
-            <p className="text-gray-600">
-              Login to continue having amazing experience
-            </p>
+            <p className="text-gray-600">Login to continue having an amazing experience</p>
           </div>
 
           {/* Social Login Buttons */}
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <button 
+            <button
               onClick={handleGoogleLogin}
               disabled={loading}
-              className="flex items-center justify-center gap-2 bg-white border-2 border-gray-200 rounded-xl py-3 hover:border-gray-300 transition-colors disabled:opacity-50"
+              className="flex items-center justify-center gap-2 bg-white border-2 border-gray-200 rounded-xl py-3 hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-50"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -149,19 +107,18 @@ export default function LoginPage() {
               </svg>
               <span className="font-medium text-gray-700">Google</span>
             </button>
-            <button 
-              onClick={handleAppleLogin}
-              disabled={loading}
-              className="flex items-center justify-center gap-2 bg-white border-2 border-gray-200 rounded-xl py-3 hover:border-gray-300 transition-colors disabled:opacity-50"
+            <button
+              disabled
+              className="flex items-center justify-center gap-2 bg-white border-2 border-gray-200 rounded-xl py-3 opacity-40 cursor-not-allowed"
+              title="Apple Sign-In available on mobile app"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
               </svg>
               <span className="font-medium text-gray-700">Apple</span>
             </button>
           </div>
 
-          {/* Divider */}
           <div className="relative mb-6">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-gray-200"></div>
@@ -172,110 +129,86 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm">
-              {error}
-            </div>
+            <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-xl mb-6 text-sm">{error}</div>
           )}
 
-          {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                  placeholder="Email"
-                />
-              </div>
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                placeholder="Email address"
+              />
             </div>
 
-            <div>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                  placeholder="Password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-12 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                placeholder="Password"
+              />
+              <button type="button" onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
             </div>
 
             <div className="flex items-center justify-between">
-              <label className="flex items-center">
-                <input 
-                  type="checkbox" 
-                  className="w-4 h-4 rounded border-gray-300 text-cyan-500 focus:ring-cyan-400" 
-                />
-                <span className="ml-2 text-sm text-gray-600">Remember me</span>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-cyan-500 focus:ring-cyan-400" />
+                <span className="text-sm text-gray-600">Remember me</span>
               </label>
-              <Link to="/forgot-password" className="text-sm text-cyan-500 hover:text-cyan-600">
-                Forget Password?
+              <Link to="/forgot-password" className="text-sm text-cyan-500 hover:text-cyan-600 font-medium">
+                Forgot Password?
               </Link>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-4 rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50"
+              className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-4 rounded-xl font-semibold hover:shadow-lg hover:from-cyan-500 hover:to-cyan-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Logging in...' : 'Login'}
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Logging in...
+                </span>
+              ) : 'Login'}
             </button>
           </form>
 
           <p className="mt-8 text-center text-gray-600 text-sm">
-            Don't have an account yet?{' '}
-            <Link to="/signup" className="text-cyan-500 font-semibold hover:text-cyan-600">
-              Sign up Now
-            </Link>
+            Don't have an account?{' '}
+            <Link to="/signup" className="text-cyan-500 font-semibold hover:text-cyan-600">Sign up now</Link>
           </p>
         </div>
       </div>
 
-      {/* Right Side - Image Carousel */}
-      <div className="hidden lg:block lg:w-1/2 relative bg-gray-900">
+      {/* Right Side - Carousel */}
+      <div className="hidden lg:block lg:w-1/2 relative bg-gray-900 overflow-hidden">
         {carouselImages.map((slide, index) => (
-          <div
-            key={index}
-            className={`absolute inset-0 transition-opacity duration-1000 ${
-              index === currentSlide ? 'opacity-100' : 'opacity-0'
-            }`}
-          >
-            <img
-              src={slide.image}
-              alt={slide.title}
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
+          <div key={index}
+            className={`absolute inset-0 transition-opacity duration-1000 ${index === currentSlide ? 'opacity-100' : 'opacity-0'}`}>
+            <img src={slide.image} alt={slide.title} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
             <div className="absolute bottom-20 left-0 right-0 text-center text-white px-12">
               <h2 className="text-3xl font-bold mb-4">{slide.title}</h2>
-              <p className="text-lg text-gray-200">{slide.description}</p>
+              <p className="text-lg text-gray-200 leading-relaxed">{slide.description}</p>
             </div>
           </div>
         ))}
-
-        {/* Carousel Indicators */}
-        <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-2">
+        <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-2 z-10">
           {carouselImages.map((_, index) => (
-            <button
-              key={index}
-              onClick={() => setCurrentSlide(index)}
-              className={`w-2 h-2 rounded-full transition-all ${
-                index === currentSlide ? 'bg-white w-8' : 'bg-white/50'
-              }`}
+            <button key={index} onClick={() => setCurrentSlide(index)}
+              className={`h-2 rounded-full transition-all duration-300 ${index === currentSlide ? 'bg-white w-8' : 'bg-white/50 w-2'}`}
             />
           ))}
         </div>

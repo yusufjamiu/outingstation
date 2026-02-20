@@ -1,101 +1,128 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Bell, Heart, Menu } from 'lucide-react';
+import { Search, Bell, Heart, Menu, Calendar, Clock, MapPin } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
+import { useAuth } from '../../context/AuthContext';
+import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 export default function WebinarEvents() {
   const navigate = useNavigate();
+  const { currentUser, userProfile } = useAuth();
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [savedEventIds, setSavedEventIds] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const displayName = userProfile?.name || currentUser?.displayName || 'User';
+  const avatarUrl = userProfile?.avatar || userProfile?.photoURL || currentUser?.photoURL ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=22D3EE&color=fff&size=128`;
 
   const user = {
-    name: 'Saleem',
-    city: 'Lagos',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User'
+    name: displayName,
+    city: userProfile?.city || 'Lagos',
+    avatar: avatarUrl
   };
 
-  // Click handler to navigate to event details
+  useEffect(() => {
+    loadSavedEventIds();
+    loadWebinarEvents();
+  }, [currentUser]);
+
+  const loadSavedEventIds = async () => {
+    if (!currentUser) return;
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (userDoc.exists()) {
+        setSavedEventIds(userDoc.data().savedEvents || []);
+      }
+    } catch (err) {
+      console.error('Error loading saved events:', err);
+    }
+  };
+
+  const loadWebinarEvents = async () => {
+    try {
+      setLoading(true);
+      const snapshot = await getDocs(collection(db, 'events'));
+
+      let allEvents = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      allEvents = allEvents.filter(e => 
+        e.eventType === 'webinar' && e.status === 'published'
+      );
+
+      setEvents(allEvents);
+    } catch (err) {
+      console.error('Error loading events:', err);
+    }
+    setLoading(false);
+  };
+
+  const filterEventsBySearch = (events) => {
+    if (!searchQuery.trim()) return events;
+    const query = searchQuery.toLowerCase();
+    return events.filter(event =>
+      event.title?.toLowerCase().includes(query) ||
+      event.description?.toLowerCase().includes(query) ||
+      event.platform?.toLowerCase().includes(query)
+    );
+  };
+
+  const displayEvents = filterEventsBySearch(events);
+
   const handleEventClick = (eventId) => {
     navigate(`/event/${eventId}`);
   };
 
-  // Save/unsave event handler
-  const handleSaveClick = (e, eventId) => {
+  const handleSaveClick = async (e, eventId) => {
     e.stopPropagation();
     
-    if (savedEventIds.includes(eventId)) {
-      setSavedEventIds(savedEventIds.filter(id => id !== eventId));
-    } else {
-      setSavedEventIds([...savedEventIds, eventId]);
+    if (!currentUser) {
+      alert('Please login to save events');
+      navigate('/login');
+      return;
+    }
+
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      const isSaved = savedEventIds.includes(eventId);
+
+      if (isSaved) {
+        await updateDoc(userRef, {
+          savedEvents: arrayRemove(eventId)
+        });
+        setSavedEventIds(prev => prev.filter(id => id !== eventId));
+      } else {
+        await updateDoc(userRef, {
+          savedEvents: arrayUnion(eventId)
+        });
+        setSavedEventIds(prev => [...prev, eventId]);
+      }
+    } catch (err) {
+      console.error('Error saving event:', err);
+      alert('Error saving event. Please try again.');
     }
   };
 
-  const webinars = [
-    {
-      id: 1,
-      title: 'Python/Java Basics Workshop',
-      category: 'Online',
-      date: 'Mon, Jan 12',
-      time: '3:00 PM',
-      platform: 'Google Meet',
-      image: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 2,
-      title: 'Tech Realm While Using AI',
-      category: 'Online',
-      date: 'Tue, Jan 12',
-      time: '3:00 PM',
-      platform: 'Twitter Space',
-      image: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 3,
-      title: 'Remote Leadership Summit',
-      category: 'Live',
-      date: 'Fri, Jan 12',
-      time: '3:00 PM',
-      platform: 'Zoom',
-      image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 4,
-      title: '2026 Job Hunting Navigation',
-      category: 'Live',
-      date: 'Sat, Jan 13',
-      time: '2:00 PM',
-      platform: 'Google Meet',
-      image: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 5,
-      title: 'PhD Scholarship Application',
-      category: 'Online',
-      date: 'Sun, Jan 14',
-      time: '4:00 PM',
-      platform: 'Zoom',
-      image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&q=80',
-      isFree: true
-    },
-    {
-      id: 6,
-      title: 'Freshmen Mega Orientation',
-      category: 'Online',
-      date: 'Mon, Jan 15',
-      time: '10:00 AM',
-      platform: 'Microsoft Teams',
-      image: 'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=800&q=80',
-      isFree: true
+  const getDate = (event) => {
+    if (event.date) {
+      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
+      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     }
-  ];
+    return 'TBD';
+  };
+
+  const getTime = (event) => event.time || event.dailyStartTime || '';
+  const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&q=80';
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* User Sidebar */}
       <UserSidebar 
         activeTab="category" 
         user={user}
@@ -104,7 +131,6 @@ export default function WebinarEvents() {
       />
 
       <main className="flex-1 overflow-y-auto">
-        {/* Header */}
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sticky top-0 z-30">
           <div className="flex items-center justify-between">
             <button 
@@ -119,7 +145,9 @@ export default function WebinarEvents() {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                 <input
                   type="text"
-                  placeholder="Search location, event & more"
+                  placeholder="Search webinars..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm"
                 />
               </div>
@@ -131,12 +159,12 @@ export default function WebinarEvents() {
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
               <Link to="/settings">
-  <img 
-    src={user.avatar} 
-    alt={user.name} 
-    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition" 
-  />
-</Link>
+                <img 
+                  src={avatarUrl} 
+                  alt={displayName} 
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition object-cover" 
+                />
+              </Link>
             </div>
           </div>
         </header>
@@ -145,108 +173,122 @@ export default function WebinarEvents() {
           <div className="mb-6 sm:mb-8">
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Webinar & Virtual Events</h1>
             <p className="text-sm sm:text-base text-gray-600">
-              Discover online workshop, conferences, and live sessions. Connect with experts and learn new things from various parts in the world
+              Discover online workshops, conferences, and live sessions. Connect with experts and learn new things from various parts of the world
             </p>
           </div>
 
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
-            <div className="flex-1 sm:flex-initial">
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Date:</label>
-              <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
-                <option>Any</option>
-                <option>Today</option>
-                <option>This Week</option>
-                <option>This Month</option>
-              </select>
-            </div>
-
-            <div className="flex-1 sm:flex-initial">
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Topic:</label>
-              <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
-                <option>All</option>
-                <option>Technology</option>
-                <option>Business</option>
-                <option>Education</option>
-              </select>
-            </div>
-
-            <div className="flex-1 sm:flex-initial">
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Status:</label>
-              <select className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
-                <option>All</option>
-                <option>Free</option>
-                <option>Paid</option>
-              </select>
-            </div>
-
-            <div className="sm:ml-auto flex items-end">
-              <p className="text-sm sm:text-base text-gray-600 font-medium">{webinars.length} Events Available</p>
-            </div>
+          <div className="mb-6">
+            <p className="text-sm sm:text-base text-gray-600 font-medium">
+              {displayEvents.length} Event{displayEvents.length !== 1 ? 's' : ''} Available
+              {searchQuery && ` (filtered from ${events.length} total)`}
+            </p>
           </div>
 
-          {/* Webinars Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-            {webinars.map((webinar) => (
-              <div 
-                key={webinar.id}
-                onClick={() => handleEventClick(webinar.id)}
-                className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
-              >
-                <div className="relative h-48 sm:h-56">
-                  <img 
-                    src={webinar.image} 
-                    alt={webinar.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  />
-                  
-                  <div className="absolute top-3 left-3">
-                    <span className={`${webinar.category === 'Live' ? 'bg-red-500' : 'bg-blue-500'} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
-                      📹 {webinar.category}
-                    </span>
-                  </div>
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
+            </div>
+          ) : (
+            <>
+              {displayEvents.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
+                  {displayEvents.map((event) => (
+                    <div 
+                      key={event.id}
+                      onClick={() => handleEventClick(event.id)}
+                      className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
+                    >
+                      <div className="relative h-48 sm:h-56">
+                        <img 
+                          src={getImage(event)} 
+                          alt={event.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                        />
+                        
+                        <div className="absolute top-3 left-3">
+                          <span className="bg-purple-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-full">
+                            📹 Virtual
+                          </span>
+                        </div>
 
-                  <button 
-                    onClick={(e) => handleSaveClick(e, webinar.id)}
-                    className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
-                  >
-                    <Heart 
-                      size={18}
-                      className={`sm:w-5 sm:h-5 ${savedEventIds.includes(webinar.id) ? 'text-red-500 fill-red-500' : 'text-gray-600'}`}
-                    />
-                  </button>
+                        <button 
+                          onClick={(e) => handleSaveClick(e, event.id)}
+                          className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
+                        >
+                          <Heart 
+                            size={18}
+                            className={`sm:w-5 sm:h-5 ${savedEventIds.includes(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-600'}`}
+                          />
+                        </button>
 
-                  {webinar.isFree && (
-                    <div className="absolute bottom-3 right-3">
-                      <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
-                        Free
-                      </span>
+                        {event.isFree && (
+                          <div className="absolute bottom-3 right-3">
+                            <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
+                              Free
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-4 sm:p-5">
+                        <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
+                          {event.title}
+                        </h3>
+                        
+                        <div className="space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
+                          <div className="flex items-center gap-2">
+                            <Calendar size={14} />
+                            <span>{getDate(event)}</span>
+                            {getTime(event) && (
+                              <>
+                                <Clock size={14} />
+                                <span>{getTime(event)}</span>
+                              </>
+                            )}
+                          </div>
+                          {event.platform && (
+                            <div className="flex items-center gap-2">
+                              <MapPin size={14} />
+                              <span>{event.platform}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          {event.platformLink && (
+                            <a 
+                              href={event.platformLink}
+                              onClick={(e) => e.stopPropagation()}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-cyan-500 text-xs sm:text-sm hover:underline"
+                            >
+                              Join Meeting →
+                            </a>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
-
-                <div className="p-4 sm:p-5">
-                  <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
-                    {webinar.title}
-                  </h3>
-                  
-                  <div className="space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
-                    <div className="flex items-center gap-2">
-                      <span>📅 {webinar.date}</span>
-                      <span>🕒 {webinar.time}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-cyan-500 text-xs sm:text-sm">📍 {webinar.platform}</span>
-                    <button className="text-cyan-500 font-semibold text-xs sm:text-sm hover:underline">
-                      View →
-                    </button>
-                  </div>
+              ) : (
+                <div className="text-center py-20">
+                  <p className="text-gray-500 text-lg mb-2">
+                    {searchQuery 
+                      ? `No webinars found for "${searchQuery}"` 
+                      : 'No webinar events found'
+                    }
+                  </p>
+                  <p className="text-gray-400 text-sm">
+                    {searchQuery 
+                      ? 'Try a different search term' 
+                      : 'Create webinar events in the admin panel with eventType: "webinar"'
+                    }
+                  </p>
                 </div>
-              </div>
-            ))}
-          </div>
+              )}
+            </>
+          )}
         </div>
       </main>
     </div>

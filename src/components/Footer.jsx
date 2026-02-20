@@ -43,9 +43,7 @@ const Footer = () => {
                   <li><Link to="/city/abuja">Abuja</Link></li>
                   <li><Link to="/city/ibadan">Ibadan</Link></li>
                   <li>
-                    <Link to="/city/riyadh">
-                      Riyadh <span className="text-white/80">View more..</span>
-                    </Link>
+                      <span className="text-white/80">View more..</span>
                   </li>
                 </ul>
               </div>

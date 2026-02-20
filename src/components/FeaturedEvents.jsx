@@ -1,101 +1,39 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import EventCard from './EventCard';
-import ilorinDurbar from '../assets/ilorinDurbar.jpg'
-import osogboDev from '../assets/osogboDev.jpg'
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 
 const FeaturedEvents = () => {
-  const events = [
-    {
-      id: 1,
-      title: 'Global Startup Summit 2026',
-      imageUrl: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400&h=300&fit=crop',
-      category: 'Tech',
-      isFree: true,
-      date: new Date('2026-01-12'),
-      time: '3:00 PM (WAT)',
-      location: 'Lagos',
-      city: 'Nigeria'
-    },
-    {
-      id: 2,
-      title: 'Veggies Cookathon Breaking Record',
-      imageUrl: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=300&fit=crop',
-      category: 'Food',
-      isFree: true,
-      date: new Date('2026-01-12'),
-      time: '3:00 PM (WAT)',
-      location: 'Lagos',
-      city: 'Nigeria'
-    },
-    {
-      id: 3,
-      title: 'Largest Yoga Fitness Training',
-      imageUrl: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&h=300&fit=crop',
-      category: 'Fitness',
-      isFree: false,
-      date: new Date('2026-01-12'),
-      time: '3:00 PM (WAT)',
-      location: 'Accra',
-      city: 'Ghana'
-    },
-    {
-      id: 4,
-      title: 'Ibadan MidMonth Marathon',
-      imageUrl: 'https://images.unsplash.com/photo-1452626038306-9aae5e071dd3?w=400&h=300&fit=crop',
-      category: 'Fitness',
-      isFree: true,
-      date: new Date('2026-01-12'),
-      time: '3:00 PM (WAT)',
-      location: 'Ibadan',
-      city: 'Nigeria'
-    },
-    {
-      id: 5,
-      title: 'Ilorin Emirate Durbar 2026',
-      imageUrl: ilorinDurbar,
-      category: 'Culture',
-      isFree: true,
-      date: new Date('2026-01-12'),
-      time: '3:00 PM (WAT)',
-      location: 'Ilorin',
-      city: 'Nigeria'
-    },
-    {
-      id: 6,
-      title: 'Osogbo Devs Hackathon',
-      imageUrl: osogboDev,
-      category: 'Tech',
-      isFree: false,
-      date: new Date('2026-01-12'),
-      time: '3:00 PM (WAT)',
-      location: 'Osogbo',
-      city: 'Nigeria'
-    },
-    {
-      id: 7,
-      title: 'Global Startup Summit 2026',
-      imageUrl: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400&h=300&fit=crop',
-      category: 'Tech',
-      isFree: true,
-      date: new Date('2026-01-12'),
-      time: '3:00 PM (WAT)',
-      location: 'Lagos',
-      city: 'Nigeria'
-    },
-    {
-      id: 8,
-      title: 'Veggies Cookathon Breaking Record',
-      imageUrl: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=300&fit=crop',
-      category: 'Food',
-      isFree: true,
-      date: new Date('2026-01-12'),
-      time: '3:00 PM (WAT)',
-      location: 'Lagos',
-      city: 'Nigeria'
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadFeaturedEvents();
+  }, []);
+
+  const loadFeaturedEvents = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'events'));
+      const allEvents = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        // Convert Firestore Timestamp to Date for EventCard
+        date: doc.data().date?.toDate ? doc.data().date.toDate() : new Date(doc.data().date)
+      }));
+
+      // Filter: published, trending OR featured, max 8
+      const featured = allEvents
+        .filter(e => e.status === 'published' && (e.isTrending || e.isFeatured))
+        .slice(0, 8);
+
+      setEvents(featured);
+    } catch (err) {
+      console.error('Error loading events:', err);
     }
-  ];
+    setLoading(false);
+  };
 
   return (
     <section className="bg-gradient-to-br from-gray-100 to-gray-50 py-16 md:py-24 px-4 md:px-6">
@@ -110,12 +48,28 @@ const FeaturedEvents = () => {
           </p>
         </div>
 
-        {/* Events Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-          {events.map((event) => (
-            <EventCard key={event.id} event={event} />
-          ))}
-        </div>
+        {/* Loading State */}
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
+          </div>
+        ) : (
+          <>
+            {/* Events Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+              {events.map((event) => (
+                <EventCard key={event.id} event={event} />
+              ))}
+            </div>
+
+            {/* Empty State */}
+            {events.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-gray-500">No featured events available yet.</p>
+              </div>
+            )}
+          </>
+        )}
 
         {/* View More Button */}
         <div className="text-center">

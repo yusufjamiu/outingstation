@@ -1,80 +1,89 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { db } from '../firebase';
+import { useAuth } from './AuthContext';
 
-// Create the context
 const SavedEventsContext = createContext();
 
-// Custom hook to use the context
-export const useSavedEvents = () => {
-  const context = useContext(SavedEventsContext);
-  if (!context) {
-    throw new Error('useSavedEvents must be used within SavedEventsProvider');
-  }
-  return context;
-};
+export function useSavedEvents() {
+  return useContext(SavedEventsContext);
+}
 
-// Provider component
-export const SavedEventsProvider = ({ children }) => {
-  // Load saved events from localStorage on mount
-  const [savedEvents, setSavedEvents] = useState(() => {
-    const stored = localStorage.getItem('savedEvents');
-    return stored ? JSON.parse(stored) : [];
-  });
+export function SavedEventsProvider({ children }) {
+  const [savedEventIds, setSavedEventIds] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const { currentUser } = useAuth();
 
-  // Save to localStorage whenever savedEvents changes
+  // Load saved events from Firestore when user logs in
   useEffect(() => {
-    localStorage.setItem('savedEvents', JSON.stringify(savedEvents));
-  }, [savedEvents]);
+    if (currentUser) {
+      loadSavedEvents();
+    } else {
+      setSavedEventIds([]);
+    }
+  }, [currentUser]);
+
+  const loadSavedEvents = async () => {
+    if (!currentUser) return;
+    try {
+      setLoading(true);
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        setSavedEventIds(data.savedEvents || []);
+      }
+    } catch (err) {
+      console.error('Error loading saved events:', err);
+    }
+    setLoading(false);
+  };
 
   // Check if an event is saved
   const isEventSaved = (eventId) => {
-    return savedEvents.some(event => event.id === eventId);
+    return savedEventIds.includes(eventId);
   };
 
-  // Add event to saved
-  const saveEvent = (event) => {
-    if (!isEventSaved(event.id)) {
-      setSavedEvents(prev => [...prev, event]);
-      console.log('Event saved:', event.title, 'ID:', event.id);
-      return true;
+  // Toggle save/unsave event
+  const toggleSaveEvent = async (eventId) => {
+    if (!currentUser) {
+      // Not logged in — could redirect to login or show a prompt
+      return false;
     }
-    return false;
-  };
 
-  // Remove event from saved
-  const unsaveEvent = (eventId) => {
-    setSavedEvents(prev => prev.filter(event => event.id !== eventId));
-    console.log('Event removed:', eventId);
-  };
+    const userRef = doc(db, 'users', currentUser.uid);
+    const alreadySaved = savedEventIds.includes(eventId);
 
-  // Toggle save status
-  const toggleSaveEvent = (event) => {
-    if (isEventSaved(event.id)) {
-      unsaveEvent(event.id);
-      return false; // Now unsaved
-    } else {
-      saveEvent(event);
-      return true; // Now saved
+    try {
+      if (alreadySaved) {
+        // Remove from saved
+        await updateDoc(userRef, {
+          savedEvents: arrayRemove(eventId)
+        });
+        setSavedEventIds(prev => prev.filter(id => id !== eventId));
+      } else {
+        // Add to saved
+        await updateDoc(userRef, {
+          savedEvents: arrayUnion(eventId)
+        });
+        setSavedEventIds(prev => [...prev, eventId]);
+      }
+      return !alreadySaved; // returns new state: true = saved, false = unsaved
+    } catch (err) {
+      console.error('Error toggling saved event:', err);
+      return alreadySaved;
     }
-  };
-
-  // Get all saved events
-  const getSavedEvents = () => {
-    return savedEvents;
   };
 
   // Get count of saved events
-  const getSavedEventsCount = () => {
-    return savedEvents.length;
-  };
+  const savedCount = savedEventIds.length;
 
   const value = {
-    savedEvents,
+    savedEventIds,
     isEventSaved,
-    saveEvent,
-    unsaveEvent,
     toggleSaveEvent,
-    getSavedEvents,
-    getSavedEventsCount
+    savedCount,
+    loading,
+    refreshSavedEvents: loadSavedEvents
   };
 
   return (
@@ -82,4 +91,4 @@ export const SavedEventsProvider = ({ children }) => {
       {children}
     </SavedEventsContext.Provider>
   );
-};
+}

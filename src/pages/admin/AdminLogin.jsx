@@ -14,8 +14,11 @@ export default function AdminLogin() {
     e.preventDefault();
     
     if (password === ADMIN_PASSWORD) {
-      // Store admin auth in localStorage
+      // Store admin auth
       localStorage.setItem('adminAuth', 'true');
+      console.log('✅ Admin auth stored:', localStorage.getItem('adminAuth'));
+      
+      // Redirect to admin dashboard
       navigate('/admin');
     } else {
       setError('Incorrect password. Please try again.');
@@ -53,6 +56,7 @@ export default function AdminLogin() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none pr-12"
                   placeholder="Enter admin password"
                   required
+                  autoFocus
                 />
                 <button
                   type="button"
@@ -78,6 +82,12 @@ export default function AdminLogin() {
               Access Admin Panel
             </button>
           </form>
+
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-500">
+              Default Password: <code className="bg-gray-100 px-2 py-1 rounded text-xs">@GemZeal01</code>
+            </p>
+          </div>
         </div>
 
         {/* Footer */}

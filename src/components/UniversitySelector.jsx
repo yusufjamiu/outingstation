@@ -6,37 +6,37 @@ const UniversitySelector = () => {
   const universities = [
     {
       name: "University of Lagos (Unilag)",
-      location: "Lagos, Nigeria.",
+      location: "Lagos, Nigeria",
       iconColor: "bg-blue-100 text-blue-600",
       slug: "university-of-lagos-unilag",
     },
     {
-      name: "King Saud University (KSU)",
-      location: "Riyadh, Saudi Arabia.",
+      name: "Obafemi Awolowo University (OAU)",
+      location: "Ile-Ife, Nigeria",
       iconColor: "bg-green-100 text-green-600",
-      slug: "king-saud-university-ksu",
+      slug: "obafemi-awolowo-university-oau",
     },
     {
       name: "University of Ibadan (UI)",
-      location: "Ibadan, Nigeria.",
+      location: "Ibadan, Nigeria",
       iconColor: "bg-yellow-100 text-yellow-600",
       slug: "university-of-ibadan-ui",
     },
     {
-      name: "University of Ghana (Legon)",
-      location: "Accra, Ghana.",
+      name: "Ahmadu Bello University (ABU)",
+      location: "Zaria, Nigeria",
       iconColor: "bg-purple-100 text-purple-600",
-      slug: "university-of-ghana-legon",
+      slug: "ahmadu-bello-university-abu",
     },
     {
       name: "Covenant University (CU)",
-      location: "Ota, Nigeria.",
+      location: "Ota, Nigeria",
       iconColor: "bg-red-100 text-red-600",
       slug: "covenant-university-cu",
     },
     {
       name: "University of Ilorin (Unilorin)",
-      location: "Ilorin, Nigeria.",
+      location: "Ilorin, Nigeria",
       iconColor: "bg-indigo-100 text-indigo-600",
       slug: "university-of-ilorin-unilorin",
     },
@@ -49,7 +49,7 @@ const UniversitySelector = () => {
           {universities.map((uni, index) => (
             <Link
               key={index}
-              to={`/campus?university=${uni.slug}`}
+              to={`/campus-events?university=${encodeURIComponent(uni.name)}`}
               className="border rounded-xl p-6 hover:shadow-lg transition"
             >
               <div className="flex gap-4">
@@ -72,7 +72,7 @@ const UniversitySelector = () => {
         <div className="text-center mt-10">
           <Link
             to="/campus-events"
-            className="text-gray-600 flex justify-center gap-2"
+            className="text-gray-600 flex justify-center gap-2 hover:text-cyan-500 transition"
           >
             Browse all universities <ArrowRight />
           </Link>
