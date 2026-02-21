@@ -161,30 +161,33 @@ export default function EventDetails() {
   };
 
   const handleSaveToggle = async () => {
-    if (!currentUser) {
-      navigate('/login');
-      return;
-    }
+  if (!currentUser) {
+    toast.error('Please login to save events', { icon: '🔒' });
+    setTimeout(() => navigate('/login'), 1000);
+    return;
+  }
 
-    try {
-      const userRef = doc(db, 'users', currentUser.uid);
-      
-      if (saved) {
-        await updateDoc(userRef, {
-          savedEvents: arrayRemove(id)
-        });
-        setSaved(false);
-      } else {
-        await updateDoc(userRef, {
-          savedEvents: arrayUnion(id)
-        });
-        setSaved(true);
-      }
-    } catch (err) {
-      console.error('Error toggling save:', err);
+  try {
+    const userRef = doc(db, 'users', currentUser.uid);
+    
+    if (saved) {
+      await updateDoc(userRef, {
+        savedEvents: arrayRemove(id)
+      });
+      setSaved(false);
+      toast.success('Event removed from saved', { icon: '💔' });
+    } else {
+      await updateDoc(userRef, {
+        savedEvents: arrayUnion(id)
+      });
+      setSaved(true);
+      toast.success('Event saved!', { icon: '❤️' });
     }
-  };
-
+  } catch (err) {
+    console.error('Error toggling save:', err);
+    toast.error('Failed to save. Try again.', { icon: '❌' });
+  }
+};
   const handleShare = (platform) => {
     const url = window.location.href;
     const text = `Check out this event: ${event.title}`;

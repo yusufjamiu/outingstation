@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import Event from './../assets/event.jpg';
+import Connectwithpeople from './../assets/Connectwithpeople.JPG';
+import GetNotified from './../assets/GetNotified.JPG';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -20,17 +23,17 @@ export default function LoginPage() {
 
   const carouselImages = [
     {
-      image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&h=1000&fit=crop',
+      image: Event,
       title: 'Discover Events',
       description: 'Browse curated lists filtered by date, category or vibe to find your perfect match.'
     },
     {
-      image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&h=1000&fit=crop',
+      image: Connectwithpeople,
       title: 'Connect with Community',
-      description: 'Join thousands of event-goers and make unforgettable memories.'
+      description: 'Join thousands of event-goers and make unforgettable memories.' 
     },
     {
-      image: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&h=1000&fit=crop',
+      image: GetNotified,
       title: 'Never Miss Out',
       description: 'Get notified about the latest events happening around you.'
     }

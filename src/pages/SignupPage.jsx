@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, User, Eye, EyeOff, ArrowLeft, MapPin } from 'lucide-react';
+import Create from './../assets/Create.jpg'
+import Image2 from './../assets/SignUp2.JPG'
+import Connected from './../assets/Connected.JPG'
 
 export default function SignupPage() {
   const [formData, setFormData] = useState({ name: '', email: '', city: '', password: '', confirmPassword: '' });
@@ -18,9 +21,9 @@ export default function SignupPage() {
   }, [currentUser, navigate]);
 
   const carouselImages = [
-    { image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800&h=1000&fit=crop', title: 'Join OutingStation', description: 'Create an account and start discovering amazing events near you.' },
-    { image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&h=1000&fit=crop', title: 'Save Your Favorites', description: 'Bookmark events you love and never miss out again.' },
-    { image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?w=800&h=1000&fit=crop', title: 'Stay Connected', description: 'Get personalized recommendations based on your interests.' }
+    { image: Create, title: 'Join OutingStation', description: 'Create an account and start discovering amazing events near you.' },
+    { image: Image2, title: 'Save Your Favorites', description: 'Bookmark events you love and never miss out again.' },
+    { image: Connected, title: 'Stay Connected', description: 'Get personalized recommendations based on your interests.' }
   ];
 
   useEffect(() => {
