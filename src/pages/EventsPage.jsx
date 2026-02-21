@@ -1,3 +1,4 @@
+import SEO from '../components/SEO'
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -149,6 +150,14 @@ export default function EventsPage() {
   };
 
   return (
+   <>
+    <SEO 
+      title="Browse All Events - OutingStation"
+      description="Discover upcoming concerts, webinars, campus events, and activities across Nigeria. Filter by category, location, and price."
+      url="https://outingstation.com/events"
+      keywords="events Nigeria, Lagos events, Abuja events, upcoming events, concerts Nigeria, webinars, campus activities"
+    />
+
     <div className="min-h-screen bg-gray-50">
       <Navbar />
 
@@ -306,5 +315,6 @@ export default function EventsPage() {
 
       <Footer />
     </div>
+  </>
   );
 }
