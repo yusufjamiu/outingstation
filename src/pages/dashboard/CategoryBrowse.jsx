@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, Menu, Video, School, Briefcase, Palette, UtensilsCrossed, Dumbbell,
+import { Bell, Menu, Video, School, GraduationCap, Briefcase, Palette, UtensilsCrossed, Dumbbell,
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 import { useAuth } from '../../context/AuthContext';
@@ -115,7 +115,7 @@ export default function CategoryBrowse() {
     {
       title: 'Education',
       description: 'Discover amazing education events happening around you.',
-      icon: School,
+      icon: GraduationCap,
       color: 'bg-indigo-100 text-indigo-600',
       link: '/dashboard/category/Education'
     }

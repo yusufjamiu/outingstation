@@ -1,13 +1,16 @@
 import SEO from '../components/SEO'
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import EventCard from '../components/EventCard';
 import { Filter } from 'lucide-react';
+import { filterUpcomingEvents } from '../utils/eventFilters';
 
 export default function EventsPage() {
+  const [searchParams] = useSearchParams();
   const [allEvents, setAllEvents] = useState([]);
   const [filteredEvents, setFilteredEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,7 +19,8 @@ export default function EventsPage() {
     city: 'all',
     date: 'all',
     price: 'any',
-    eventType: 'all'
+    eventType: 'all',
+    search: ''
   });
 
   const categories = [
@@ -44,6 +48,18 @@ export default function EventsPage() {
   }, []);
 
   useEffect(() => {
+    // Read URL params on mount
+    const urlSearch = searchParams.get('search') || '';
+    const urlCity = searchParams.get('city') || 'all';
+    
+    setFilters(prev => ({
+      ...prev,
+      search: urlSearch,
+      city: urlCity.toLowerCase()
+    }));
+  }, [searchParams]);
+
+  useEffect(() => {
     applyFilters();
   }, [filters, allEvents]);
 
@@ -58,7 +74,8 @@ export default function EventsPage() {
       }));
 
       // Filter only published events
-      const publishedEvents = eventsData.filter(e => e.status === 'published');
+      let publishedEvents = eventsData.filter(e => e.status === 'published');
+publishedEvents = filterUpcomingEvents(publishedEvents);
       
       // Sort by date (newest first)
       publishedEvents.sort((a, b) => {
@@ -77,6 +94,17 @@ export default function EventsPage() {
 
   const applyFilters = () => {
     let filtered = [...allEvents];
+
+    // Filter by search query
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      filtered = filtered.filter(e => 
+        e.title?.toLowerCase().includes(searchLower) ||
+        e.description?.toLowerCase().includes(searchLower) ||
+        e.location?.toLowerCase().includes(searchLower) ||
+        e.address?.toLowerCase().includes(searchLower)
+      );
+    }
 
     // Filter by category
     if (filters.category !== 'all') {
@@ -145,7 +173,8 @@ export default function EventsPage() {
       city: 'all',
       date: 'all',
       price: 'any',
-      eventType: 'all'
+      eventType: 'all',
+      search: ''
     });
   };
 
@@ -166,6 +195,11 @@ export default function EventsPage() {
         <div className="mb-6 sm:mb-8">
           <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">Browse All Events</h1>
           <p className="text-sm sm:text-base text-gray-600">Discover amazing events happening around you</p>
+          {filters.search && (
+            <p className="text-sm text-cyan-600 mt-2">
+              Searching for: "{filters.search}"
+            </p>
+          )}
         </div>
 
         {/* Filters */}
@@ -269,7 +303,7 @@ export default function EventsPage() {
           </div>
 
           {/* Clear Filters Button */}
-          {(filters.category !== 'all' || filters.city !== 'all' || filters.date !== 'all' || filters.price !== 'any' || filters.eventType !== 'all') && (
+          {(filters.category !== 'all' || filters.city !== 'all' || filters.date !== 'all' || filters.price !== 'any' || filters.eventType !== 'all' || filters.search) && (
             <div className="mt-4 flex justify-end">
               <button
                 onClick={clearFilters}

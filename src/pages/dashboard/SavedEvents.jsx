@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Search, Bell, Calendar, Clock, MapPin, X, Bookmark, Menu, Heart } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 import { useAuth } from '../../context/AuthContext';
+import { filterUpcomingEvents } from '../../utils/eventFilters';
+
 import { doc, getDoc, updateDoc, arrayRemove } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -60,9 +62,12 @@ export default function SavedEvents() {
       const eventPromises = eventIds.map(id => getDoc(doc(db, 'events', id)));
       const eventDocs = await Promise.all(eventPromises);
       
-      const events = eventDocs
+      let events = eventDocs
         .filter(d => d.exists())
         .map(d => ({ id: d.id, ...d.data() }));
+
+      // ✅ FILTER OUT PAST EVENTS
+      events = filterUpcomingEvents(events);
 
       setSavedEvents(events);
     } catch (err) {
@@ -170,7 +175,7 @@ export default function SavedEvents() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Saved Events</h1>
               <p className="text-sm sm:text-base text-gray-500 mt-1">
-                You've saved {displayEvents.length} event{displayEvents.length !== 1 ? 's' : ''}.
+                You've saved {displayEvents.length} upcoming event{displayEvents.length !== 1 ? 's' : ''}.
                 {searchQuery && ` (filtered from ${savedEvents.length} total)`}
               </p>
             </div>
@@ -251,7 +256,7 @@ export default function SavedEvents() {
                   </div>
                 </div>
                 <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2 sm:mb-3">
-                  {searchQuery ? 'No Results Found' : 'No Saved Events Yet'}
+                  {searchQuery ? 'No Results Found' : 'No Upcoming Saved Events'}
                 </h2>
                 <p className="text-sm sm:text-base text-gray-500 mb-6 sm:mb-8">
                   {searchQuery 

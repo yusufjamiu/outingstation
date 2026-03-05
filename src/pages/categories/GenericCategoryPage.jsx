@@ -6,6 +6,7 @@ import {
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv 
 } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
+import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { db } from '../../firebase';
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
@@ -61,9 +62,10 @@ export default function GenericCategoryPage() {
 
       // Filter published and by category
       const categoryName = currentCategory.name;
-      const categoryEvents = eventsData.filter(e => 
+      let categoryEvents = eventsData.filter(e => 
         e.status === 'published' && e.category === categoryName
       );
+     categoryEvents = filterUpcomingEvents(categoryEvents);  // ✅ Filter categoryEvents!
 
       setAllEvents(categoryEvents);
     } catch (err) {

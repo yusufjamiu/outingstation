@@ -4,12 +4,14 @@ import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { isUpcomingEvent } from '../../utils/eventFilters';
 
 export default function AdminEvents() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterTime, setFilterTime] = useState('all'); // NEW: all, upcoming, past
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -97,11 +99,11 @@ export default function AdminEvents() {
     return '';
   };
 
-  // ✅ ONLY CHANGE: Simplified category getter
   const getCategory = (event) => {
     return event.category || 'N/A';
   };
 
+  // ✅ NEW: Filter by time (upcoming/past)
   const filteredEvents = events.filter(event => {
     const matchesSearch = (event.title || '')
       .toLowerCase()
@@ -111,7 +113,15 @@ export default function AdminEvents() {
       filterStatus === 'all' ||
       (event.status || '').toLowerCase() === filterStatus;
 
-    return matchesSearch && matchesFilter;
+    // NEW: Time filter
+    let matchesTime = true;
+    if (filterTime === 'upcoming') {
+      matchesTime = isUpcomingEvent(event);
+    } else if (filterTime === 'past') {
+      matchesTime = !isUpcomingEvent(event);
+    }
+
+    return matchesSearch && matchesFilter && matchesTime;
   });
 
   return (
@@ -138,7 +148,7 @@ export default function AdminEvents() {
                   Manage Events
                 </h2>
                 <p className="text-sm text-gray-500">
-                  {events.length} events in Firestore
+                  {filteredEvents.length} of {events.length} events shown
                 </p>
               </div>
             </div>
@@ -159,6 +169,40 @@ export default function AdminEvents() {
                 <span>Create Event</span>
               </button>
             </div>
+          </div>
+
+          {/* ✅ NEW: Filters Row */}
+          <div className="mt-4 flex flex-col sm:flex-row gap-3">
+            {/* Search */}
+            <input
+              type="text"
+              placeholder="Search events..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            />
+
+            {/* Status Filter */}
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            >
+              <option value="all">All Status</option>
+              <option value="published">Published</option>
+              <option value="draft">Draft</option>
+            </select>
+
+            {/* ✅ NEW: Time Filter */}
+            <select
+              value={filterTime}
+              onChange={(e) => setFilterTime(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm bg-cyan-50"
+            >
+              <option value="all">All Events</option>
+              <option value="upcoming">Upcoming Only</option>
+              <option value="past">Past Only</option>
+            </select>
           </div>
         </header>
 
@@ -197,7 +241,6 @@ export default function AdminEvents() {
                           </div>
                         </td>
 
-                        {/* ✅ ONLY CHANGE: Show university name directly */}
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                           {event.eventType === 'campus' ? (event.university || '—') : '—'}
                         </td>
@@ -232,6 +275,7 @@ export default function AdminEvents() {
                             <button
                               onClick={() => navigate(`/event/${event.id}`)}
                               className="p-2 text-blue-600"
+                              title="View"
                             >
                               <Eye size={18} />
                             </button>
@@ -239,6 +283,7 @@ export default function AdminEvents() {
                             <button
                               onClick={() => navigate(`/admin/events/edit/${event.id}`)}
                               className="p-2 text-green-600"
+                              title="Edit"
                             >
                               <Edit size={18} />
                             </button>
@@ -246,6 +291,7 @@ export default function AdminEvents() {
                             <button
                               onClick={() => handleDelete(event.id)}
                               className="p-2 text-red-600"
+                              title="Delete"
                             >
                               <Trash2 size={18} />
                             </button>
@@ -260,7 +306,7 @@ export default function AdminEvents() {
 
               {filteredEvents.length === 0 && (
                 <div className="text-center py-12 text-gray-500">
-                  No events found.
+                  No events found matching your filters.
                 </div>
               )}
             </div>

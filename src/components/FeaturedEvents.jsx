@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react';
 import EventCard from './EventCard';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
+import { filterUpcomingEvents } from '../utils/eventFilters';
 
 const FeaturedEvents = () => {
   const [events, setEvents] = useState([]);
@@ -23,10 +24,14 @@ const FeaturedEvents = () => {
         date: doc.data().date?.toDate ? doc.data().date.toDate() : new Date(doc.data().date)
       }));
 
-      // Filter: published, trending OR featured, max 8
-      const featured = allEvents
-        .filter(e => e.status === 'published' && (e.isTrending || e.isFeatured))
-        .slice(0, 8);
+      // Filter: published, trending OR featured
+      let featured = allEvents.filter(e => e.status === 'published' && (e.isTrending || e.isFeatured));
+      
+      // ✅ FILTER OUT PAST EVENTS
+      featured = filterUpcomingEvents(featured);
+      
+      // Max 8 events
+      featured = featured.slice(0, 8);
 
       setEvents(featured);
     } catch (err) {

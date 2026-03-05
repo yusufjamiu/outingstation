@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Search, Bell, Heart, ChevronDown, Menu, Calendar, Clock, MapPin } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 import { useAuth } from '../../context/AuthContext';
+import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -74,6 +75,8 @@ export default function CampusEvents() {
       allEvents = allEvents.filter(e => 
         e.eventType === 'campus' && e.status === 'published'
       );
+      // ✅ FILTER OUT PAST EVENTS
+     allEvents = filterUpcomingEvents(allEvents);
 
       const uniSet = new Set(['All Universities']);
       allEvents.forEach(event => {

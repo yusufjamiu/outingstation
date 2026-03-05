@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Heart, Calendar, Clock, MapPin } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
+import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { db } from '../../firebase';
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
@@ -33,9 +34,12 @@ export default function WebinarEventsPage() {
       }));
 
       // Filter webinar events only
-      const webinarEvents = eventsData.filter(e => 
+      let webinarEvents = eventsData.filter(e => 
         e.eventType === 'webinar' && e.status === 'published'
       );
+
+      // ✅ FILTER OUT PAST EVENTS
+      webinarEvents = filterUpcomingEvents(webinarEvents);
 
       setAllWebinars(webinarEvents);
     } catch (err) {
@@ -277,7 +281,7 @@ export default function WebinarEventsPage() {
           </div>
         ) : (
           <div className="text-center py-12">
-            <p className="text-gray-500 text-lg">No webinars available with current filters.</p>
+            <p className="text-gray-500 text-lg">No upcoming webinars available with current filters.</p>
             <p className="text-gray-400 text-sm mt-2">Try adjusting your filters or check back later for new virtual events!</p>
           </div>
         )}

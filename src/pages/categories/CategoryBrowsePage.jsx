@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Video, School, ShoppingBag, Briefcase, Palette, UtensilsCrossed, Dumbbell,
-  Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv } from 'lucide-react';
+  Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv, GraduationCap } from 'lucide-react';
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 
@@ -20,13 +20,13 @@ export default function CategoryBrowsePage() {
       color: 'bg-purple-100 text-purple-600',
       link: '/webinar-events'
     },
-    {
-      title: 'Shopping & Outing',
-      description: 'Find local malls, favorite hangouts, cinemas and outing spots.',
-      icon: ShoppingBag,
-      color: 'bg-pink-100 text-pink-600',
-      link: '/shopping-events'
-    },
+    // {
+    //   title: 'Shopping & Outing',
+    //   description: 'Find local malls, favorite hangouts, cinemas and outing spots.',
+    //   icon: ShoppingBag,
+    //   color: 'bg-pink-100 text-pink-600',
+    //   link: '/shopping-events'
+    // },
     {
       title: 'Business & Tech',
       description: 'Discover amazing business & tech events happening around you.',
@@ -47,6 +47,13 @@ export default function CategoryBrowsePage() {
       icon: UtensilsCrossed,
       color: 'bg-orange-100 text-orange-600',
       link: '/category/food-dining'
+    },
+    {
+      title: 'Education',
+      description: 'Discover amazing education events happening around you.',
+      icon: GraduationCap,  
+      color: 'bg-indigo-100 text-indigo-600',
+      link: '/category/education'
     },
     {
       title: 'Sport & Fitness',

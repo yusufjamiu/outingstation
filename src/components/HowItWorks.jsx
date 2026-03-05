@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { MapPin, Ticket, PartyPopper, ArrowRight } from 'lucide-react';
 
 const HowItWorks = () => {
@@ -97,10 +98,12 @@ const HowItWorks = () => {
 
         {/* CTA Button */}
         <div className="text-center mt-12">
-          <button className="inline-flex items-center gap-2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-10 py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-all group">
-            Get Started Now
-            <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
-          </button>
+          <Link to="/signup">
+           <button className="inline-flex items-center gap-2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-10 py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-all group">
+             Get Started Now
+             <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+           </button>
+          </Link>
         </div>
       </div>
     </section>

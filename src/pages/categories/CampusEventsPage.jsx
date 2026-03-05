@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Heart, ChevronDown, Calendar, Clock, MapPin } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
+import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { db } from '../../firebase';
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
@@ -64,9 +65,12 @@ export default function CampusEventsPage() {
       }));
 
       // Filter campus events
-      const campusEvents = eventsData.filter(e => 
+      let campusEvents = eventsData.filter(e => 
         e.eventType === 'campus' && e.status === 'published'
       );
+
+      // ✅ FILTER OUT PAST EVENTS
+      campusEvents = filterUpcomingEvents(campusEvents);
 
       setAllEvents(campusEvents);
     } catch (err) {
@@ -246,7 +250,7 @@ export default function CampusEventsPage() {
             </div>
             <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-1 sm:mb-2">{selectedUniversity}</h2>
             <p className="text-sm sm:text-base lg:text-lg">
-              {filteredEvents.length} campus event{filteredEvents.length !== 1 ? 's' : ''} available
+              {filteredEvents.length} upcoming campus event{filteredEvents.length !== 1 ? 's' : ''}
             </p>
           </div>
         </div>
@@ -371,7 +375,7 @@ export default function CampusEventsPage() {
           </div>
         ) : (
           <div className="text-center py-12">
-            <p className="text-gray-500 text-lg">No campus events found</p>
+            <p className="text-gray-500 text-lg">No upcoming campus events found</p>
             <p className="text-gray-400 text-sm mt-2">
               {selectedUniversity === 'All Universities' 
                 ? 'Try adjusting your filters'

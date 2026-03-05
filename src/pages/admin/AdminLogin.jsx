@@ -1,29 +1,68 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Eye, EyeOff } from 'lucide-react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../../firebase';
+import { Lock, Eye, EyeOff, Mail } from 'lucide-react';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const ADMIN_PASSWORD = '@GemZeal01';
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (password === ADMIN_PASSWORD) {
-      // Store admin auth
-      localStorage.setItem('adminAuth', 'true');
-      console.log('✅ Admin auth stored:', localStorage.getItem('adminAuth'));
+    setError('');
+    setLoading(true);
+
+    try {
+      // 1. Sign in with Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // 2. Check if user is admin
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
       
-      // Redirect to admin dashboard
+      if (!userDoc.exists()) {
+        setError('User account not found.');
+        await auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      const userData = userDoc.data();
+
+      if (userData.role !== 'admin') {
+        setError('Access denied. Admin privileges required.');
+        await auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      // 3. Success - store admin auth and redirect
+      localStorage.setItem('adminAuth', 'true');
+      console.log('✅ Admin logged in:', user.email);
       navigate('/admin');
-    } else {
-      setError('Incorrect password. Please try again.');
-      setPassword('');
+
+    } catch (err) {
+      console.error('Login error:', err);
+      
+      // User-friendly error messages
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('Invalid email or password.');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Invalid email format.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Too many failed attempts. Try again later.');
+      } else {
+        setError('Login failed. Please try again.');
+      }
     }
+
+    setLoading(false);
   };
 
   return (
@@ -35,15 +74,39 @@ export default function AdminLogin() {
             <Lock size={32} className="text-white" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Admin Access</h1>
-          <p className="text-gray-400">Enter password to continue</p>
+          <p className="text-gray-400">Sign in with your admin account</p>
         </div>
 
         {/* Login Form */}
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Email Input */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Admin Password
+                Admin Email
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError('');
+                  }}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                  placeholder="admin@outingstation.com"
+                  required
+                  autoFocus
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            {/* Password Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Password
               </label>
               <div className="relative">
                 <input
@@ -54,14 +117,15 @@ export default function AdminLogin() {
                     setError('');
                   }}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none pr-12"
-                  placeholder="Enter admin password"
+                  placeholder="Enter your password"
                   required
-                  autoFocus
+                  disabled={loading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  disabled={loading}
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -77,17 +141,19 @@ export default function AdminLogin() {
 
             <button
               type="submit"
-              className="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition font-medium text-lg"
+              disabled={loading}
+              className="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition font-medium text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Access Admin Panel
+              {loading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Signing in...
+                </>
+              ) : (
+                'Access Admin Panel'
+              )}
             </button>
           </form>
-
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-500">
-              Default Password: <code className="bg-gray-100 px-2 py-1 rounded text-xs">@GemZeal01</code>
-            </p>
-          </div>
         </div>
 
         {/* Footer */}
@@ -95,6 +161,7 @@ export default function AdminLogin() {
           <button
             onClick={() => navigate('/')}
             className="text-gray-400 hover:text-white transition text-sm"
+            disabled={loading}
           >
             ← Back to Homepage
           </button>

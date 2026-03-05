@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Search, Bell, Heart, Menu, Calendar, Clock, MapPin } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 import { useAuth } from '../../context/AuthContext';
+import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -56,6 +57,8 @@ export default function WebinarEvents() {
       allEvents = allEvents.filter(e => 
         e.eventType === 'webinar' && e.status === 'published'
       );
+      // ✅ FILTER OUT PAST EVENTS
+     allEvents = filterUpcomingEvents(allEvents);
 
       setEvents(allEvents);
     } catch (err) {

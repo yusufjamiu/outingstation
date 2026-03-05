@@ -42,9 +42,9 @@ const Footer = () => {
                   <li><Link to="/city/lagos">Lagos</Link></li>
                   <li><Link to="/city/abuja">Abuja</Link></li>
                   <li><Link to="/city/ibadan">Ibadan</Link></li>
-                  <li>
+                  {/* <li>
                       <span className="text-white/80">View more..</span>
-                  </li>
+                  </li> */}
                 </ul>
               </div>
 
@@ -73,7 +73,7 @@ const Footer = () => {
   <div className="flex gap-6">
     <a href="https://x.com/OutingStation" className="hover:text-white/80"><Twitter size={22} /></a>
     <a href="https://www.linkedin.com/company/outingstation" className="hover:text-white/80"><Linkedin size={22} /></a>
-    <a href="#" className="hover:text-white/80"><Facebook size={22} /></a>
+    <a href="https://www.facebook.com/outingstation/" className="hover:text-white/80"><Facebook size={22} /></a>
     <a href="https://www.instagram.com/outingstation/" className="hover:text-white/80"><Instagram size={22} /></a>
   </div>
 

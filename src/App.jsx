@@ -23,6 +23,7 @@ import WebinarEventsPage from './pages/categories/WebinarEventsPage';
 import ContactUs from './pages/ContactUs';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import CityEventsPage from './pages/events/CityEventsPage';
 import CookiePolicy from './pages/CookiePolicy';
 import FAQ from './pages/FAQ';
 import AboutUs from './pages/AboutUs';
@@ -65,6 +66,7 @@ function App() {
               <Route path="/categories" element={<CategoryBrowsePage />} />
               <Route path="/campus-events" element={<CampusEventsPage />} />
               <Route path="/webinar-events" element={<WebinarEventsPage />} />
+              <Route path="/city/:city" element={<CityEventsPage />} />
           
               <Route path="/event/:id" element={<EventDetails />} />
               <Route path="/contact" element={<ContactUs />} />

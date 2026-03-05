@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Calendar, Clock, Video, ArrowRight } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
+import { filterUpcomingEvents } from '../utils/eventFilters';
 
 const WebinarSection = () => {
   const [webinars, setWebinars] = useState([]);
@@ -20,10 +21,14 @@ const WebinarSection = () => {
         ...doc.data()
       }));
 
-      // Filter: eventType === 'webinar', published, max 8
-      const webinarEvents = allEvents
-        .filter(e => e.eventType === 'webinar' && e.status === 'published')
-        .slice(0, 8);
+      // Filter: eventType === 'webinar', published
+      let webinarEvents = allEvents.filter(e => e.eventType === 'webinar' && e.status === 'published');
+      
+      // ✅ FILTER OUT PAST EVENTS
+      webinarEvents = filterUpcomingEvents(webinarEvents);
+      
+      // Max 8
+      webinarEvents = webinarEvents.slice(0, 8);
 
       // Format for display
       const formatted = webinarEvents.map(event => ({
@@ -132,7 +137,7 @@ const WebinarSection = () => {
             {/* Empty State */}
             {webinars.length === 0 && (
               <div className="text-center py-12">
-                <p className="text-gray-500">No webinars available yet.</p>
+                <p className="text-gray-500">No upcoming webinars available.</p>
               </div>
             )}
           </>

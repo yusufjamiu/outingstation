@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Search, Bell, Heart, ChevronRight, Calendar, Clock, MapPin, Menu } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 import { useAuth } from '../../context/AuthContext';
+import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -62,6 +63,8 @@ export default function UserDashboard() {
       }));
 
       allEvents = allEvents.filter(e => e.status === 'published');
+      // ✅ FILTER OUT PAST EVENTS
+      allEvents = filterUpcomingEvents(allEvents);
 
       if (activeCategory !== 'All') {
         allEvents = allEvents.filter(e => e.category === activeCategory);

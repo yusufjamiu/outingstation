@@ -1,6 +1,6 @@
 import SEO from '../components/SEO';
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import CategoryGrid from '../components/CategoryGrid';
@@ -19,23 +19,35 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export default function LandingPage() {
+  const navigate = useNavigate();
   const [userCount, setUserCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCity, setSelectedCity] = useState('Lagos');
 
   useEffect(() => {
     loadUserCount();
   }, []);
 
   const loadUserCount = async () => {
-    try {
-      const snapshot = await getDocs(collection(db, 'users'));
-      const count = snapshot.size;
-      setUserCount(count);
-    } catch (err) {
-      console.error('Error loading user count:', err);
-      setUserCount(0);
+  try {
+    const snapshot = await getDocs(collection(db, 'users'));
+    const count = snapshot.size;
+    console.log('User count:', count); // ADD THIS LINE
+    setUserCount(count);
+  } catch (err) {
+    console.error('Error loading user count:', err);
+    setUserCount(0);
+  }
+  setLoading(false);
+};
+
+  const handleSearch = () => {
+    if (searchQuery.trim()) {
+      navigate(`/events?search=${searchQuery}&city=${selectedCity}`);
+    } else {
+      navigate(`/events?city=${selectedCity}`);
     }
-    setLoading(false);
   };
 
   // Format number with K/M suffix
@@ -82,30 +94,43 @@ export default function LandingPage() {
                 <input 
                   type="text" 
                   placeholder="Search address, event" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                   className="flex-1 outline-none text-gray-600 text-sm md:text-base min-w-0"
                 />
                 <span className="text-gray-400 mx-2 md:mx-4">|</span>
-                <select className="outline-none text-gray-600 bg-transparent text-sm md:text-base mr-2 md:mr-6">
+                <select 
+                  value={selectedCity}
+                  onChange={(e) => setSelectedCity(e.target.value)}
+                  className="outline-none text-gray-600 bg-transparent text-sm md:text-base mr-2 md:mr-6"
+                >
                   <option>Lagos</option>
                   <option>Abuja</option>
                 </select>
 
-                <button className="hidden md:block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full">
+                <button 
+                  onClick={handleSearch}
+                  className="hidden md:block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full hover:shadow-lg transition"
+                >
                   Explore
-                  </button>
+                </button>
               </div>
 
               {/* Mobile Explore Button */}
-              <button className="md:hidden w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full">
+              <button 
+                onClick={handleSearch}
+                className="md:hidden w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full hover:shadow-lg transition"
+              >
                 Explore
               </button>
               
               <Link to="/categories">
-              <button className="w-full lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
-                <Grid size={20} /> 
-                Browse by Category
+                <button className="w-full lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
+                  <Grid size={20} /> 
+                  Browse by Category
                 </button>
-                </Link>
+              </Link>
             </div>
 
             {/* Images Grid */}

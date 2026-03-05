@@ -5,6 +5,7 @@ import { Briefcase, Palette, UtensilsCrossed, Dumbbell, GraduationCap,
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 import { useAuth } from '../../context/AuthContext';
+import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -18,6 +19,10 @@ export default function GenericCategory() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // NEW: Add tabs and religion filter
+  const [activeTab, setActiveTab] = useState('events');
+  const [religionFilter, setReligionFilter] = useState('all');
 
   const displayName = userProfile?.name || currentUser?.displayName || 'User';
   const avatarUrl = userProfile?.avatar || userProfile?.photoURL || currentUser?.photoURL ||
@@ -29,19 +34,20 @@ export default function GenericCategory() {
     avatar: avatarUrl
   };
 
+  // Updated category map with hasPlaces and isReligion flags
   const categoryMap = {
-    'Business & Tech': { icon: Briefcase, color: 'bg-blue-500' },
-    'Art & Culture': { icon: Palette, color: 'bg-purple-500' },
-    'Food & Dining': { icon: UtensilsCrossed, color: 'bg-orange-500' },
-    'Sport & Fitness': { icon: Dumbbell, color: 'bg-green-500' },
-    'Education': { icon: GraduationCap, color: 'bg-indigo-500' },
-    'Religion & Community': { icon: HeartIcon, color: 'bg-pink-500' },
-    'Nightlife & Parties': { icon: Music, color: 'bg-purple-600' },
-    'Family & Kids Fun': { icon: Baby, color: 'bg-yellow-500' },
-    'Networking & Social': { icon: Users, color: 'bg-teal-500' },
-    'Gaming & Esport': { icon: Gamepad2, color: 'bg-red-500' },
-    'Music & Concerts': { icon: Mic2, color: 'bg-pink-600' },
-    'Cinema & Show': { icon: Tv, color: 'bg-gray-700' }
+    'Business & Tech': { icon: Briefcase, color: 'bg-blue-500', hasPlaces: false, isReligion: false },
+    'Art & Culture': { icon: Palette, color: 'bg-purple-500', hasPlaces: true, isReligion: false },
+    'Food & Dining': { icon: UtensilsCrossed, color: 'bg-orange-500', hasPlaces: true, isReligion: false },
+    'Sport & Fitness': { icon: Dumbbell, color: 'bg-green-500', hasPlaces: true, isReligion: false },
+    'Education': { icon: GraduationCap, color: 'bg-indigo-500', hasPlaces: false, isReligion: false },
+    'Religion & Community': { icon: HeartIcon, color: 'bg-pink-500', hasPlaces: false, isReligion: true },
+    'Nightlife & Parties': { icon: Music, color: 'bg-purple-600', hasPlaces: true, isReligion: false },
+    'Family & Kids Fun': { icon: Baby, color: 'bg-yellow-500', hasPlaces: true, isReligion: false },
+    'Networking & Social': { icon: Users, color: 'bg-teal-500', hasPlaces: false, isReligion: false },
+    'Gaming & Esport': { icon: Gamepad2, color: 'bg-red-500', hasPlaces: false, isReligion: false },
+    'Music & Concerts': { icon: Mic2, color: 'bg-pink-600', hasPlaces: false, isReligion: false },
+    'Cinema & Show': { icon: Tv, color: 'bg-gray-700', hasPlaces: false, isReligion: false }
   };
 
   const currentCategory = categoryMap[slug] || categoryMap['Business & Tech'];
@@ -77,6 +83,7 @@ export default function GenericCategory() {
       allEvents = allEvents.filter(e => 
         e.category === slug && e.status === 'published'
       );
+      allEvents = filterUpcomingEvents(allEvents);
 
       setEvents(allEvents);
     } catch (err) {
@@ -95,7 +102,24 @@ export default function GenericCategory() {
     );
   };
 
-  const displayEvents = filterEventsBySearch(events);
+  // NEW: Apply tab and religion filters
+  const getFilteredEvents = () => {
+    let filtered = filterEventsBySearch(events);
+
+    // Tab filter (events/places)
+    if (currentCategory.hasPlaces) {
+      filtered = filtered.filter(e => e.subCategory === activeTab);
+    }
+
+    // Religion filter
+    if (currentCategory.isReligion && religionFilter !== 'all') {
+      filtered = filtered.filter(e => e.religionType === religionFilter);
+    }
+
+    return filtered;
+  };
+
+  const displayEvents = getFilteredEvents();
 
   const handleEventClick = (eventId) => {
     navigate(`/event/${eventId}`);
@@ -202,14 +226,62 @@ export default function GenericCategory() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">{slug}</h1>
               <p className="text-sm sm:text-base text-gray-600">
-                Discover amazing {slug.toLowerCase()} events happening around you
+                Discover amazing {slug.toLowerCase()} {currentCategory.hasPlaces ? 'events & places' : 'events'} happening around you
               </p>
             </div>
           </div>
 
+          {/* NEW: Events/Places Tabs */}
+          {currentCategory.hasPlaces && (
+            <div className="flex gap-2 mb-6 border-b border-gray-200">
+              <button
+                onClick={() => setActiveTab('events')}
+                className={`px-6 py-3 font-medium transition-colors ${
+                  activeTab === 'events'
+                    ? 'border-b-2 border-cyan-500 text-cyan-500'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Events
+              </button>
+              <button
+                onClick={() => setActiveTab('places')}
+                className={`px-6 py-3 font-medium transition-colors ${
+                  activeTab === 'places'
+                    ? 'border-b-2 border-cyan-500 text-cyan-500'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Places
+              </button>
+            </div>
+          )}
+
+          {/* NEW: Religion Filter */}
+          {currentCategory.isReligion && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Religion:</label>
+              <div className="flex flex-wrap gap-2">
+                {['all', 'Christianity', 'Islam', 'Others'].map((religion) => (
+                  <button
+                    key={religion}
+                    onClick={() => setReligionFilter(religion)}
+                    className={`px-4 py-2 rounded-lg font-medium transition ${
+                      religionFilter === religion
+                        ? 'bg-cyan-500 text-white'
+                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {religion === 'all' ? 'All' : religion}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mb-6">
             <p className="text-sm sm:text-base text-gray-600 font-medium">
-              {displayEvents.length} Event{displayEvents.length !== 1 ? 's' : ''} Available
+              {displayEvents.length} {currentCategory.hasPlaces && activeTab === 'places' ? 'Places' : 'Events'} Available
               {searchQuery && ` (filtered from ${events.length} total)`}
             </p>
           </div>
@@ -289,8 +361,8 @@ export default function GenericCategory() {
                 <div className="text-center py-20">
                   <p className="text-gray-500 text-lg mb-2">
                     {searchQuery 
-                      ? `No events found for "${searchQuery}"` 
-                      : 'No events available in this category yet.'
+                      ? `No ${currentCategory.hasPlaces && activeTab === 'places' ? 'places' : 'events'} found for "${searchQuery}"` 
+                      : `No ${currentCategory.hasPlaces && activeTab === 'places' ? 'places' : 'events'} available yet.`
                     }
                   </p>
                   <p className="text-gray-400 text-sm">

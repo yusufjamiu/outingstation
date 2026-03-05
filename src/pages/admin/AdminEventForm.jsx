@@ -18,6 +18,9 @@ export default function AdminEventForm() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // ✅ NEW: Form type toggle
+  const [formType, setFormType] = useState('event'); // 'event' or 'place'
+
   const [formData, setFormData] = useState({
     title: '', description: '', category: '',
     subCategory: 'events', religionType: '', eventType: 'regular', 
@@ -74,6 +77,11 @@ export default function AdminEventForm() {
             }
             
             setFormData(prev => ({ ...prev, ...formattedData }));
+            
+            // ✅ NEW: Set form type based on subCategory
+            if (data.subCategory === 'places') {
+              setFormType('place');
+            }
           }
         } catch (err) {
           console.error('Error loading event:', err);
@@ -90,6 +98,9 @@ export default function AdminEventForm() {
     'Networking & Social', 'Gaming & Esport', 'Music & Concerts', 'Cinema & Show'
   ];
 
+  // ✅ Categories that support Places
+  const placeSupportedCategories = ['Family & Kids Fun', 'Food & Dining', 'Sport & Fitness', 'Art & Culture', 'Nightlife & Parties'];
+
   const platforms = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Twitter Space', 'YouTube Live', 'Facebook Live', 'Other'];
 
   const handleChange = (e) => {
@@ -97,19 +108,26 @@ export default function AdminEventForm() {
     setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
-  // ✅ Cloudinary Image Upload Handler
+  // ✅ NEW: Handle form type toggle
+  const handleFormTypeChange = (type) => {
+    setFormType(type);
+    setFormData(prev => ({
+      ...prev,
+      subCategory: type === 'place' ? 'places' : 'events',
+      eventType: type === 'place' ? 'regular' : prev.eventType
+    }));
+  };
+
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     try {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         alert('Please select an image file');
         return;
       }
 
-      // Validate file size (max 10MB)
       if (file.size > 10 * 1024 * 1024) {
         alert('Image must be less than 10MB');
         return;
@@ -118,16 +136,14 @@ export default function AdminEventForm() {
       setUploading(true);
       setUploadProgress(0);
 
-      // Compress image before upload
       console.log('📦 Compressing image...');
       const compressedFile = await compressImage(file, 1200, 0.8);
       console.log(`Size reduced: ${(file.size / 1024).toFixed(0)}KB → ${(compressedFile.size / 1024).toFixed(0)}KB`);
 
-      // Upload to Cloudinary
       console.log('☁️ Uploading to Cloudinary...');
       const imageUrl = await uploadWithProgress(
         compressedFile,
-        'events', // Folder name
+        'events',
         (progress) => {
           setUploadProgress(progress);
           console.log(`📤 Upload progress: ${progress}%`);
@@ -136,7 +152,6 @@ export default function AdminEventForm() {
 
       console.log('✅ Upload complete:', imageUrl);
 
-      // Update form data
       setFormData(prev => ({
         ...prev,
         imageUrl: imageUrl
@@ -191,24 +206,23 @@ export default function AdminEventForm() {
 
       if (isEdit) {
         await updateDoc(doc(db, 'events', id), eventData);
-        alert('✅ Event updated successfully!');
+        alert(`✅ ${formType === 'place' ? 'Place' : 'Event'} updated successfully!`);
       } else {
         eventData.createdAt = serverTimestamp();
         eventData.savedCount = 0;
         await addDoc(collection(db, 'events'), eventData);
-        alert('✅ Event created successfully!');
+        alert(`✅ ${formType === 'place' ? 'Place' : 'Event'} created successfully!`);
       }
       navigate('/admin/events');
     } catch (err) {
       console.error('Error saving event:', err);
-      alert('❌ Error saving event: ' + err.message);
+      alert('❌ Error saving: ' + err.message);
     }
     setLoading(false);
   };
 
-  const showSubCategory = ['Family & Kids Fun', 'Food & Dining', 'Sport & Fitness', 'Art & Culture', 'Nightlife & Parties'].includes(formData.category);
   const showReligionType = formData.category === 'Religion & Community';
-  const isPlace = formData.subCategory === 'places';
+  const isPlace = formType === 'place';
 
   if (fetchingEvent) {
     return (
@@ -230,7 +244,7 @@ export default function AdminEventForm() {
                 <Menu size={24} />
               </button>
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
-                {isEdit ? 'Edit Event' : 'Create New Event'}
+                {isEdit ? `Edit ${isPlace ? 'Place' : 'Event'}` : `Create New ${isPlace ? 'Place' : 'Event'}`}
               </h2>
             </div>
             <button onClick={() => navigate('/admin/events')} className="p-2 hover:bg-gray-100 rounded-lg">
@@ -243,6 +257,43 @@ export default function AdminEventForm() {
           <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
 
+              {/* ✅ NEW: Event/Place Toggle */}
+              {!isEdit && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <label className="block text-sm font-medium text-gray-700 mb-3">What are you creating?</label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleFormTypeChange('event')}
+                      className={`flex-1 px-6 py-3 rounded-lg font-medium transition ${
+                        formType === 'event'
+                          ? 'bg-cyan-500 text-white'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      📅 Event
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFormTypeChange('place')}
+                      className={`flex-1 px-6 py-3 rounded-lg font-medium transition ${
+                        formType === 'place'
+                          ? 'bg-cyan-500 text-white'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      📍 Place
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {formType === 'event' 
+                      ? 'Events have specific dates and times (concerts, workshops, etc.)'
+                      : 'Places are permanent locations (restaurants, gyms, galleries, etc.)'
+                    }
+                  </p>
+                </div>
+              )}
+
               {/* Basic Info */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
@@ -253,14 +304,14 @@ export default function AdminEventForm() {
                     </label>
                     <input type="text" name="title" value={formData.title} onChange={handleChange} required
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder={isPlace ? 'e.g. The Creative Hub' : 'Enter event title'} />
+                      placeholder={isPlace ? 'e.g. The Creative Hub' : 'e.g. Tech Innovation Summit 2025'} />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
                     <textarea name="description" value={formData.description} onChange={handleChange} required rows={4}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder="Describe your event" />
+                      placeholder={isPlace ? 'Describe the place, amenities, atmosphere...' : 'Describe your event...'} />
                   </div>
 
                   {!isPlace && (
@@ -281,21 +332,21 @@ export default function AdminEventForm() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none">
                       <option value="">Select a category</option>
                       {allCategories.map(category => (
-                        <option key={category} value={category}>{category}</option>
+                        <option 
+                          key={category} 
+                          value={category}
+                          disabled={isPlace && !placeSupportedCategories.includes(category)}
+                        >
+                          {category} {isPlace && !placeSupportedCategories.includes(category) ? '(Events only)' : ''}
+                        </option>
                       ))}
                     </select>
+                    {isPlace && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Places only available for: {placeSupportedCategories.join(', ')}
+                      </p>
+                    )}
                   </div>
-
-                  {showSubCategory && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Sub-Category *</label>
-                      <select name="subCategory" value={formData.subCategory} onChange={handleChange}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none">
-                        <option value="events">Events</option>
-                        <option value="places">Places</option>
-                      </select>
-                    </div>
-                  )}
 
                   {showReligionType && (
                     <div>
@@ -312,7 +363,7 @@ export default function AdminEventForm() {
                 </div>
               </div>
 
-              {/* Schedule */}
+              {/* Schedule - EVENTS ONLY */}
               {!isPlace ? (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Event Schedule</h3>
@@ -400,8 +451,9 @@ export default function AdminEventForm() {
                   </div>
                 </div>
               ) : (
+                // ✅ PLACES ONLY - Opening Hours
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Availability & Hours</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Opening Hours</h3>
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Availability *</label>
@@ -429,7 +481,7 @@ export default function AdminEventForm() {
                 </div>
               )}
 
-              {/* Campus / Webinar specific */}
+              {/* Campus / Webinar specific - EVENTS ONLY */}
               {formData.eventType === 'campus' && !isPlace && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Campus Event Details</h3>
@@ -461,11 +513,13 @@ export default function AdminEventForm() {
 
               {/* Organizer */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Organizer Information <span className="text-sm font-normal text-gray-500">(Optional)</span></h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  {isPlace ? 'Contact Information' : 'Organizer Information'} <span className="text-sm font-normal text-gray-500">(Optional)</span>
+                </h3>
                 <div className="space-y-4">
                   <input type="text" name="organizerName" value={formData.organizerName} onChange={handleChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                    placeholder="Organizer name" />
+                    placeholder={isPlace ? 'Contact person name' : 'Organizer name'} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <input type="tel" name="organizerPhone" value={formData.organizerPhone} onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
@@ -487,7 +541,7 @@ export default function AdminEventForm() {
                       placeholder="City, Country (e.g. Lagos, Nigeria)" />
                     <input type="text" name="address" value={formData.address} onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder="Full venue address" />
+                      placeholder={isPlace ? 'Full address (e.g. 123 Victoria Island, Lagos)' : 'Full venue address'} />
                     <input type="url" name="mapLocation" value={formData.mapLocation} onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                       placeholder="Google Maps link (optional)" />
@@ -497,33 +551,41 @@ export default function AdminEventForm() {
 
               {/* Pricing */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Pricing</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  {isPlace ? 'Pricing & Info' : 'Pricing'}
+                </h3>
                 <div className="space-y-4">
                   <label className="flex items-center gap-2">
                     <input type="checkbox" name="isFree" checked={formData.isFree} onChange={handleChange}
                       className="w-4 h-4 text-cyan-500 border-gray-300 rounded focus:ring-cyan-400" />
-                    <span className="text-sm font-medium text-gray-700">This is a free event</span>
+                    <span className="text-sm font-medium text-gray-700">
+                      {isPlace ? 'Free entry/no cover charge' : 'This is a free event'}
+                    </span>
                   </label>
 
                   {!formData.isFree && (
                     <input type="number" name="price" value={formData.price} onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder="Price in ₦" />
+                      placeholder={isPlace ? 'Average price / Entry fee in ₦' : 'Price in ₦'} />
                   )}
 
-                  <input type="url" name="ticketLink" value={formData.ticketLink} onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                    placeholder="Ticket purchase link (optional)" />
+                  {!isPlace && (
+                    <input type="url" name="ticketLink" value={formData.ticketLink} onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                      placeholder="Ticket purchase link (optional)" />
+                  )}
 
                   <input type="number" name="capacity" value={formData.capacity} onChange={handleChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                    placeholder="Capacity (max attendees)" />
+                    placeholder={isPlace ? 'Max capacity (optional)' : 'Capacity (max attendees)'} />
                 </div>
               </div>
 
               {/* Media - Cloudinary Upload */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Event Image *</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  {isPlace ? 'Place Image' : 'Event Image'} *
+                </h3>
                 
                 <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-cyan-400 transition">
                   <div className="space-y-1 text-center">
@@ -531,7 +593,7 @@ export default function AdminEventForm() {
                       <div className="relative">
                         <img 
                           src={formData.imageUrl} 
-                          alt="Event preview" 
+                          alt="Preview" 
                           className="mx-auto h-48 w-auto rounded-lg"
                         />
                         <button
@@ -562,7 +624,6 @@ export default function AdminEventForm() {
                       </>
                     )}
 
-                    {/* Upload Progress */}
                     {uploading && (
                       <div className="mt-4">
                         <div className="w-full bg-gray-200 rounded-full h-2">
@@ -594,7 +655,7 @@ export default function AdminEventForm() {
                     <label className="flex items-center gap-2">
                       <input type="checkbox" name="isFeatured" checked={formData.isFeatured} onChange={handleChange}
                         className="w-4 h-4 text-cyan-500 border-gray-300 rounded focus:ring-cyan-400" />
-                      <span className="text-sm font-medium text-gray-700">Featured Event</span>
+                      <span className="text-sm font-medium text-gray-700">Featured</span>
                     </label>
                     <label className="flex items-center gap-2">
                       <input type="checkbox" name="isTrending" checked={formData.isTrending} onChange={handleChange}
@@ -610,7 +671,7 @@ export default function AdminEventForm() {
                 <button type="submit" disabled={loading || uploading}
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition font-medium disabled:opacity-50">
                   <Save size={20} />
-                  <span>{loading ? 'Saving...' : (isEdit ? 'Update Event' : 'Create Event')}</span>
+                  <span>{loading ? 'Saving...' : (isEdit ? `Update ${isPlace ? 'Place' : 'Event'}` : `Create ${isPlace ? 'Place' : 'Event'}`)}</span>
                 </button>
                 <button type="button" onClick={() => navigate('/admin/events')}
                   className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium">
