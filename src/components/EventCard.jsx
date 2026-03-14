@@ -1,8 +1,78 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Calendar, Clock, MapPin, Heart } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export default function EventCard({ event }) {
+  const navigate = useNavigate();
+  const { currentUser } = useAuth();
+  const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    checkIfSaved();
+  }, [currentUser, event.id]);
+
+  const checkIfSaved = async () => {
+    if (!currentUser) {
+      setIsSaved(false);
+      return;
+    }
+
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (userDoc.exists()) {
+        const savedEvents = userDoc.data().savedEvents || [];
+        setIsSaved(savedEvents.includes(event.id));
+      }
+    } catch (err) {
+      console.error('Error checking saved status:', err);
+    }
+  };
+
+  const handleSaveClick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Check if user is logged in
+    if (!currentUser) {
+      // Prompt user to login
+      const shouldLogin = window.confirm('Please login to save events. Would you like to login now?');
+      if (shouldLogin) {
+        navigate('/login');
+      }
+      return;
+    }
+
+    if (isSaving) return;
+
+    try {
+      setIsSaving(true);
+      const userRef = doc(db, 'users', currentUser.uid);
+
+      if (isSaved) {
+        // Unsave
+        await updateDoc(userRef, {
+          savedEvents: arrayRemove(event.id)
+        });
+        setIsSaved(false);
+      } else {
+        // Save
+        await updateDoc(userRef, {
+          savedEvents: arrayUnion(event.id)
+        });
+        setIsSaved(true);
+      }
+    } catch (err) {
+      console.error('Error saving event:', err);
+      alert('Failed to save event. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const formatDate = (timestamp) => {
     if (!timestamp) return 'TBD';
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
@@ -32,10 +102,22 @@ export default function EventCard({ event }) {
 
           {/* Favorite Button - top right */}
           <button
-            onClick={(e) => { e.preventDefault(); }}
-            className="absolute top-3 right-3 bg-white rounded-full p-1.5 shadow hover:scale-110 transition-transform"
+            onClick={handleSaveClick}
+            disabled={isSaving}
+            className="absolute top-3 right-3 bg-white rounded-full p-2 shadow hover:scale-110 transition-transform disabled:opacity-50"
           >
-            <Heart size={16} className="text-gray-400 hover:text-red-500 transition-colors" />
+            {isSaving ? (
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-cyan-500 rounded-full animate-spin"></div>
+            ) : (
+              <Heart 
+                size={16} 
+                className={`transition-colors ${
+                  isSaved 
+                    ? 'text-red-500 fill-red-500' 
+                    : 'text-gray-400 hover:text-red-500'
+                }`}
+              />
+            )}
           </button>
 
           {/* Price Badge - bottom right of image */}

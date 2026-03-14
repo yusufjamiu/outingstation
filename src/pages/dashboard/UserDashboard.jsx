@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Bell, Heart, ChevronRight, Calendar, Clock, MapPin, Menu } from 'lucide-react';
+import { Search, Bell, Heart, ChevronRight, Calendar, Clock, MapPin, Menu, X } from 'lucide-react';
 import { UserSidebar } from '../../components/UserSidebar';
 import { useAuth } from '../../context/AuthContext';
 import { filterUpcomingEvents } from '../../utils/eventFilters';
@@ -13,18 +13,25 @@ export default function UserDashboard() {
 
   const [activeCategory, setActiveCategory] = useState('All');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [trendingEvents, setTrendingEvents] = useState([]);
   const [pickedEvents, setPickedEvents] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [savedEventIds, setSavedEventIds] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hasEventsInUserCity, setHasEventsInUserCity] = useState(true);
 
   const displayName = userProfile?.name || currentUser?.displayName || 'Friend';
-  const city = userProfile?.city || 'your city';
+  const userCity = userProfile?.city || 'Lagos';
   const avatarUrl = userProfile?.avatar || userProfile?.photoURL || currentUser?.photoURL ||
     `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=22D3EE&color=fff&size=128`;
 
-  const user = { name: displayName, city: '', avatar: avatarUrl };
+  const user = { 
+    name: displayName, 
+    city: userCity, 
+    avatar: avatarUrl,
+    isNewUser: userProfile?.isNewUser 
+  };
 
   const categories = [
     'All', 'Business & Tech', 'Art & Culture', 'Food & Dining', 'Sport & Fitness',
@@ -32,13 +39,31 @@ export default function UserDashboard() {
     'Music & Concerts', 'Gaming & Esport', 'Cinema & Show'
   ];
 
+  const notifications = [
+    { id: 1, text: 'New event: Tech Meetup Lagos', time: '2 hours ago', unread: true },
+    { id: 2, text: 'Event reminder: Music Festival tomorrow', time: '5 hours ago', unread: true },
+    { id: 3, text: 'Price drop on saved event', time: '1 day ago', unread: false },
+  ];
+
+  const unreadCount = notifications.filter(n => n.unread).length;
+
   useEffect(() => {
     loadSavedEventIds();
   }, [currentUser]);
 
   useEffect(() => {
     loadEvents();
-  }, [activeCategory]);
+  }, [activeCategory, userCity]);
+
+  useEffect(() => {
+    if (userProfile) {
+      console.log('🔍 Dashboard - User Profile:', {
+        name: userProfile.name,
+        city: userProfile.city,
+        avatar: userProfile.avatar
+      });
+    }
+  }, [userProfile]);
 
   const loadSavedEventIds = async () => {
     if (!currentUser) return;
@@ -63,9 +88,49 @@ export default function UserDashboard() {
       }));
 
       allEvents = allEvents.filter(e => e.status === 'published');
-      // ✅ FILTER OUT PAST EVENTS
       allEvents = filterUpcomingEvents(allEvents);
 
+      console.log(`📊 Total published upcoming events: ${allEvents.length}`);
+      console.log(`👤 User city: "${userCity}"`);
+
+      // City filtering
+      if (userCity && userCity.toLowerCase().trim() !== 'lagos') {
+        const userCityNormalized = userCity.toLowerCase().split(',')[0].trim();
+        
+        console.log(`🔍 Looking for events EXACTLY in: "${userCityNormalized}"`);
+        
+        const cityMatchedEvents = allEvents.filter(e => {
+          const eventLocation = (e.location || '').toLowerCase();
+          const eventCity = eventLocation.split(',')[0].trim();
+          const isMatch = eventCity === userCityNormalized;
+          
+          if (isMatch) {
+            console.log(`Event: "${e.title}" | ✅ MATCH in ${eventCity}`);
+          }
+          
+          return isMatch;
+        });
+
+        console.log(`✅ Events EXACTLY matching "${userCity}": ${cityMatchedEvents.length}`);
+
+        if (cityMatchedEvents.length === 0) {
+          console.log('❌ NO EVENTS FOUND - Showing empty state');
+          setHasEventsInUserCity(false);
+          setTrendingEvents([]);
+          setPickedEvents([]);
+          setLoadingEvents(false);
+          return;
+        } else {
+          console.log(`✅ ${cityMatchedEvents.length} EVENTS FOUND - Showing filtered events`);
+          setHasEventsInUserCity(true);
+          allEvents = cityMatchedEvents;
+        }
+      } else {
+        console.log('✅ User in Lagos or default - Showing all events');
+        setHasEventsInUserCity(true);
+      }
+
+      // Category filtering
       if (activeCategory !== 'All') {
         allEvents = allEvents.filter(e => e.category === activeCategory);
       }
@@ -81,6 +146,8 @@ export default function UserDashboard() {
 
       setTrendingEvents(featured.length > 0 ? featured.slice(0, 3) : allEvents.slice(0, 3));
       setPickedEvents(regular.length > 0 ? regular.slice(0, 6) : allEvents.slice(3, 9));
+
+      console.log(`📈 Final: ${trendingEvents.length} trending, ${pickedEvents.length} picked`);
 
     } catch (err) {
       console.error('Error loading events:', err);
@@ -155,6 +222,10 @@ export default function UserDashboard() {
 
   const getTime = event => event.time || event.dailyStartTime || event.recurringTime || '';
 
+  const handleViewAllTrending = () => {
+    navigate('/events', { state: { filter: 'trending' } });
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       <UserSidebar
@@ -185,10 +256,65 @@ export default function UserDashboard() {
             </div>
 
             <div className="flex items-center gap-4">
-              <button className="p-2 hover:bg-gray-100 rounded-full relative">
-                <Bell size={20} className="text-gray-600" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-              </button>
+              <div className="relative">
+                <button 
+                  onClick={() => setNotificationsOpen(!notificationsOpen)}
+                  className="p-2 hover:bg-gray-100 rounded-full relative"
+                >
+                  <Bell size={20} className="text-gray-600" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                  )}
+                </button>
+
+                {notificationsOpen && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-40"
+                      onClick={() => setNotificationsOpen(false)}
+                    />
+                    
+                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                        <h3 className="font-semibold text-gray-900">Notifications</h3>
+                        <button 
+                          onClick={() => setNotificationsOpen(false)}
+                          className="p-1 hover:bg-gray-100 rounded"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+
+                      <div className="max-h-96 overflow-y-auto">
+                        {notifications.length > 0 ? (
+                          notifications.map(notif => (
+                            <div 
+                              key={notif.id}
+                              className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
+                                notif.unread ? 'bg-cyan-50' : ''
+                              }`}
+                            >
+                              <p className="text-sm text-gray-900 mb-1">{notif.text}</p>
+                              <p className="text-xs text-gray-500">{notif.time}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-8 text-center text-gray-500">
+                            <Bell size={40} className="mx-auto mb-2 text-gray-300" />
+                            <p className="text-sm">No notifications yet</p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-3 border-t border-gray-200 text-center">
+                        <button className="text-sm text-cyan-500 hover:text-cyan-600 font-medium">
+                          View All Notifications
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
 
               <Link to="/settings">
                 <img
@@ -207,7 +333,31 @@ export default function UserDashboard() {
               Good day, {displayName.split(' ')[0]}!
             </h1>
             <p className="text-gray-600 mt-1">
-              Here's what is happening in <span className="font-semibold">{city.split(',')[0]}</span> today.
+              {(() => {
+                const hasEvents = trendingEvents.length > 0 || pickedEvents.length > 0;
+                const userCityName = userCity.split(',')[0].trim();
+                
+                if (userCity === 'Lagos') {
+                  return <>Here's what is happening in <span className="font-semibold">Lagos</span> today.</>;
+                } else if (hasEvents) {
+                  return <>Showing events in your area.</>;
+                } else if (!loadingEvents) {
+                  return (
+                    <>
+                      No events available in <span className="font-semibold">{userCityName}</span> yet.{' '}
+                      <button 
+                        onClick={() => navigate('/settings')}
+                        className="text-cyan-500 hover:underline font-medium"
+                      >
+                        Change location
+                      </button>
+                      {' '}to see events in other cities.
+                    </>
+                  );
+                } else {
+                  return <>Loading events...</>;
+                }
+              })()}
             </p>
           </div>
 
@@ -243,7 +393,13 @@ export default function UserDashboard() {
                 <section className="mb-10">
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="text-2xl font-bold">Trending This Week</h2>
-                    <button className="text-cyan-500 font-medium text-sm hover:underline">View All</button>
+                    <button 
+                      onClick={handleViewAllTrending}
+                      className="text-cyan-500 font-medium text-sm hover:underline flex items-center gap-1"
+                    >
+                      View All
+                      <ChevronRight size={16} />
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -344,14 +500,80 @@ export default function UserDashboard() {
                 </section>
               )}
 
+              {/* ✅ SMART EMPTY STATE - Different messages for different scenarios */}
               {displayTrending.length === 0 && displayPicked.length === 0 && (
                 <div className="text-center py-20">
-                  <p className="text-gray-500 text-lg mb-2">
-                    {searchQuery ? `No events found for "${searchQuery}"` : 'No events available yet.'}
-                  </p>
-                  <p className="text-gray-400 text-sm">
-                    {searchQuery ? 'Try a different search term' : 'Check back soon for exciting events!'}
-                  </p>
+                  {searchQuery ? (
+                    // Scenario 1: Search with no results
+                    <>
+                      <p className="text-gray-500 text-lg mb-2">
+                        No events found for "{searchQuery}"
+                      </p>
+                      <p className="text-gray-400 text-sm">
+                        Try a different search term
+                      </p>
+                    </>
+                  ) : !hasEventsInUserCity && userCity.toLowerCase() !== 'lagos' ? (
+                    // Scenario 2: User in different city with NO events at all (city-level empty)
+                    <div className="max-w-md mx-auto">
+                      <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <MapPin size={32} className="text-gray-400" />
+                      </div>
+                      <p className="text-gray-700 text-lg mb-2 font-medium">
+                        No events in {userCity.split(',')[0]} yet
+                      </p>
+                      <p className="text-gray-500 text-sm mb-6">
+                        We're currently only available in Lagos, but we're expanding soon!
+                      </p>
+                      
+                      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                        <button
+                          onClick={() => navigate('/settings')}
+                          className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition"
+                        >
+                          Change to Lagos
+                        </button>
+                        <button
+                          onClick={() => window.open('https://forms.gle/your-create-event-form', '_blank')}
+                          className="px-6 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
+                        >
+                          Create an Event
+                        </button>
+                      </div>
+                    </div>
+                  ) : activeCategory !== 'All' ? (
+                    // Scenario 3: Category filter with no results (user HAS events in their city, just not in this category)
+                    <>
+                      <p className="text-gray-500 text-lg mb-2">
+                        No {activeCategory} events available yet
+                      </p>
+                      <p className="text-gray-400 text-sm mb-4">
+                        Try selecting a different category or check back soon
+                      </p>
+                      <button
+                        onClick={() => setActiveCategory('All')}
+                        className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition inline-flex items-center gap-2"
+                      >
+                        View All Events
+                      </button>
+                    </>
+                  ) : (
+                    // Scenario 4: User's city has events normally, but somehow empty now (rare case)
+                    <>
+                      <p className="text-gray-500 text-lg mb-2">
+                        No events available yet
+                      </p>
+                      <p className="text-gray-400 text-sm mb-4">
+                        Check back soon for exciting events!
+                      </p>
+                      <button
+                        onClick={() => window.open('https://forms.gle/your-create-event-form', '_blank')}
+                        className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition"
+                      >
+                        Create an Event
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </>

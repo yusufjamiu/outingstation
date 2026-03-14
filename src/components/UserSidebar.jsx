@@ -37,22 +37,28 @@ export function UserSidebar({ activeTab = 'home', user, isOpen, onClose }) {
 
         {/* Logo */}
         <div className="p-6">
-          <div className="p-6">
           <img src={OutingStation} alt="Outing Station" className="h-12 w-auto" />
         </div>
-        </div>
 
-        {/* User Info */}
-        <div className="px-6 py-4">
+        {/* User Info - FIXED */}
+        <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <img 
-              src={user?.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=User'} 
+              src={user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=22D3EE&color=fff&size=128`} 
               alt={user?.name || 'User'} 
-              className="w-10 h-10 rounded-full"
+              className="w-12 h-12 rounded-full object-cover border-2 border-gray-200"
+              onError={(e) => {
+                e.target.onerror = null;
+                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=22D3EE&color=fff&size=128`;
+              }}
             />
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-gray-900 text-sm truncate">Welcome Back!</p>
-              <p className="text-xs text-gray-500 truncate">{user?.city || 'Lagos'}</p>
+              <p className="text-xs text-gray-500 mb-1">
+                {user?.isNewUser ? 'Welcome!' : 'Welcome Back!'}
+              </p>
+              <p className="font-semibold text-gray-900 text-sm truncate">
+                {user?.name || 'User'}
+              </p>
             </div>
           </div>
         </div>

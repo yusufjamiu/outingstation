@@ -4,7 +4,7 @@ import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { uploadWithProgress, compressImage } from '../../services/cloudinaryService';
+import { uploadWithProgress, compressImage } from '../../services/firebaseStorageService';
 
 export default function AdminEventForm() {
   const navigate = useNavigate();
@@ -17,9 +17,7 @@ export default function AdminEventForm() {
   const [universities, setUniversities] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-
-  // ✅ NEW: Form type toggle
-  const [formType, setFormType] = useState('event'); // 'event' or 'place'
+  const [formType, setFormType] = useState('event');
 
   const [formData, setFormData] = useState({
     title: '', description: '', category: '',
@@ -78,7 +76,6 @@ export default function AdminEventForm() {
             
             setFormData(prev => ({ ...prev, ...formattedData }));
             
-            // ✅ NEW: Set form type based on subCategory
             if (data.subCategory === 'places') {
               setFormType('place');
             }
@@ -98,9 +95,7 @@ export default function AdminEventForm() {
     'Networking & Social', 'Gaming & Esport', 'Music & Concerts', 'Cinema & Show'
   ];
 
-  // ✅ Categories that support Places
   const placeSupportedCategories = ['Family & Kids Fun', 'Food & Dining', 'Sport & Fitness', 'Art & Culture', 'Nightlife & Parties'];
-
   const platforms = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Twitter Space', 'YouTube Live', 'Facebook Live', 'Other'];
 
   const handleChange = (e) => {
@@ -108,7 +103,6 @@ export default function AdminEventForm() {
     setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
-  // ✅ NEW: Handle form type toggle
   const handleFormTypeChange = (type) => {
     setFormType(type);
     setFormData(prev => ({
@@ -140,7 +134,7 @@ export default function AdminEventForm() {
       const compressedFile = await compressImage(file, 1200, 0.8);
       console.log(`Size reduced: ${(file.size / 1024).toFixed(0)}KB → ${(compressedFile.size / 1024).toFixed(0)}KB`);
 
-      console.log('☁️ Uploading to Cloudinary...');
+      console.log('☁️ Uploading to Firebase Storage...');
       const imageUrl = await uploadWithProgress(
         compressedFile,
         'events',
@@ -198,12 +192,6 @@ export default function AdminEventForm() {
         updatedAt: serverTimestamp()
       };
 
-      console.log('📤 Saving event with dates:', {
-        date: eventData.date,
-        startDate: eventData.startDate,
-        endDate: eventData.endDate
-      });
-
       if (isEdit) {
         await updateDoc(doc(db, 'events', id), eventData);
         alert(`✅ ${formType === 'place' ? 'Place' : 'Event'} updated successfully!`);
@@ -257,7 +245,7 @@ export default function AdminEventForm() {
           <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
 
-              {/* ✅ NEW: Event/Place Toggle */}
+              {/* Event/Place Toggle */}
               {!isEdit && (
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <label className="block text-sm font-medium text-gray-700 mb-3">What are you creating?</label>
@@ -451,7 +439,7 @@ export default function AdminEventForm() {
                   </div>
                 </div>
               ) : (
-                // ✅ PLACES ONLY - Opening Hours
+                // PLACES ONLY - Opening Hours
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Opening Hours</h3>
                   <div className="space-y-4">
@@ -581,7 +569,7 @@ export default function AdminEventForm() {
                 </div>
               </div>
 
-              {/* Media - Cloudinary Upload */}
+              {/* Media - Firebase Storage Upload */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
                   {isPlace ? 'Place Image' : 'Event Image'} *

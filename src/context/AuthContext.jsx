@@ -35,7 +35,7 @@ export function AuthProvider({ children }) {
       phone,
       city,
       savedEvents: [],
-      isFirstLogin: true,
+      isNewUser: true, // ✅ UPDATED: Track new user
       role: 'user',
       createdAt: new Date(),
       updatedAt: new Date()
@@ -45,8 +45,17 @@ export function AuthProvider({ children }) {
   }
 
   // ✅ Email/Password Login
-  function login(email, password) {
-    return signInWithEmailAndPassword(auth, email, password);
+  async function login(email, password) {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    
+    // ✅ UPDATED: Mark as returning user after login
+    const userRef = doc(db, 'users', userCredential.user.uid);
+    await updateDoc(userRef, {
+      isNewUser: false,
+      lastLoginAt: new Date()
+    });
+
+    return userCredential;
   }
 
   // ✅ Google Sign-In
@@ -60,18 +69,24 @@ export function AuthProvider({ children }) {
     const docSnap = await getDoc(docRef);
 
     if (!docSnap.exists()) {
-      // New Google user - create profile
+      // ✅ UPDATED: New Google user - create profile with isNewUser
       await setDoc(docRef, {
         name: user.displayName || '',
         email: user.email || '',
         phone: user.phoneNumber || '',
         city: '',
-        photoURL: user.photoURL || '',
+        avatar: user.photoURL || '',
         savedEvents: [],
-        isFirstLogin: true,
+        isNewUser: true, // ✅ NEW USER
         role: 'user',
         createdAt: new Date(),
         updatedAt: new Date()
+      });
+    } else {
+      // ✅ UPDATED: Returning Google user - mark as returning
+      await updateDoc(docRef, {
+        isNewUser: false,
+        lastLoginAt: new Date()
       });
     }
 
@@ -104,6 +119,13 @@ export function AuthProvider({ children }) {
     await updatePassword(currentUser, newPassword);
   }
 
+  // ✅ Get User Data (helper function)
+  async function getUserData(uid) {
+    const docRef = doc(db, 'users', uid);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? docSnap.data() : null;
+  }
+
   // ✅ Listen for auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -133,7 +155,8 @@ export function AuthProvider({ children }) {
     loginWithGoogle,
     logout,
     updateProfile,
-    changePassword
+    changePassword,
+    getUserData
   };
 
   return (

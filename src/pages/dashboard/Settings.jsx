@@ -5,13 +5,13 @@ import { UserSidebar } from '../../components/UserSidebar';
 import { useAuth } from '../../context/AuthContext';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { uploadToCloudinary } from '../../services/cloudinaryService';
+import { uploadToFirebase } from '../../services/firebaseStorageService';
 
 export default function Settings() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   
-  const { currentUser, userProfile, logout } = useAuth();
+  const { currentUser, userProfile, logout, updateProfile } = useAuth(); // ✅ ADDED: updateProfile
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -66,7 +66,8 @@ export default function Settings() {
   const user = { 
     name: displayName, 
     city: userProfile?.city || '', 
-    avatar: avatarUrl 
+    avatar: avatarUrl,
+    isNewUser: userProfile?.isNewUser
   };
 
   const handleEditClick = () => {
@@ -87,7 +88,7 @@ export default function Settings() {
     }
   };
 
-  // ✅ Cloudinary Profile Picture Upload
+  // ✅ Firebase Storage Profile Picture Upload
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
@@ -107,14 +108,17 @@ export default function Settings() {
 
       setUploadingAvatar(true);
 
-      // Upload to Cloudinary
-      console.log('☁️ Uploading profile picture...');
-      const imageUrl = await uploadToCloudinary(file, 'profiles');
+      // Upload to Firebase Storage
+      console.log('🔥 Uploading profile picture to Firebase Storage...');
+      const imageUrl = await uploadToFirebase(file, 'users');
       console.log('✅ Upload complete:', imageUrl);
 
       // Update Firestore
       const userRef = doc(db, 'users', currentUser.uid);
       await updateDoc(userRef, { avatar: imageUrl });
+
+      // ✅ ADDED: Update AuthContext
+      await updateProfile({ avatar: imageUrl });
 
       // Update local state
       setAvatarUrl(imageUrl);
@@ -129,6 +133,7 @@ export default function Settings() {
     }
   };
 
+  // ✅ FIXED: Now updates AuthContext userProfile
   const handleSaveChanges = async () => {
     if (!currentUser) return;
 
@@ -136,19 +141,39 @@ export default function Settings() {
       setSaving(true);
 
       const userRef = doc(db, 'users', currentUser.uid);
+      
+      // Update Firestore
       await updateDoc(userRef, {
+        name: formData.name,
+        phone: formData.phone,
+        city: formData.city,
+        updatedAt: new Date()
+      });
+
+      console.log('✅ Firestore updated:', {
+        name: formData.name,
+        city: formData.city,
+        phone: formData.phone
+      });
+
+      // ✅ CRITICAL: Update AuthContext state
+      await updateProfile({
         name: formData.name,
         phone: formData.phone,
         city: formData.city
       });
 
+      console.log('✅ AuthContext updated - Dashboard should now show:', formData.city);
+
       setIsEditing(false);
       setShowSavedNotification(true);
       setTimeout(() => setShowSavedNotification(false), 3000);
 
-      loadUserData();
+      // Reload user data
+      await loadUserData();
+
     } catch (err) {
-      console.error('Error saving:', err);
+      console.error('❌ Error saving:', err);
       alert('Error saving changes: ' + err.message);
     }
     setSaving(false);
@@ -298,7 +323,7 @@ export default function Settings() {
           ) : (
             /* Edit Mode */
             <div className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 lg:p-8 shadow-sm border border-gray-200">
-              {/* Avatar Upload with Cloudinary */}
+              {/* Avatar Upload with Firebase Storage */}
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 mb-6 pb-6 border-b border-gray-200">
                 <div className="relative">
                   <img 

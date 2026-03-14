@@ -28,6 +28,7 @@ const openInMaps = (event) => {
   window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
 };
 
+// ✅ UPDATED: Smart registration handler with popups
 const handleRegister = (event, currentUser, navigate) => {
   if (!currentUser) {
     toast.error('Please login to register for this event');
@@ -35,47 +36,99 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
   
-  if (event.isFree) {
-    toast.success(`Free Event - Registration Successful!\n\nThis is a FREE event. See you there!`, { 
-      icon: '🎉',
-      duration: 5000 
-    });
-    return;
-  }
-  
-  if (event.ticketLink) {
+  // ✅ For PLACES - Show visit place popup
+  if (event.subCategory === 'places') {
     toast((t) => (
       <div className="flex flex-col gap-3">
         <div>
-          <p className="font-semibold">🎟️ Ticket Required</p>
-          <p className="text-sm text-gray-600 mt-1">{event.title}</p>
-          <p className="text-sm font-semibold text-cyan-600 mt-1">
-            Price: ₦{event.price?.toLocaleString()}
+          <p className="font-semibold">📍 Visit Place</p>
+          <p className="text-sm text-gray-600 mt-1">
+            This is a permanent place. Visit the location to purchase tickets or pay entry fees if applicable.
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => {
-              window.open(event.ticketLink, '_blank');
-              toast.dismiss(t.id);
-            }}
-            className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
-          >
-            Buy Tickets
-          </button>
+          {event.mapLocation && (
+            <button
+              onClick={() => {
+                openInMaps(event);
+                toast.dismiss(t.id);
+              }}
+              className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
+            >
+              View Map
+            </button>
+          )}
           <button
             onClick={() => toast.dismiss(t.id)}
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
           >
-            Cancel
+            Got it
           </button>
         </div>
       </div>
-    ), { duration: Infinity });
+    ), { duration: Infinity, icon: '🏪' });
     return;
   }
   
-  toast.success('Registration Successful!', { icon: '🎉' });
+  // ✅ For FREE EVENTS or NO LINK - Show contact organizer popup
+  if (event.isFree || !event.ticketLink || event.ticketLink.trim() === '') {
+    toast((t) => (
+      <div className="flex flex-col gap-3">
+        <div>
+          <p className="font-semibold">ℹ️ Contact Organizer</p>
+          <p className="text-sm text-gray-600 mt-1">
+            {event.isFree 
+              ? 'This is a free event! Please contact the organizer for registration or attendance details.'
+              : 'Tickets are not available online. Please contact the organizer for ticket information.'
+            }
+          </p>
+          {(event.organizerEmail || event.organizerPhone) && (
+            <div className="mt-2 text-sm text-gray-700">
+              {event.organizerEmail && <p>📧 {event.organizerEmail}</p>}
+              {event.organizerPhone && <p>📞 {event.organizerPhone}</p>}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => toast.dismiss(t.id)}
+          className="px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
+        >
+          Close
+        </button>
+      </div>
+    ), { duration: Infinity, icon: event.isFree ? '🎉' : 'ℹ️' });
+    return;
+  }
+  
+  // ✅ For PAID EVENTS with link - Show buy tickets popup
+  toast((t) => (
+    <div className="flex flex-col gap-3">
+      <div>
+        <p className="font-semibold">🎟️ Ticket Required</p>
+        <p className="text-sm text-gray-600 mt-1">{event.title}</p>
+        <p className="text-sm font-semibold text-cyan-600 mt-1">
+          Price: ₦{event.price?.toLocaleString()}
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => {
+            window.open(event.ticketLink, '_blank');
+            toast.dismiss(t.id);
+          }}
+          className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
+        >
+          Buy Tickets
+        </button>
+        <button
+          onClick={() => toast.dismiss(t.id)}
+          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  ), { duration: Infinity });
 };
 
 export default function EventDetails() {
@@ -197,10 +250,27 @@ export default function EventDetails() {
     setShowShareMenu(false);
   };
 
+  // ✅ UPDATED: Handle places with availability
   const getDate = (event) => {
     if (!event) return 'TBD';
+    
+    // For places, show availability
+    if (event.subCategory === 'places') {
+      return event.placeAvailability || 'Always Open';
+    }
+    
+    // For events
     if (event.date) {
       const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
+      return date.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    }
+    if (event.startDate) {
+      const date = event.startDate.toDate ? event.startDate.toDate() : new Date(event.startDate);
       return date.toLocaleDateString('en-US', { 
         weekday: 'long', 
         year: 'numeric', 
@@ -211,8 +281,19 @@ export default function EventDetails() {
     return 'TBD';
   };
 
+  // ✅ UPDATED: Handle places with opening hours
   const getTime = (event) => {
     if (!event) return '';
+    
+    // For places, show opening hours
+    if (event.subCategory === 'places') {
+      if (event.openingTime && event.closingTime) {
+        return `${event.openingTime} - ${event.closingTime}`;
+      }
+      return '';
+    }
+    
+    // For events
     return event.time || event.dailyStartTime || event.recurringTime || 'TBD';
   };
 
@@ -253,15 +334,18 @@ export default function EventDetails() {
     );
   }
 
+  // ✅ Check if it's a place
+  const isPlace = event.subCategory === 'places';
+
   return (
     <>
       <SEO 
         title={`${event.title} - OutingStation`}
-        description={event.description?.substring(0, 155) || `Join ${event.title} - an amazing event happening in ${event.location || 'Nigeria'}`}
+        description={event.description?.substring(0, 155) || `Join ${event.title} - an amazing ${isPlace ? 'place' : 'event'} in ${event.location || 'Nigeria'}`}
         image={event.imageUrl}
         url={`https://outingstation.com/event/${event.id}`}
         type="article"
-        keywords={`${event.category}, ${event.location}, events Nigeria, ${event.eventType} events, ${event.isFree ? 'free events' : 'paid events'}`}
+        keywords={`${event.category}, ${event.location}, ${isPlace ? 'places' : 'events'} Nigeria, ${event.eventType} events, ${event.isFree ? 'free events' : 'paid events'}`}
       />
       
       <div className="min-h-screen bg-gray-50">
@@ -291,20 +375,27 @@ export default function EventDetails() {
                   </span>
                 </div>
 
-                {event.eventType && (
-                  <div className="absolute top-4 right-4">
+                <div className="absolute top-4 right-4 flex flex-col gap-2">
+                  {event.eventType && (
                     <span className="bg-purple-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
                       {event.eventType === 'campus' && '🎓 Campus'}
                       {event.eventType === 'webinar' && '📹 Virtual'}
                       {event.eventType === 'regular' && '🎉 Event'}
                     </span>
-                  </div>
-                )}
+                  )}
+                  
+                  {/* ✅ Place badge */}
+                  {isPlace && (
+                    <span className="bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
+                      📍 PLACE
+                    </span>
+                  )}
+                </div>
 
                 {event.isFree && (
                   <div className="absolute bottom-4 right-4">
                     <span className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold">
-                      Free Event
+                      Free {isPlace ? 'Entry' : 'Event'}
                     </span>
                   </div>
                 )}
@@ -385,7 +476,9 @@ export default function EventDetails() {
               </div>
 
               <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">About This Event</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-4">
+                  About This {isPlace ? 'Place' : 'Event'}
+                </h2>
                 <p className="text-gray-700 leading-relaxed whitespace-pre-line">
                   {event.description || 'No description available.'}
                 </p>
@@ -420,10 +513,10 @@ export default function EventDetails() {
                         </a>
                       </div>
                     )}
-                    {event.religion && (
+                    {event.religionType && (
                       <div className="flex items-center gap-3">
                         <span className="font-semibold text-gray-700">Religion:</span>
-                        <span className="text-gray-600">{event.religion}</span>
+                        <span className="text-gray-600">{event.religionType}</span>
                       </div>
                     )}
                   </div>
@@ -432,7 +525,9 @@ export default function EventDetails() {
 
               {(event.organizerName || event.organizerEmail || event.organizerPhone) && (
                 <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
-                  <h2 className="text-xl font-bold text-gray-900 mb-4">Organizer</h2>
+                  <h2 className="text-xl font-bold text-gray-900 mb-4">
+                    {isPlace ? 'Contact Information' : 'Organizer'}
+                  </h2>
                   <div className="space-y-3">
                     {event.organizerName && (
                       <div className="flex items-center gap-3">
@@ -482,13 +577,17 @@ export default function EventDetails() {
 
             <div className="lg:col-span-1">
               <div className="bg-white rounded-xl p-6 shadow-lg sticky top-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-6">Event Details</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-6">
+                  {isPlace ? 'Place Details' : 'Event Details'}
+                </h2>
                 
                 <div className="space-y-4 mb-6">
                   <div className="flex items-start gap-3">
                     <Calendar size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                     <div>
-                      <p className="font-semibold text-gray-900 text-sm">Date</p>
+                      <p className="font-semibold text-gray-900 text-sm">
+                        {isPlace ? 'Availability' : 'Date'}
+                      </p>
                       <p className="text-gray-600 text-sm">{getDate(event)}</p>
                     </div>
                   </div>
@@ -497,7 +596,9 @@ export default function EventDetails() {
                     <div className="flex items-start gap-3">
                       <Clock size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                       <div>
-                        <p className="font-semibold text-gray-900 text-sm">Time</p>
+                        <p className="font-semibold text-gray-900 text-sm">
+                          {isPlace ? 'Hours' : 'Time'}
+                        </p>
                         <p className="text-gray-600 text-sm">{getTime(event)}</p>
                       </div>
                     </div>
@@ -533,10 +634,12 @@ export default function EventDetails() {
                   <div className="flex items-start gap-3">
                     <DollarSign size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                     <div>
-                      <p className="font-semibold text-gray-900 text-sm">Price</p>
+                      <p className="font-semibold text-gray-900 text-sm">
+                        {isPlace ? 'Entry Fee' : 'Price'}
+                      </p>
                       <p className="text-gray-600 text-sm">
                         {event.isFree ? (
-                          <span className="text-emerald-600 font-semibold">Free Event</span>
+                          <span className="text-emerald-600 font-semibold">Free</span>
                         ) : (
                           <span className="font-semibold">₦{event.price?.toLocaleString() || 'Contact Organizer'}</span>
                         )}
@@ -551,7 +654,7 @@ export default function EventDetails() {
                     className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
                   >
                     <CheckCircle size={20} />
-                    Register for Event
+                    {isPlace ? 'Get Info' : (event.isFree ? 'Register' : 'Buy Tickets')}
                   </button>
 
                   <button 
@@ -563,7 +666,7 @@ export default function EventDetails() {
                     }`}
                   >
                     <Bookmark size={20} className={saved ? 'fill-current' : ''} />
-                    {saved ? 'Saved' : 'Save Event'}
+                    {saved ? 'Saved' : `Save ${isPlace ? 'Place' : 'Event'}`}
                   </button>
                 </div>
               </div>

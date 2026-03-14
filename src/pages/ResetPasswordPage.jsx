@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
-import { Mail, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Mail, CheckCircle, ArrowLeft } from 'lucide-react';
 import OutingStation from '../assets/OutingStation.png';
 
 export default function ResetPasswordPage() {
@@ -10,6 +10,8 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false); // ✅ ADDED
+  const navigate = useNavigate();
 
   const handleSendReset = async (e) => {
     e.preventDefault();
@@ -34,12 +36,23 @@ export default function ResetPasswordPage() {
     setLoading(false);
   };
 
+  // ✅ IMPROVED: Resend with success confirmation
   const handleResend = async () => {
     try {
       setError('');
+      setResendSuccess(false); // ✅ Reset before sending
       setLoading(true);
+      
       await sendPasswordResetEmail(auth, email);
-      setError('');
+      
+      // ✅ ADDED: Show success message
+      setResendSuccess(true);
+      
+      // ✅ ADDED: Auto-hide success message after 5 seconds
+      setTimeout(() => {
+        setResendSuccess(false);
+      }, 5000);
+      
     } catch (error) {
       setError('Failed to resend email. Please try again.');
     }
@@ -64,6 +77,17 @@ export default function ResetPasswordPage() {
       {/* Left Side - Form */}
       <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-6 sm:p-8 lg:p-12">
         <div className="max-w-md w-full">
+          {/* Back Button */}
+          <button 
+            onClick={() => navigate('/login')}
+            className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 group transition-all"
+          >
+            <div className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-all group-hover:-translate-x-1">
+              <ArrowLeft size={20} />
+            </div>
+            <span className="font-medium text-sm sm:text-base">Back to Login</span>
+          </button>
+
           {/* Logo */}
           <Link to="/" className="inline-block mb-8">
             <img
@@ -71,15 +95,6 @@ export default function ResetPasswordPage() {
               alt="Outing Station"
               className="h-12 sm:h-16 w-auto"
             />
-          </Link>
-
-          {/* Back to Login Link */}
-          <Link 
-            to="/login" 
-            className="inline-flex items-center gap-2 text-sm sm:text-base text-gray-600 hover:text-gray-900 mb-6 sm:mb-8 transition-colors group"
-          >
-            <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
-            <span>Back to Login</span>
           </Link>
 
           {/* Heading */}
@@ -110,6 +125,19 @@ export default function ResetPasswordPage() {
             <div className="bg-red-50 border border-red-200 text-red-700 p-3 sm:p-4 rounded-xl mb-4 sm:mb-6 text-xs sm:text-sm">
               <p className="font-medium mb-1">Error</p>
               <p>{error}</p>
+            </div>
+          )}
+
+          {/* ✅ ADDED: Resend Success Message */}
+          {resendSuccess && (
+            <div className="bg-green-50 border border-green-200 text-green-700 p-3 sm:p-4 rounded-xl mb-4 sm:mb-6 text-xs sm:text-sm animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={18} className="flex-shrink-0" />
+                <div>
+                  <p className="font-medium">Email Resent Successfully!</p>
+                  <p className="text-xs mt-1">Check your inbox for the new reset link.</p>
+                </div>
+              </div>
             </div>
           )}
 
@@ -151,7 +179,7 @@ export default function ResetPasswordPage() {
               <p className="text-center text-gray-600 text-xs sm:text-sm pt-2">
                 Remember your password?{' '}
                 <Link to="/login" className="text-cyan-500 font-semibold hover:text-cyan-600 transition">
-                  Back to Login
+                  Sign in instead
                 </Link>
               </p>
             </form>
@@ -171,24 +199,32 @@ export default function ResetPasswordPage() {
                 </p>
               </div>
 
-              <Link
-                to="/login"
-                className="w-full block text-center bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 sm:py-4 rounded-xl font-semibold hover:shadow-lg transition-all text-sm sm:text-base"
+              <button
+                onClick={() => navigate('/login')}
+                className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 sm:py-4 rounded-xl font-semibold hover:shadow-lg transition-all text-sm sm:text-base"
               >
                 Back to Login
-              </Link>
+              </button>
 
               <div className="text-center space-y-2">
                 <p className="text-xs sm:text-sm text-gray-600">
                   Didn't receive the email?
                 </p>
+                {/* ✅ IMPROVED: Resend button with loading state */}
                 <button
                   type="button"
                   onClick={handleResend}
                   disabled={loading}
-                  className="text-xs sm:text-sm text-cyan-500 font-semibold hover:text-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  className="text-xs sm:text-sm text-cyan-500 font-semibold hover:text-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed transition inline-flex items-center gap-1"
                 >
-                  {loading ? 'Sending...' : 'Resend Email'}
+                  {loading ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                      Sending...
+                    </>
+                  ) : (
+                    'Resend Email'
+                  )}
                 </button>
               </div>
 
@@ -302,3 +338,21 @@ export default function ResetPasswordPage() {
     </div>
   );
 }
+
+// ✅ ADDED: Fade-in animation for success message
+<style jsx>{`
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+  }
+`}</style>

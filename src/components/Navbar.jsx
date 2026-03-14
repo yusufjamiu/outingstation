@@ -18,10 +18,14 @@ export default function Navbar() {
     }
   };
 
-  // Display name: from Firestore profile or Firebase Auth
+  // ✅ FIXED: Display name and avatar logic
   const displayName = userProfile?.name || currentUser?.displayName || 'User';
-  const avatarUrl = userProfile?.photoURL || currentUser?.photoURL ||
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${displayName}`;
+  
+  // Priority: Firestore avatar > Firebase photoURL > UI Avatars fallback
+  const avatarUrl = userProfile?.avatar || 
+                    userProfile?.photoURL || 
+                    currentUser?.photoURL ||
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=22D3EE&color=fff&size=128`;
 
   return (
     <nav className="bg-white shadow-sm sticky top-0 z-50">
@@ -48,7 +52,11 @@ export default function Navbar() {
                   <img
                     src={avatarUrl}
                     alt={displayName}
-                    className="w-8 h-8 rounded-full"
+                    className="w-8 h-8 rounded-full object-cover border-2 border-gray-200"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=22D3EE&color=fff&size=128`;
+                    }}
                   />
                   <span>{displayName.split(' ')[0]}</span>
                 </Link>
@@ -91,14 +99,27 @@ export default function Navbar() {
 
             {currentUser ? (
               <>
-                <Link to="/dashboard" onClick={() => setIsOpen(false)} className="flex items-center gap-2 text-gray-700 hover:text-cyan-500 transition py-2">
-                  <User size={18} />
-                  Dashboard
+                <Link 
+                  to="/dashboard" 
+                  onClick={() => setIsOpen(false)} 
+                  className="flex items-center gap-3 text-gray-700 hover:text-cyan-500 transition py-2"
+                >
+                  <img
+                    src={avatarUrl}
+                    alt={displayName}
+                    className="w-8 h-8 rounded-full object-cover border-2 border-gray-200"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=22D3EE&color=fff&size=128`;
+                    }}
+                  />
+                  <span>{displayName}</span>
                 </Link>
                 <button
                   onClick={() => { handleLogout(); setIsOpen(false); }}
-                  className="block w-full text-left text-gray-700 hover:text-red-500 transition py-2"
+                  className="flex items-center gap-2 w-full text-left text-gray-700 hover:text-red-500 transition py-2"
                 >
+                  <LogOut size={18} />
                   Logout
                 </button>
               </>

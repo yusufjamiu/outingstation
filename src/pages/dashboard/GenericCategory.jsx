@@ -31,7 +31,8 @@ export default function GenericCategory() {
   const user = {
     name: displayName,
     city: userProfile?.city || 'Lagos',
-    avatar: avatarUrl
+    avatar: avatarUrl,
+    isNewUser: userProfile?.isNewUser
   };
 
   // Updated category map with hasPlaces and isReligion flags
@@ -56,7 +57,7 @@ export default function GenericCategory() {
   useEffect(() => {
     loadSavedEventIds();
     loadCategoryEvents();
-  }, [currentUser, slug]);
+  }, [currentUser, slug, userProfile?.city]); // ✅ ADDED: Reload when city changes
 
   const loadSavedEventIds = async () => {
     if (!currentUser) return;
@@ -70,6 +71,7 @@ export default function GenericCategory() {
     }
   };
 
+  // ✅ UPDATED: Added city filtering
   const loadCategoryEvents = async () => {
     try {
       setLoading(true);
@@ -84,6 +86,35 @@ export default function GenericCategory() {
         e.category === slug && e.status === 'published'
       );
       allEvents = filterUpcomingEvents(allEvents);
+
+      // ✅ ADDED: Filter by user's city (same logic as Dashboard)
+      const userCity = userProfile?.city || 'Lagos';
+      
+      if (userCity && userCity.toLowerCase().trim() !== 'lagos') {
+        const userCityNormalized = userCity.toLowerCase().split(',')[0].trim();
+        
+        console.log(`🔍 GenericCategory - Looking for ${slug} events in: "${userCityNormalized}"`);
+        
+        const cityMatchedEvents = allEvents.filter(e => {
+          // Extract city from location field
+          const eventLocation = (e.location || '').toLowerCase();
+          const eventCity = eventLocation.split(',')[0].trim();
+          
+          // Exact match
+          return eventCity === userCityNormalized;
+        });
+
+        console.log(`✅ Found ${cityMatchedEvents.length} ${slug} events in ${userCity}`);
+
+        // If no events in user's city, show empty array
+        if (cityMatchedEvents.length === 0) {
+          setEvents([]);
+          setLoading(false);
+          return;
+        }
+        
+        allEvents = cityMatchedEvents;
+      }
 
       setEvents(allEvents);
     } catch (err) {
@@ -156,6 +187,12 @@ export default function GenericCategory() {
   };
 
   const getDate = (event) => {
+    // For places, show availability
+    if (event.subCategory === 'places') {
+      return event.placeAvailability || 'Always Open';
+    }
+    
+    // For events
     if (event.date) {
       const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -167,8 +204,23 @@ export default function GenericCategory() {
     return 'TBD';
   };
 
-  const getTime = (event) => event.time || event.dailyStartTime || event.recurringTime || '';
+  const getTime = (event) => {
+    // For places, show opening hours
+    if (event.subCategory === 'places') {
+      return event.openingTime && event.closingTime 
+        ? `${event.openingTime} - ${event.closingTime}`
+        : '';
+    }
+    
+    // For events
+    return event.time || event.dailyStartTime || event.recurringTime || '';
+  };
+  
   const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80';
+
+  // ✅ ADDED: Get user's city for display
+  const userCity = userProfile?.city || 'Lagos';
+  const userCityName = userCity.split(',')[0].trim();
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -358,19 +410,54 @@ export default function GenericCategory() {
                   ))}
                 </div>
               ) : (
+                // ✅ UPDATED: Better empty state with city info
                 <div className="text-center py-20">
-                  <p className="text-gray-500 text-lg mb-2">
-                    {searchQuery 
-                      ? `No ${currentCategory.hasPlaces && activeTab === 'places' ? 'places' : 'events'} found for "${searchQuery}"` 
-                      : `No ${currentCategory.hasPlaces && activeTab === 'places' ? 'places' : 'events'} available yet.`
-                    }
-                  </p>
-                  <p className="text-gray-400 text-sm">
-                    {searchQuery 
-                      ? 'Try a different search term' 
-                      : 'Check back soon for exciting events!'
-                    }
-                  </p>
+                  {searchQuery ? (
+                    <>
+                      <p className="text-gray-500 text-lg mb-2">
+                        No {currentCategory.hasPlaces && activeTab === 'places' ? 'places' : 'events'} found for "{searchQuery}"
+                      </p>
+                      <p className="text-gray-400 text-sm">
+                        Try a different search term
+                      </p>
+                    </>
+                  ) : userCity.toLowerCase() !== 'lagos' ? (
+                    <div className="max-w-md mx-auto">
+                      <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <MapPin size={32} className="text-gray-400" />
+                      </div>
+                      <p className="text-gray-700 text-lg mb-2 font-medium">
+                        No {slug} {currentCategory.hasPlaces && activeTab === 'places' ? 'places' : 'events'} in {userCityName} yet
+                      </p>
+                      <p className="text-gray-500 text-sm mb-6">
+                        We're currently only available in Lagos, but we're expanding soon!
+                      </p>
+                      
+                      <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                        <button
+                          onClick={() => navigate('/settings')}
+                          className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition"
+                        >
+                          Change to Lagos
+                        </button>
+                        <button
+                          onClick={() => navigate('/create-event')}
+                          className="px-6 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
+                        >
+                          Create an Event
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-gray-500 text-lg mb-2">
+                        No {currentCategory.hasPlaces && activeTab === 'places' ? 'places' : 'events'} available yet.
+                      </p>
+                      <p className="text-gray-400 text-sm">
+                        Check back soon for exciting events!
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
             </>

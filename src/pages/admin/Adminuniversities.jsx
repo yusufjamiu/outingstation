@@ -3,7 +3,7 @@ import { Menu, Plus, Edit, Trash2, GraduationCap, X, Save, Upload } from 'lucide
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { uploadToCloudinary } from '../../services/cloudinaryService';
+import { uploadToFirebase } from '../../services/firebaseStorageService';
 
 export default function AdminUniversities() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -72,7 +72,7 @@ export default function AdminUniversities() {
     setFormData({ ...formData, name, slug: generateSlug(name) });
   };
 
-  // ✅ Cloudinary Image Upload Handler
+  // ✅ Firebase Storage Image Upload Handler
   const handleUniversityImageUpload = async (e, universityId) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -92,9 +92,9 @@ export default function AdminUniversities() {
 
       setUploadingUniImage(universityId);
 
-      // Upload to Cloudinary
-      console.log('☁️ Uploading university image...');
-      const imageUrl = await uploadToCloudinary(file, 'universities');
+      // Upload to Firebase Storage
+      console.log('🔥 Uploading university image to Firebase Storage...');
+      const imageUrl = await uploadToFirebase(file, 'universities');
       console.log('✅ Upload complete:', imageUrl);
 
       // Update university in Firestore

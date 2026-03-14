@@ -65,7 +65,7 @@ export default function GenericCategoryPage() {
       let categoryEvents = eventsData.filter(e => 
         e.status === 'published' && e.category === categoryName
       );
-     categoryEvents = filterUpcomingEvents(categoryEvents);  // ✅ Filter categoryEvents!
+      categoryEvents = filterUpcomingEvents(categoryEvents);
 
       setAllEvents(categoryEvents);
     } catch (err) {
@@ -85,11 +85,11 @@ export default function GenericCategoryPage() {
 
     // Religion filter
     if (currentCategory.isReligion && religionFilter !== 'all') {
-      filtered = filtered.filter(e => e.religion === religionFilter);
+      filtered = filtered.filter(e => e.religionType === religionFilter);
     }
 
-    // Date filter
-    if (dateFilter !== 'any') {
+    // Date filter (only for events, not places)
+    if (dateFilter !== 'any' && activeTab === 'events') {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       
@@ -151,15 +151,38 @@ export default function GenericCategoryPage() {
     navigate(`/event/${eventId}`);
   };
 
+  // ✅ UPDATED: Handle Places with opening hours
   const getDate = (event) => {
+    // For places, show availability
+    if (event.subCategory === 'places') {
+      return event.placeAvailability || 'Always Open';
+    }
+    
+    // For events
     if (event.date) {
       const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
+      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    if (event.startDate) {
+      const date = event.startDate.toDate ? event.startDate.toDate() : new Date(event.startDate);
       return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     }
     return 'TBD';
   };
 
-  const getTime = (event) => event.time || 'TBD';
+  // ✅ UPDATED: Handle Places with opening hours
+  const getTime = (event) => {
+    // For places, show opening hours
+    if (event.subCategory === 'places') {
+      return event.openingTime && event.closingTime 
+        ? `${event.openingTime} - ${event.closingTime}`
+        : '';
+    }
+    
+    // For events
+    return event.time || event.dailyStartTime || event.recurringTime || 'TBD';
+  };
+
   const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80';
 
   return (
@@ -228,21 +251,23 @@ export default function GenericCategoryPage() {
           </div>
         )}
 
-        {/* Filters */}
+        {/* Filters - Only show date filter for events */}
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
-          <div className="flex-1 sm:flex-initial">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Date:</label>
-            <select 
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
-            >
-              <option value="any">Any</option>
-              <option value="today">Today</option>
-              <option value="this-week">This Week</option>
-              <option value="this-month">This Month</option>
-            </select>
-          </div>
+          {activeTab === 'events' && (
+            <div className="flex-1 sm:flex-initial">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Date:</label>
+              <select 
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+              >
+                <option value="any">Any</option>
+                <option value="today">Today</option>
+                <option value="this-week">This Week</option>
+                <option value="this-month">This Month</option>
+              </select>
+            </div>
+          )}
 
           <div className="flex-1 sm:flex-initial">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Location:</label>
@@ -253,7 +278,6 @@ export default function GenericCategoryPage() {
             >
               <option value="all">All Cities</option>
               <option value="lagos">Lagos</option>
-            
             </select>
           </div>
 
@@ -328,8 +352,12 @@ export default function GenericCategoryPage() {
                     <div className="flex items-center gap-2">
                       <Calendar size={14} />
                       <span>{getDate(event)}</span>
-                      <Clock size={14} />
-                      <span>{getTime(event)}</span>
+                      {getTime(event) && (
+                        <>
+                          <Clock size={14} />
+                          <span>{getTime(event)}</span>
+                        </>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <MapPin size={14} />

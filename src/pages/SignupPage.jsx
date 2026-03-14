@@ -31,22 +31,169 @@ export default function SignupPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  // ✅ VALIDATION FUNCTIONS
+  const validateName = (name) => {
+    const trimmedName = name.trim();
+    
+    // Check if empty or only spaces
+    if (!trimmedName) {
+      return 'Name is required';
+    }
+    
+    // Check length (2-50 characters)
+    if (trimmedName.length < 2) {
+      return 'Name must be at least 2 characters';
+    }
+    if (trimmedName.length > 50) {
+      return 'Name must be less than 50 characters';
+    }
+    
+    // Check for alphabetical characters only (including spaces, hyphens, apostrophes)
+    const nameRegex = /^[a-zA-Z\s'-]+$/;
+    if (!nameRegex.test(trimmedName)) {
+      return 'Name can only contain letters, spaces, hyphens, and apostrophes';
+    }
+    
+    // Check for at least 2 alphabetical characters (prevent names like "  " or "---")
+    const alphaCount = trimmedName.replace(/[^a-zA-Z]/g, '').length;
+    if (alphaCount < 2) {
+      return 'Name must contain at least 2 letters';
+    }
+    
+    return null;
+  };
+
+  const validateCity = (city) => {
+    const trimmedCity = city.trim();
+    
+    if (!trimmedCity) {
+      return null; // City is optional
+    }
+    
+    // Length validation (2-100 characters)
+    if (trimmedCity.length < 2) {
+      return 'City must be at least 2 characters';
+    }
+    if (trimmedCity.length > 100) {
+      return 'City must be less than 100 characters';
+    }
+    
+    // Allow letters, spaces, hyphens, commas (for "Lagos, Nigeria")
+    const cityRegex = /^[a-zA-Z\s,'-]+$/;
+    if (!cityRegex.test(trimmedCity)) {
+      return 'City can only contain letters, spaces, commas, and hyphens';
+    }
+    
+    return null;
+  };
+
+  const validatePassword = (password) => {
+    // Length validation (8-128 characters)
+    if (password.length < 8) {
+      return 'Password must be at least 8 characters';
+    }
+    if (password.length > 128) {
+      return 'Password must be less than 128 characters';
+    }
+    
+    // Check for uppercase letter
+    if (!/[A-Z]/.test(password)) {
+      return 'Password must contain at least one uppercase letter';
+    }
+    
+    // Check for lowercase letter
+    if (!/[a-z]/.test(password)) {
+      return 'Password must contain at least one lowercase letter';
+    }
+    
+    // Check for number
+    if (!/[0-9]/.test(password)) {
+      return 'Password must contain at least one number';
+    }
+    
+    // Check for special character
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      return 'Password must contain at least one special character (!@#$%^&*...)';
+    }
+    
+    return null;
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    
+    // Prevent leading spaces on name and city fields
+    if ((name === 'name' || name === 'city') && value.startsWith(' ')) {
+      return;
+    }
+    
+    setFormData({ ...formData, [name]: value });
+    
+    // Clear error when user starts typing
+    if (error) setError('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (formData.password.length < 6) return setError('Password must be at least 6 characters.');
-    if (formData.password !== formData.confirmPassword) return setError('Passwords do not match.');
+    
+    // Trim all fields
+    const trimmedData = {
+      name: formData.name.trim(),
+      email: formData.email.trim(),
+      city: formData.city.trim(),
+      password: formData.password, // Don't trim password
+      confirmPassword: formData.confirmPassword // Don't trim password
+    };
+    
+    // Validate name
+    const nameError = validateName(trimmedData.name);
+    if (nameError) {
+      return setError(nameError);
+    }
+    
+    // Validate city (if provided)
+    if (trimmedData.city) {
+      const cityError = validateCity(trimmedData.city);
+      if (cityError) {
+        return setError(cityError);
+      }
+    }
+    
+    // Validate email
+    if (!trimmedData.email) {
+      return setError('Email is required');
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedData.email)) {
+      return setError('Please enter a valid email address');
+    }
+    
+    // Validate password
+    const passwordError = validatePassword(trimmedData.password);
+    if (passwordError) {
+      return setError(passwordError);
+    }
+    
+    // Check password match
+    if (trimmedData.password !== trimmedData.confirmPassword) {
+      return setError('Passwords do not match');
+    }
+    
     try {
       setError('');
       setLoading(true);
-      await signup(formData.email, formData.password, formData.name, formData.city);
+      await signup(trimmedData.email, trimmedData.password, trimmedData.name, trimmedData.city);
       navigate('/dashboard');
     } catch (err) {
-      if (err.code === 'auth/email-already-in-use') setError('An account with this email already exists.');
-      else if (err.code === 'auth/weak-password') setError('Password is too weak. Use at least 6 characters.');
-      else if (err.code === 'auth/invalid-email') setError('Please enter a valid email address.');
-      else setError('Failed to create account. Please try again.');
+      if (err.code === 'auth/email-already-in-use') {
+        setError('An account with this email already exists.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('Password is too weak. Please use a stronger password.');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Please enter a valid email address.');
+      } else {
+        setError('Failed to create account. Please try again.');
+      }
     }
     setLoading(false);
   };
@@ -111,41 +258,81 @@ export default function SignupPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="relative">
               <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input type="text" name="name" required value={formData.name} onChange={handleChange}
+              <input 
+                type="text" 
+                name="name" 
+                required 
+                value={formData.name} 
+                onChange={handleChange}
+                minLength={2}
+                maxLength={50}
                 className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Full Name" />
+                placeholder="Full Name (letters only)" 
+              />
+              <p className="text-xs text-gray-500 mt-1 ml-1">2-50 characters, letters only</p>
             </div>
 
             <div className="relative">
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input type="email" name="email" required value={formData.email} onChange={handleChange}
+              <input 
+                type="email" 
+                name="email" 
+                required 
+                value={formData.email} 
+                onChange={handleChange}
                 className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Email address" />
+                placeholder="Email address" 
+              />
             </div>
 
             <div className="relative">
               <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input type="text" name="city" value={formData.city} onChange={handleChange}
+              <input 
+                type="text" 
+                name="city" 
+                value={formData.city} 
+                onChange={handleChange}
+                maxLength={100}
                 className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Your city (e.g. Lagos, Nigeria)" />
+                placeholder="Your city (e.g. Lagos, Nigeria) - Optional" 
+              />
             </div>
 
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input type={showPassword ? 'text' : 'password'} name="password" required value={formData.password} onChange={handleChange}
+              <input 
+                type={showPassword ? 'text' : 'password'} 
+                name="password" 
+                required 
+                value={formData.password} 
+                onChange={handleChange}
+                minLength={8}
+                maxLength={128}
                 className="w-full pl-12 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Password (min 6 characters)" />
+                placeholder="Password" 
+              />
               <button type="button" onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
+              <p className="text-xs text-gray-500 mt-1 ml-1">
+                Min 8 chars: uppercase, lowercase, number, special char
+              </p>
             </div>
 
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input type={showConfirmPassword ? 'text' : 'password'} name="confirmPassword" required value={formData.confirmPassword} onChange={handleChange}
+              <input 
+                type={showConfirmPassword ? 'text' : 'password'} 
+                name="confirmPassword" 
+                required 
+                value={formData.confirmPassword} 
+                onChange={handleChange}
+                minLength={8}
+                maxLength={128}
                 className="w-full pl-12 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Confirm password" />
+                placeholder="Confirm password" 
+              />
               <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}

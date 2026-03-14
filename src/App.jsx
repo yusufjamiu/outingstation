@@ -27,6 +27,8 @@ import CityEventsPage from './pages/events/CityEventsPage';
 import CookiePolicy from './pages/CookiePolicy';
 import FAQ from './pages/FAQ';
 import AboutUs from './pages/AboutUs';
+import HowItWorks from './pages/HowItWorks';
+
 
 // User Dashboard Pages
 import UserDashboard from './pages/dashboard/UserDashboard';
@@ -75,6 +77,7 @@ function App() {
               <Route path="/cookies" element={<CookiePolicy />} />
               <Route path="/faqs" element={<FAQ />} />
               <Route path="/about" element={<AboutUs />} />
+              <Route path="/how-it-works" element={<HowItWorks />} />
 
               {/* User Dashboard Routes */}
               <Route path="/dashboard" element={<UserDashboard />} />
