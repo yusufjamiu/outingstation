@@ -91,7 +91,7 @@ export function UserSidebar({ activeTab = 'home', user, isOpen, onClose }) {
 
           {/* Create Event Button */}
           <Link
-            to="/create-event"
+            to="/submit-event"
             onClick={onClose}
             className="flex items-center gap-3 px-4 py-3 rounded-lg mb-1 text-gray-700 hover:bg-gray-100 transition-colors"
           >

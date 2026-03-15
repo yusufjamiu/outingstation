@@ -1,4 +1,4 @@
-import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, LogOut, X } from 'lucide-react';
+import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, LogOut, X, FileText } from 'lucide-react'; // ✅ Added FileText
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export function AdminSidebar({ isOpen, onClose }) {
@@ -13,6 +13,7 @@ export function AdminSidebar({ isOpen, onClose }) {
   const menuItems = [
     { icon: Home, label: 'Dashboard', path: '/admin' },
     { icon: Calendar, label: 'Events', path: '/admin/events' },
+    { icon: FileText, label: 'Event Submissions', path: '/admin/event-submissions' }, // ✅ NEW
     { icon: Users, label: 'Users', path: '/admin/users' },
     { icon: Grid, label: 'Categories', path: '/admin/categories' },
     { icon: GraduationCap, label: 'Universities', path: '/admin/universities' },

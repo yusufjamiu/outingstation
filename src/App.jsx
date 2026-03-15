@@ -28,6 +28,7 @@ import CookiePolicy from './pages/CookiePolicy';
 import FAQ from './pages/FAQ';
 import AboutUs from './pages/AboutUs';
 import HowItWorks from './pages/HowItWorks';
+import SubmitEventPage from './pages/SubmitEventPage';
 
 
 // User Dashboard Pages
@@ -48,6 +49,7 @@ import AdminUsers from './pages/admin/AdminUsers';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminUniversities from './pages/admin/Adminuniversities';
 import AdminSavedEventsAnalytics from './pages/admin/AdminSavedEventsAnalytics';
+import EventSubmissionsPage from './pages/admin/EventSubmissionsPage';
 
 function App() {
   return (
@@ -78,6 +80,7 @@ function App() {
               <Route path="/faqs" element={<FAQ />} />
               <Route path="/about" element={<AboutUs />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
+              <Route path="/submit-event" element={<SubmitEventPage />} />
 
               {/* User Dashboard Routes */}
               <Route path="/dashboard" element={<UserDashboard />} />
@@ -95,6 +98,7 @@ function App() {
               <Route path="/admin/events/create" element={<ProtectedAdminRoute><AdminEventForm /></ProtectedAdminRoute>} />
               <Route path="/admin/events/edit/:id" element={<ProtectedAdminRoute><AdminEventForm /></ProtectedAdminRoute>} />
               <Route path="/admin/users" element={<ProtectedAdminRoute><AdminUsers /></ProtectedAdminRoute>} />
+              <Route path="/admin/event-submissions" element={<EventSubmissionsPage />} />
               <Route path="/admin/categories" element={<ProtectedAdminRoute><AdminCategories /></ProtectedAdminRoute>} />
               <Route path="/admin/universities" element={<ProtectedAdminRoute><AdminUniversities /></ProtectedAdminRoute>} />
               <Route path="/admin/saved-events-analytics" element={<ProtectedAdminRoute><AdminSavedEventsAnalytics /></ProtectedAdminRoute>} />

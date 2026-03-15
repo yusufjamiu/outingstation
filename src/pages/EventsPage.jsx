@@ -1,6 +1,6 @@
 import SEO from '../components/SEO'
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom'; // ✅ Added Link
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import Navbar from '../components/Navbar';
@@ -39,7 +39,7 @@ export default function EventsPage() {
     'Cinema & Show'
   ];
 
-  const cities = ['All', 'Lagos', 'Abuja', 'Riyadh', 'Jeddah'];
+  const cities = ['All', 'Lagos', 'Abuja',];
   
   const eventTypes = ['All', 'Regular', 'Campus', 'Webinar'];
 
@@ -75,7 +75,7 @@ export default function EventsPage() {
 
       // Filter only published events
       let publishedEvents = eventsData.filter(e => e.status === 'published');
-publishedEvents = filterUpcomingEvents(publishedEvents);
+      publishedEvents = filterUpcomingEvents(publishedEvents);
       
       // Sort by date (newest first)
       publishedEvents.sort((a, b) => {
@@ -200,6 +200,27 @@ publishedEvents = filterUpcomingEvents(publishedEvents);
               Searching for: "{filters.search}"
             </p>
           )}
+        </div>
+
+        {/* ✅ NEW: List Your Event Banner */}
+        <div className="bg-gradient-to-r from-cyan-600 to-blue-600 rounded-2xl p-6 mb-6 sm:mb-8 shadow-lg hover:shadow-xl transition">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="text-white text-center sm:text-left">
+              <h3 className="text-xl sm:text-2xl font-bold mb-1">
+                Got an event or place? List it here!
+              </h3>
+              <p className="text-cyan-100 text-sm sm:text-base">
+                Free listing • Reach thousands • 24-hour approval
+              </p>
+            </div>
+            <Link
+              to="/submit-event"
+              className="bg-white text-cyan-600 px-6 py-3 rounded-xl font-bold hover:bg-gray-100 transition shadow-lg whitespace-nowrap flex items-center gap-2"
+            >
+              <span className="text-xl">📝</span>
+              <span>List Your Event</span>
+            </Link>
+          </div>
         </div>
 
         {/* Filters */}
