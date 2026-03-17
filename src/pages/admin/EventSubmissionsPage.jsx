@@ -1,5 +1,6 @@
 // src/pages/admin/EventSubmissionsPage.jsx
 // Admin page to review event submissions from organizers
+// ✅ UPDATED: Shows university events and custom cities
 
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
@@ -17,15 +18,16 @@ import {
   ExternalLink,
   Clock,
   Building,
-  Filter
+  Filter,
+  GraduationCap
 } from 'lucide-react';
 
 export default function EventSubmissionsPage() {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('all'); // all, pending, approved, rejected
-  const [typeFilter, setTypeFilter] = useState('all'); // all, event, place
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
 
   useEffect(() => {
     fetchSubmissions();
@@ -147,7 +149,6 @@ export default function EventSubmissionsPage() {
 
   return (
     <div className="p-6">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Event Submissions</h1>
         <p className="text-gray-600">Review and manage event/place submissions from organizers</p>
@@ -216,7 +217,7 @@ export default function EventSubmissionsPage() {
         </div>
       </div>
 
-      {/* Submissions List */}
+      {/* Submissions Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -268,6 +269,12 @@ export default function EventSubmissionsPage() {
                             <MapPin size={14} />
                             {submission.city}
                           </div>
+                          {/* ✅ NEW: University Badge */}
+                          {submission.isUniversityEvent && submission.universityName && (
+                            <div className="text-xs text-blue-600 font-semibold mt-1 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded">
+                              🎓 {submission.universityName}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -296,6 +303,12 @@ export default function EventSubmissionsPage() {
                       {submission.listingType === 'event' && (
                         <div className="text-xs text-gray-500 mt-1">
                           {submission.eventType}
+                        </div>
+                      )}
+                      {/* ✅ NEW: SubCategory badge */}
+                      {submission.subCategory === 'campus' && (
+                        <div className="text-xs text-blue-600 font-semibold mt-1">
+                          Campus Event
                         </div>
                       )}
                     </td>
@@ -356,6 +369,13 @@ export default function EventSubmissionsPage() {
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">{selectedSubmission.eventTitle}</h2>
                 <p className="text-gray-600">{selectedSubmission.eventCategory}</p>
+                {/* ✅ NEW: University badge in header */}
+                {selectedSubmission.isUniversityEvent && selectedSubmission.universityName && (
+                  <div className="mt-2 inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
+                    <GraduationCap size={16} />
+                    {selectedSubmission.universityName}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => setSelectedSubmission(null)}
@@ -382,6 +402,12 @@ export default function EventSubmissionsPage() {
               <div className="flex items-center gap-3">
                 <span className="font-semibold text-gray-700">Status:</span>
                 {getStatusBadge(selectedSubmission.status)}
+                {/* ✅ NEW: Show subCategory */}
+                {selectedSubmission.subCategory && (
+                  <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                    {selectedSubmission.subCategory.toUpperCase()}
+                  </span>
+                )}
               </div>
 
               {/* Organizer Info */}

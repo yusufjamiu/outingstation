@@ -1,5 +1,5 @@
-// COMPLETE SubmitEventPage.jsx - Events AND Places Support
-// ✅ ALL SECTIONS INCLUDED - NO MISSING PARTS
+// COMPLETE SubmitEventPage.jsx - WITH TIMEOUT FIX
+// ✅ Fixes infinite "rolling" submit button issue
 
 import React, { useState } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -25,6 +25,7 @@ const SubmitEventPage = () => {
     operatingHours: '',
     alwaysOpen: false,
     city: '',
+    customCity: '', // ✅ NEW: For "Others" city
     venueName: '',
     address: '',
     mapsLink: '',
@@ -37,6 +38,8 @@ const SubmitEventPage = () => {
     eventImage: null,
     additionalInfo: '',
     agreedToTerms: false,
+    isUniversityEvent: false, // ✅ NEW: Flag for university events
+    universityName: '', // ✅ NEW: University name
   });
 
   const [imagePreview, setImagePreview] = useState(null);
@@ -53,7 +56,7 @@ const SubmitEventPage = () => {
     'Other',
   ];
 
-  const cities = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Riyadh'];
+  const cities = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
   
   const platforms = [
     'Zoom', 
@@ -123,6 +126,11 @@ const SubmitEventPage = () => {
         if (!formData.platform.trim()) e.platform = 'Platform required';
         if (!formData.webinarLink.trim()) e.webinarLink = 'Registration link required';
       }
+
+      // ✅ NEW: Validate university event
+      if (formData.isUniversityEvent && !formData.universityName.trim()) {
+        e.universityName = 'University name required';
+      }
     }
     
     if (isPlace && !formData.alwaysOpen && !formData.operatingHours.trim()) {
@@ -130,6 +138,12 @@ const SubmitEventPage = () => {
     }
     
     if (!formData.city) e.city = 'City required';
+    
+    // ✅ NEW: Validate custom city
+    if (formData.city === 'Others' && !formData.customCity.trim()) {
+      e.customCity = 'Please specify city';
+    }
+    
     if (!formData.venueName.trim()) e.venueName = isPlace ? 'Place name required' : 'Venue required';
     if (!formData.address.trim()) e.address = 'Address required';
     
@@ -157,26 +171,40 @@ const SubmitEventPage = () => {
     setIsSubmitting(true);
 
     try {
-      let imageUrl = '';
+      let imageUrl = 'https://via.placeholder.com/800x400/0891b2/ffffff?text=Event+Image';
       
+      // ✅ TRY TO UPLOAD IMAGE WITH 5-SECOND TIMEOUT
       if (formData.eventImage) {
         try {
           console.log('📤 Attempting image upload...');
-          const imageRef = ref(storage, `event-submissions/${Date.now()}_${formData.eventImage.name}`);
-          await uploadBytes(imageRef, formData.eventImage);
-          imageUrl = await getDownloadURL(imageRef);
+          
+          const uploadPromise = (async () => {
+            const imageRef = ref(storage, `event-submissions/${Date.now()}_${formData.eventImage.name}`);
+            await uploadBytes(imageRef, formData.eventImage);
+            return await getDownloadURL(imageRef);
+          })();
+          
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Upload timeout after 5 seconds')), 5000)
+          );
+          
+          imageUrl = await Promise.race([uploadPromise, timeoutPromise]);
           console.log('✅ Image uploaded successfully!');
         } catch (uploadError) {
-          console.warn('⚠️ Image upload failed, using placeholder:', uploadError.message);
-          imageUrl = 'https://via.placeholder.com/800x400/0891b2/ffffff?text=Event+Image';
+          console.warn('⚠️ Image upload failed/timeout, using placeholder:', uploadError.message);
         }
-      } else {
-        imageUrl = 'https://via.placeholder.com/800x400/0891b2/ffffff?text=No+Image';
       }
+
+      console.log('💾 Saving to Firestore...');
 
       const finalCategory = formData.eventCategory === 'Other' && formData.customCategory.trim()
         ? formData.customCategory.trim()
         : formData.eventCategory;
+
+      // ✅ Determine final city
+      const finalCity = formData.city === 'Others' && formData.customCity.trim()
+        ? formData.customCity.trim()
+        : formData.city;
 
       await addDoc(collection(db, 'event_submissions'), {
         organizerName: formData.organizerName,
@@ -184,7 +212,7 @@ const SubmitEventPage = () => {
         organizerPhone: formData.organizerPhone,
         organizationName: formData.organizationName || null,
         listingType: formData.listingType,
-        subCategory: formData.listingType === 'place' ? 'places' : 'events',
+        subCategory: formData.listingType === 'place' ? 'places' : (formData.isUniversityEvent ? 'campus' : 'events'),
         eventTitle: formData.eventTitle,
         eventCategory: finalCategory,
         eventType: formData.listingType === 'event' ? formData.eventType : 'physical',
@@ -195,7 +223,7 @@ const SubmitEventPage = () => {
         endTime: formData.listingType === 'event' ? (formData.endTime || formData.startTime) : null,
         operatingHours: formData.listingType === 'place' ? (formData.alwaysOpen ? 'Always Open' : formData.operatingHours) : null,
         alwaysOpen: formData.listingType === 'place' ? formData.alwaysOpen : false,
-        city: formData.city,
+        city: finalCity, // ✅ Uses custom city if "Others"
         venueName: formData.venueName,
         address: formData.address,
         mapsLink: formData.mapsLink || null,
@@ -207,10 +235,13 @@ const SubmitEventPage = () => {
         externalTicketLink: formData.externalTicketLink || null,
         imageUrl: imageUrl,
         additionalInfo: formData.additionalInfo || null,
+        isUniversityEvent: formData.isUniversityEvent || false, // ✅ NEW
+        universityName: formData.universityName || null, // ✅ NEW
         status: 'pending',
         submittedAt: serverTimestamp(),
       });
 
+      console.log('✅ Saved to Firestore successfully!');
       setSubmitSuccess(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
@@ -436,6 +467,40 @@ const SubmitEventPage = () => {
                         </button>
                       ))}
                     </div>
+
+                    {/* ✅ NEW: University Event Checkbox */}
+                    <div className="mt-4 bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
+                      <div className="flex items-start">
+                        <input 
+                          type="checkbox" 
+                          name="isUniversityEvent" 
+                          checked={formData.isUniversityEvent} 
+                          onChange={handleChange} 
+                          className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mt-0.5 mr-3" 
+                        />
+                        <div className="flex-1">
+                          <label className="text-sm font-bold text-gray-900 cursor-pointer">
+                            🎓 This is a University/Campus Event
+                          </label>
+                          <p className="text-xs text-gray-600 mt-1">Check this if your event is happening at a university campus</p>
+                        </div>
+                      </div>
+
+                      {/* ✅ NEW: University Name Input */}
+                      {formData.isUniversityEvent && (
+                        <div className="mt-3">
+                          <input
+                            type="text"
+                            name="universityName"
+                            value={formData.universityName}
+                            onChange={handleChange}
+                            placeholder="Enter university name (e.g., University of Lagos)"
+                            className={`w-full px-4 py-3 border-2 ${errors.universityName ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-blue-500 focus:outline-none transition`}
+                          />
+                          {errors.universityName && <p className="text-red-500 text-sm mt-1">{errors.universityName}</p>}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -528,6 +593,21 @@ const SubmitEventPage = () => {
                     {cities.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                   {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
+                  
+                  {/* ✅ NEW: Custom City Input */}
+                  {formData.city === 'Others' && (
+                    <div className="mt-3">
+                      <input
+                        type="text"
+                        name="customCity"
+                        value={formData.customCity}
+                        onChange={handleChange}
+                        placeholder="Enter your city"
+                        className={`w-full px-4 py-3 border-2 ${errors.customCity ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                      />
+                      {errors.customCity && <p className="text-red-500 text-sm mt-1">{errors.customCity}</p>}
+                    </div>
+                  )}
                 </div>
 
                 <div>
