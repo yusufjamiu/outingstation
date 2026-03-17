@@ -4,14 +4,14 @@ import { Bell, X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Menu, 
 import { UserSidebar } from '../../components/UserSidebar';
 import { useAuth } from '../../context/AuthContext';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { uploadToFirebase } from '../../services/firebaseStorageService';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ ADDED Firebase Storage imports
+import { db, storage } from '../../firebase'; // ✅ ADDED storage
 
 export default function Settings() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   
-  const { currentUser, userProfile, logout, updateProfile } = useAuth(); // ✅ ADDED: updateProfile
+  const { currentUser, userProfile, logout, updateProfile } = useAuth();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -88,7 +88,7 @@ export default function Settings() {
     }
   };
 
-  // ✅ Firebase Storage Profile Picture Upload
+  // ✅ FIXED: Profile Picture Upload with Timeout + Correct Path
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
@@ -108,16 +108,43 @@ export default function Settings() {
 
       setUploadingAvatar(true);
 
-      // Upload to Firebase Storage
-      console.log('🔥 Uploading profile picture to Firebase Storage...');
-      const imageUrl = await uploadToFirebase(file, 'users');
-      console.log('✅ Upload complete:', imageUrl);
+      let imageUrl = '';
+
+      try {
+        console.log('🔥 Uploading profile picture to Firebase Storage...');
+        
+        // ✅ FIXED: Use correct path profile_images/{userId}
+        const uploadPromise = (async () => {
+          const storageRef = ref(storage, `profile_images/${currentUser.uid}`);
+          await uploadBytes(storageRef, file);
+          return await getDownloadURL(storageRef);
+        })();
+
+        // Create 5-second timeout
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Upload timeout after 5 seconds')), 5000)
+        );
+
+        // Race between upload and timeout
+        imageUrl = await Promise.race([uploadPromise, timeoutPromise]);
+        console.log('✅ Upload complete:', imageUrl);
+
+      } catch (uploadError) {
+        console.warn('⚠️ Upload failed, using base64 fallback:', uploadError.message);
+        
+        // ✅ Fallback: Use base64 if upload fails or times out
+        const reader = new FileReader();
+        imageUrl = await new Promise((resolve) => {
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+        });
+      }
 
       // Update Firestore
       const userRef = doc(db, 'users', currentUser.uid);
       await updateDoc(userRef, { avatar: imageUrl });
 
-      // ✅ ADDED: Update AuthContext
+      // Update AuthContext
       await updateProfile({ avatar: imageUrl });
 
       // Update local state
@@ -133,7 +160,6 @@ export default function Settings() {
     }
   };
 
-  // ✅ FIXED: Now updates AuthContext userProfile
   const handleSaveChanges = async () => {
     if (!currentUser) return;
 
@@ -142,7 +168,6 @@ export default function Settings() {
 
       const userRef = doc(db, 'users', currentUser.uid);
       
-      // Update Firestore
       await updateDoc(userRef, {
         name: formData.name,
         phone: formData.phone,
@@ -150,26 +175,20 @@ export default function Settings() {
         updatedAt: new Date()
       });
 
-      console.log('✅ Firestore updated:', {
-        name: formData.name,
-        city: formData.city,
-        phone: formData.phone
-      });
+      console.log('✅ Firestore updated');
 
-      // ✅ CRITICAL: Update AuthContext state
       await updateProfile({
         name: formData.name,
         phone: formData.phone,
         city: formData.city
       });
 
-      console.log('✅ AuthContext updated - Dashboard should now show:', formData.city);
+      console.log('✅ AuthContext updated');
 
       setIsEditing(false);
       setShowSavedNotification(true);
       setTimeout(() => setShowSavedNotification(false), 3000);
 
-      // Reload user data
       await loadUserData();
 
     } catch (err) {
@@ -220,7 +239,6 @@ export default function Settings() {
         </header>
 
         <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
-          {/* Success Notification */}
           {showSavedNotification && (
             <div className="fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-50">
               <div className="bg-white px-6 py-3 rounded-lg shadow-lg border-t-4 border-cyan-400">
@@ -245,7 +263,6 @@ export default function Settings() {
 
           {!isEditing ? (
             <>
-              {/* Profile Card */}
               <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-gray-200 mb-4 sm:mb-6">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
@@ -284,7 +301,6 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Stats Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
                 <div className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-200">
                   <div className="flex items-center gap-4 mb-4">
@@ -321,9 +337,7 @@ export default function Settings() {
               </button>
             </>
           ) : (
-            /* Edit Mode */
             <div className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 lg:p-8 shadow-sm border border-gray-200">
-              {/* Avatar Upload with Firebase Storage */}
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 mb-6 pb-6 border-b border-gray-200">
                 <div className="relative">
                   <img 
@@ -365,7 +379,6 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Form Fields */}
               <div className="space-y-5 sm:space-y-6 mb-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div>
@@ -432,7 +445,6 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
                 <button 
                   onClick={handleCancelEdit}
@@ -454,7 +466,6 @@ export default function Settings() {
         </div>
       </main>
 
-      {/* Logout Modal */}
       {showLogoutModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full relative">
