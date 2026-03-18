@@ -6,7 +6,7 @@ import { getStorage } from 'firebase/storage';
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyC6ERKqVd6IlqC6yo0_dfCI9wBivDHTRvk",
-  authDomain: "outingstation.com",
+  authDomain: "outingstation-app.firebaseapp.com",
   projectId: "outingstation-app",
   storageBucket: "outingstation-app.appspot.com",
   messagingSenderId: "775142188021",
