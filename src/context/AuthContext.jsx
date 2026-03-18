@@ -8,7 +8,8 @@ import {
   signInWithPopup,
   updatePassword,
   EmailAuthProvider,
-  reauthenticateWithCredential
+  reauthenticateWithCredential,
+  sendEmailVerification // ✅ ADDED
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -35,7 +36,7 @@ export function AuthProvider({ children }) {
       phone,
       city,
       savedEvents: [],
-      isNewUser: true, // ✅ UPDATED: Track new user
+      isNewUser: true,
       role: 'user',
       createdAt: new Date(),
       updatedAt: new Date()
@@ -44,18 +45,18 @@ export function AuthProvider({ children }) {
     return userCredential;
   }
 
-  // ✅ Email/Password Login
+  // ✅ Email/Password Login - UPDATED to return userCredential
   async function login(email, password) {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     
-    // ✅ UPDATED: Mark as returning user after login
+    // ✅ Mark as returning user after login
     const userRef = doc(db, 'users', userCredential.user.uid);
     await updateDoc(userRef, {
       isNewUser: false,
       lastLoginAt: new Date()
     });
 
-    return userCredential;
+    return userCredential; // ✅ RETURN userCredential for verification check
   }
 
   // ✅ Google Sign-In
@@ -69,7 +70,7 @@ export function AuthProvider({ children }) {
     const docSnap = await getDoc(docRef);
 
     if (!docSnap.exists()) {
-      // ✅ UPDATED: New Google user - create profile with isNewUser
+      // New Google user - create profile
       await setDoc(docRef, {
         name: user.displayName || '',
         email: user.email || '',
@@ -77,13 +78,13 @@ export function AuthProvider({ children }) {
         city: '',
         avatar: user.photoURL || '',
         savedEvents: [],
-        isNewUser: true, // ✅ NEW USER
+        isNewUser: true,
         role: 'user',
         createdAt: new Date(),
         updatedAt: new Date()
       });
     } else {
-      // ✅ UPDATED: Returning Google user - mark as returning
+      // Returning Google user
       await updateDoc(docRef, {
         isNewUser: false,
         lastLoginAt: new Date()
@@ -91,6 +92,15 @@ export function AuthProvider({ children }) {
     }
 
     return result;
+  }
+
+  // ✅ NEW: Resend Verification Email
+  async function resendVerificationEmail() {
+    if (currentUser && !currentUser.emailVerified) {
+      await sendEmailVerification(currentUser);
+    } else {
+      throw new Error('No unverified user to send verification email to');
+    }
   }
 
   // ✅ Logout
@@ -156,7 +166,8 @@ export function AuthProvider({ children }) {
     logout,
     updateProfile,
     changePassword,
-    getUserData
+    getUserData,
+    resendVerificationEmail // ✅ ADDED
   };
 
   return (

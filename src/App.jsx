@@ -4,6 +4,8 @@ import { AuthProvider } from './context/AuthContext';
 import { SavedEventsProvider } from './context/SavedEventsContext';
 import ToastContainer from './components/ToastContainer';
 
+// Layouts
+import UserLayout from './layouts/UserLayout';
 
 // Components
 import ScrollToTop from './components/ScrollToTop';
@@ -29,9 +31,9 @@ import FAQ from './pages/FAQ';
 import AboutUs from './pages/AboutUs';
 import HowItWorks from './pages/HowItWorks';
 import SubmitEventPage from './pages/SubmitEventPage';
+import NotificationsPage from './pages/notifications/NotificationsPage';
 
-
-// User Dashboard Pages
+// User Dashboard Pages (NOW CLEAN - No navbar/sidebar!)
 import UserDashboard from './pages/dashboard/UserDashboard';
 import SavedEvents from './pages/dashboard/SavedEvents';
 import Settings from './pages/dashboard/Settings';
@@ -50,6 +52,7 @@ import AdminCategories from './pages/admin/AdminCategories';
 import AdminUniversities from './pages/admin/Adminuniversities';
 import AdminSavedEventsAnalytics from './pages/admin/AdminSavedEventsAnalytics';
 import EventSubmissionsPage from './pages/admin/EventSubmissionsPage';
+import AdminNotifications from './pages/admin/AdminNotifications';
 
 function App() {
   return (
@@ -60,7 +63,7 @@ function App() {
           <div className="App">
             <ToastContainer />
             <Routes>
-              {/* Public Routes */}
+              {/* Public Routes (No Layout) */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
@@ -71,7 +74,6 @@ function App() {
               <Route path="/campus-events" element={<CampusEventsPage />} />
               <Route path="/webinar-events" element={<WebinarEventsPage />} />
               <Route path="/city/:city" element={<CityEventsPage />} />
-          
               <Route path="/event/:id" element={<EventDetails />} />
               <Route path="/contact" element={<ContactUs />} />
               <Route path="/terms" element={<TermsOfService />} />
@@ -82,14 +84,18 @@ function App() {
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/submit-event" element={<SubmitEventPage />} />
 
-              {/* User Dashboard Routes */}
-              <Route path="/dashboard" element={<UserDashboard />} />
-              <Route path="/dashboard/categories" element={<CategoryBrowse />} />
-              <Route path="/dashboard/uni-events" element={<CampusEvents />} />
-              <Route path="/dashboard/web-events" element={<WebinarEvents />} />
-              <Route path="/dashboard/category/:slug" element={<GenericCategory />} />
-              <Route path="/saved-events" element={<SavedEvents />} />
-              <Route path="/settings" element={<Settings />} />
+              {/* ✅ USER DASHBOARD ROUTES - ALL WRAPPED IN UserLayout */}
+              {/* UserLayout provides: Navbar + Sidebar + Notifications for all child routes */}
+              <Route element={<UserLayout />}>
+                <Route path="/dashboard" element={<UserDashboard />} />
+                <Route path="/dashboard/categories" element={<CategoryBrowse />} />
+                <Route path="/dashboard/uni-events" element={<CampusEvents />} />
+                <Route path="/dashboard/web-events" element={<WebinarEvents />} />
+                <Route path="/dashboard/category/:slug" element={<GenericCategory />} />
+                <Route path="/saved-events" element={<SavedEvents />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/notifications" element={<NotificationsPage />} />
+              </Route>
 
               {/* Admin Routes (Protected) */}
               <Route path="/admin/login" element={<AdminLogin />} />
@@ -101,6 +107,7 @@ function App() {
               <Route path="/admin/event-submissions" element={<EventSubmissionsPage />} />
               <Route path="/admin/categories" element={<ProtectedAdminRoute><AdminCategories /></ProtectedAdminRoute>} />
               <Route path="/admin/universities" element={<ProtectedAdminRoute><AdminUniversities /></ProtectedAdminRoute>} />
+              <Route path="/admin/notifications" element={<ProtectedAdminRoute><AdminNotifications /></ProtectedAdminRoute>} />
               <Route path="/admin/saved-events-analytics" element={<ProtectedAdminRoute><AdminSavedEventsAnalytics /></ProtectedAdminRoute>} />
             </Routes>
           </div>

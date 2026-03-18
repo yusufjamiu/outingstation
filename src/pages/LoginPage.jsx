@@ -13,7 +13,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-  const { login, loginWithGoogle, currentUser } = useAuth();
+  const [showVerificationDialog, setShowVerificationDialog] = useState(false);
+  const { login, loginWithGoogle, currentUser, resendVerificationEmail } = useAuth();
   const navigate = useNavigate();
 
   // Redirect if already logged in
@@ -46,12 +47,33 @@ export default function LoginPage() {
     return () => clearInterval(timer);
   }, []);
 
+  const handleResendVerification = async () => {
+    try {
+      await resendVerificationEmail();
+      alert('Verification email sent! Please check your inbox.');
+      setShowVerificationDialog(false);
+    } catch (err) {
+      alert('Failed to send verification email. Please try again.');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       setError('');
       setLoading(true);
-      await login(email, password);
+      
+      const userCredential = await login(email, password);
+      
+      // ✅ CHECK EMAIL VERIFICATION
+      if (userCredential && userCredential.user && !userCredential.user.emailVerified) {
+        // Sign out immediately
+        await userCredential.user.auth.signOut();
+        setShowVerificationDialog(true);
+        setLoading(false);
+        return;
+      }
+      
       navigate('/dashboard');
     } catch (err) {
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
@@ -70,6 +92,7 @@ export default function LoginPage() {
       setError('');
       setLoading(true);
       await loginWithGoogle();
+      // ✅ Google accounts are auto-verified
       navigate('/dashboard');
     } catch (err) {
       setError('Failed to sign in with Google. Please try again.');
@@ -79,6 +102,37 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex">
+      {/* Email Verification Dialog */}
+      {showVerificationDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-cyan-100 rounded-full flex items-center justify-center">
+                <Mail className="text-cyan-500" size={24} />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900">Verify Your Email</h2>
+            </div>
+            <p className="text-gray-600 mb-6 leading-relaxed">
+              Please verify your email address before logging in. Check your inbox for the verification link.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowVerificationDialog(false)}
+                className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl hover:bg-gray-50 font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResendVerification}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white rounded-xl hover:shadow-lg hover:from-cyan-500 hover:to-cyan-600 font-medium transition-all"
+              >
+                Resend Email
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Left Side - Form */}
       <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-8">
         <div className="max-w-md w-full">

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Search, Bell, Heart, ChevronRight, Calendar, Clock, MapPin, Menu, X } from 'lucide-react';
-import { UserSidebar } from '../../components/UserSidebar';
+import { useNavigate, useOutletContext, Link } from 'react-router-dom';
+import { Heart, ChevronRight, Calendar, Clock, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
@@ -10,42 +9,25 @@ import { db } from '../../firebase';
 export default function UserDashboard() {
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
+  
+  // ✅ Get searchQuery from parent UserLayout
+  const { searchQuery } = useOutletContext();
 
   const [activeCategory, setActiveCategory] = useState('All');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [trendingEvents, setTrendingEvents] = useState([]);
   const [pickedEvents, setPickedEvents] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [savedEventIds, setSavedEventIds] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
   const [hasEventsInUserCity, setHasEventsInUserCity] = useState(true);
 
   const displayName = userProfile?.name || currentUser?.displayName || 'Friend';
   const userCity = userProfile?.city || 'Lagos';
-  const avatarUrl = userProfile?.avatar || userProfile?.photoURL || currentUser?.photoURL ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=22D3EE&color=fff&size=128`;
-
-  const user = { 
-    name: displayName, 
-    city: userCity, 
-    avatar: avatarUrl,
-    isNewUser: userProfile?.isNewUser 
-  };
 
   const categories = [
     'All', 'Business & Tech', 'Art & Culture', 'Food & Dining', 'Sport & Fitness',
     'Education', 'Family & Kids Fun', 'Nightlife & Parties', 'Religion & Community',
     'Music & Concerts', 'Gaming & Esport', 'Cinema & Show'
   ];
-
-  const notifications = [
-    { id: 1, text: 'New event: Tech Meetup Lagos', time: '2 hours ago', unread: true },
-    { id: 2, text: 'Event reminder: Music Festival tomorrow', time: '5 hours ago', unread: true },
-    { id: 3, text: 'Price drop on saved event', time: '1 day ago', unread: false },
-  ];
-
-  const unreadCount = notifications.filter(n => n.unread).length;
 
   useEffect(() => {
     loadSavedEventIds();
@@ -227,359 +209,252 @@ export default function UserDashboard() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <UserSidebar
-        activeTab="home"
-        user={user}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
+    <div className="px-6 py-6">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">
+          Good day, {displayName.split(' ')[0]}!
+        </h1>
+        <p className="text-gray-600 mt-1">
+          {(() => {
+            const hasEvents = trendingEvents.length > 0 || pickedEvents.length > 0;
+            const userCityName = userCity.split(',')[0].trim();
+            
+            if (userCity === 'Lagos') {
+              return <>Here's what is happening in <span className="font-semibold">Lagos</span> today.</>;
+            } else if (hasEvents) {
+              return <>Showing events in your area.</>;
+            } else if (!loadingEvents) {
+              return (
+                <>
+                  No events available in <span className="font-semibold">{userCityName}</span> yet.{' '}
+                  <button 
+                    onClick={() => navigate('/settings')}
+                    className="text-cyan-500 hover:underline font-medium"
+                  >
+                    Change location
+                  </button>
+                  {' '}to see events in other cities.
+                </>
+              );
+            } else {
+              return <>Loading events...</>;
+            }
+          })()}
+        </p>
+      </div>
 
-      <main className="flex-1 overflow-auto">
-        <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-30">
-          <div className="flex items-center justify-between">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
-              <Menu size={24} />
-            </button>
+      <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
+        {categories.map(cat => (
+          <button
+            key={cat}
+            onClick={() => setActiveCategory(cat)}
+            className={`px-5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition ${
+              activeCategory === cat
+                ? 'bg-cyan-400 text-white'
+                : 'bg-white text-gray-700 border border-gray-300 hover:border-gray-400'
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
 
-            <div className="flex-1 max-w-xl">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="text"
-                  placeholder="Search location, events & more"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm"
-                />
-              </div>
-            </div>
+      {searchQuery && (
+        <p className="text-sm text-gray-600 mb-4">
+          Found {displayTrending.length + displayPicked.length} result{displayTrending.length + displayPicked.length !== 1 ? 's' : ''} for "{searchQuery}"
+        </p>
+      )}
 
-            <div className="flex items-center gap-4">
-              <div className="relative">
+      {loadingEvents ? (
+        <div className="flex justify-center py-20">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
+        </div>
+      ) : (
+        <>
+          {displayTrending.length > 0 && (
+            <section className="mb-10">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-2xl font-bold">Trending This Week</h2>
                 <button 
-                  onClick={() => setNotificationsOpen(!notificationsOpen)}
-                  className="p-2 hover:bg-gray-100 rounded-full relative"
+                  onClick={handleViewAllTrending}
+                  className="text-cyan-500 font-medium text-sm hover:underline flex items-center gap-1"
                 >
-                  <Bell size={20} className="text-gray-600" />
-                  {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                  )}
+                  View All
+                  <ChevronRight size={16} />
                 </button>
+              </div>
 
-                {notificationsOpen && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-40"
-                      onClick={() => setNotificationsOpen(false)}
-                    />
-                    
-                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                        <h3 className="font-semibold text-gray-900">Notifications</h3>
-                        <button 
-                          onClick={() => setNotificationsOpen(false)}
-                          className="p-1 hover:bg-gray-100 rounded"
-                        >
-                          <X size={18} />
-                        </button>
-                      </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {displayTrending.map(event => (
+                  <div
+                    key={event.id}
+                    onClick={() => handleEventClick(event.id)}
+                    className="relative group cursor-pointer"
+                  >
+                    <div className="relative h-72 rounded-xl overflow-hidden">
+                      <img
+                        src={getImage(event)}
+                        alt={event.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                      />
 
-                      <div className="max-h-96 overflow-y-auto">
-                        {notifications.length > 0 ? (
-                          notifications.map(notif => (
-                            <div 
-                              key={notif.id}
-                              className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
-                                notif.unread ? 'bg-cyan-50' : ''
-                              }`}
-                            >
-                              <p className="text-sm text-gray-900 mb-1">{notif.text}</p>
-                              <p className="text-xs text-gray-500">{notif.time}</p>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="p-8 text-center text-gray-500">
-                            <Bell size={40} className="mx-auto mb-2 text-gray-300" />
-                            <p className="text-sm">No notifications yet</p>
-                          </div>
-                        )}
-                      </div>
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
 
-                      <div className="p-3 border-t border-gray-200 text-center">
-                        <button className="text-sm text-cyan-500 hover:text-cyan-600 font-medium">
-                          View All Notifications
-                        </button>
+                      <button
+                        onClick={e => handleSaveEvent(e, event.id)}
+                        className="absolute top-4 right-4 p-2 bg-white rounded-full hover:bg-gray-100 z-10"
+                      >
+                        <Heart
+                          size={18}
+                          className={isEventSaved(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-700'}
+                        />
+                      </button>
+
+                      {event.category && (
+                        <span className="absolute top-4 left-4 px-3 py-1 bg-white/90 rounded-full text-xs font-semibold text-cyan-500">
+                          #{event.category}
+                        </span>
+                      )}
+
+                      <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
+                        <h3 className="text-lg font-bold mb-2 line-clamp-2">{event.title}</h3>
+
+                        <div className="flex items-center gap-3 text-sm mb-2">
+                          <Calendar size={14} />
+                          <span>{getDate(event)}</span>
+                          {getTime(event) && (
+                            <>
+                              <Clock size={14} />
+                              <span>{getTime(event)}</span>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 text-sm">
+                          <MapPin size={14} />
+                          <span>{event.location || 'Online'}</span>
+                        </div>
                       </div>
                     </div>
-                  </>
-                )}
+                  </div>
+                ))}
               </div>
-
-              <Link to="/settings">
-                <img
-                  src={avatarUrl}
-                  alt={displayName}
-                  className="w-10 h-10 rounded-full cursor-pointer hover:ring-2 hover:ring-cyan-400 transition object-cover"
-                />
-              </Link>
-            </div>
-          </div>
-        </header>
-
-        <div className="px-6 py-6">
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Good day, {displayName.split(' ')[0]}!
-            </h1>
-            <p className="text-gray-600 mt-1">
-              {(() => {
-                const hasEvents = trendingEvents.length > 0 || pickedEvents.length > 0;
-                const userCityName = userCity.split(',')[0].trim();
-                
-                if (userCity === 'Lagos') {
-                  return <>Here's what is happening in <span className="font-semibold">Lagos</span> today.</>;
-                } else if (hasEvents) {
-                  return <>Showing events in your area.</>;
-                } else if (!loadingEvents) {
-                  return (
-                    <>
-                      No events available in <span className="font-semibold">{userCityName}</span> yet.{' '}
-                      <button 
-                        onClick={() => navigate('/settings')}
-                        className="text-cyan-500 hover:underline font-medium"
-                      >
-                        Change location
-                      </button>
-                      {' '}to see events in other cities.
-                    </>
-                  );
-                } else {
-                  return <>Loading events...</>;
-                }
-              })()}
-            </p>
-          </div>
-
-          <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
-            {categories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition ${
-                  activeCategory === cat
-                    ? 'bg-cyan-400 text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:border-gray-400'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          {searchQuery && (
-            <p className="text-sm text-gray-600 mb-4">
-              Found {displayTrending.length + displayPicked.length} result{displayTrending.length + displayPicked.length !== 1 ? 's' : ''} for "{searchQuery}"
-            </p>
+            </section>
           )}
 
-          {loadingEvents ? (
-            <div className="flex justify-center py-20">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
-            </div>
-          ) : (
-            <>
-              {displayTrending.length > 0 && (
-                <section className="mb-10">
-                  <div className="flex items-center justify-between mb-5">
-                    <h2 className="text-2xl font-bold">Trending This Week</h2>
-                    <button 
-                      onClick={handleViewAllTrending}
-                      className="text-cyan-500 font-medium text-sm hover:underline flex items-center gap-1"
+          {displayPicked.length > 0 && (
+            <section>
+              <h2 className="text-2xl font-bold mb-5">Picked For You</h2>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
+                {displayPicked.map(event => (
+                  <div
+                    key={event.id}
+                    onClick={() => handleEventClick(event.id)}
+                    className="relative group cursor-pointer"
+                  >
+                    <div className="relative h-48 rounded-xl overflow-hidden">
+                      <img
+                        src={getImage(event)}
+                        alt={event.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                      />
+
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+
+                      <button
+                        onClick={e => handleSaveEvent(e, event.id)}
+                        className="absolute top-2 right-2 p-1.5 bg-white rounded-full hover:bg-gray-100 z-10"
+                      >
+                        <Heart
+                          size={14}
+                          className={isEventSaved(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-700'}
+                        />
+                      </button>
+
+                      <div className="absolute bottom-0 p-3 text-white">
+                        <h3 className="text-sm font-bold line-clamp-2">{event.title}</h3>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {displayTrending.length === 0 && displayPicked.length === 0 && (
+            <div className="text-center py-20">
+              {searchQuery ? (
+                <>
+                  <p className="text-gray-500 text-lg mb-2">
+                    No events found for "{searchQuery}"
+                  </p>
+                  <p className="text-gray-400 text-sm">
+                    Try a different search term
+                  </p>
+                </>
+              ) : !hasEventsInUserCity && userCity.toLowerCase() !== 'lagos' ? (
+                <div className="max-w-md mx-auto">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <MapPin size={32} className="text-gray-400" />
+                  </div>
+                  <p className="text-gray-700 text-lg mb-2 font-medium">
+                    No events in {userCity.split(',')[0]} yet
+                  </p>
+                  <p className="text-gray-500 text-sm mb-6">
+                    We're currently only available in Lagos, but we're expanding soon!
+                  </p>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <button
+                      onClick={() => navigate('/settings')}
+                      className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition"
                     >
-                      View All
-                      <ChevronRight size={16} />
+                      Change to Lagos
+                    </button>
+                    <button
+                      onClick={() => window.open('https://forms.gle/your-create-event-form', '_blank')}
+                      className="px-6 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
+                    >
+                      Create an Event
                     </button>
                   </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    {displayTrending.map(event => (
-                      <div
-                        key={event.id}
-                        onClick={() => handleEventClick(event.id)}
-                        className="relative group cursor-pointer"
-                      >
-                        <div className="relative h-72 rounded-xl overflow-hidden">
-                          <img
-                            src={getImage(event)}
-                            alt={event.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                          />
-
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
-
-                          <button
-                            onClick={e => handleSaveEvent(e, event.id)}
-                            className="absolute top-4 right-4 p-2 bg-white rounded-full hover:bg-gray-100 z-10"
-                          >
-                            <Heart
-                              size={18}
-                              className={isEventSaved(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-700'}
-                            />
-                          </button>
-
-                          {event.category && (
-                            <span className="absolute top-4 left-4 px-3 py-1 bg-white/90 rounded-full text-xs font-semibold text-cyan-500">
-                              #{event.category}
-                            </span>
-                          )}
-
-                          <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
-                            <h3 className="text-lg font-bold mb-2 line-clamp-2">{event.title}</h3>
-
-                            <div className="flex items-center gap-3 text-sm mb-2">
-                              <Calendar size={14} />
-                              <span>{getDate(event)}</span>
-                              {getTime(event) && (
-                                <>
-                                  <Clock size={14} />
-                                  <span>{getTime(event)}</span>
-                                </>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-2 text-sm">
-                              <MapPin size={14} />
-                              <span>{event.location || 'Online'}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {displayPicked.length > 0 && (
-                <section>
-                  <h2 className="text-2xl font-bold mb-5">Picked For You</h2>
-
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
-                    {displayPicked.map(event => (
-                      <div
-                        key={event.id}
-                        onClick={() => handleEventClick(event.id)}
-                        className="relative group cursor-pointer"
-                      >
-                        <div className="relative h-48 rounded-xl overflow-hidden">
-                          <img
-                            src={getImage(event)}
-                            alt={event.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                          />
-
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-
-                          <button
-                            onClick={e => handleSaveEvent(e, event.id)}
-                            className="absolute top-2 right-2 p-1.5 bg-white rounded-full hover:bg-gray-100 z-10"
-                          >
-                            <Heart
-                              size={14}
-                              className={isEventSaved(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-700'}
-                            />
-                          </button>
-
-                          <div className="absolute bottom-0 p-3 text-white">
-                            <h3 className="text-sm font-bold line-clamp-2">{event.title}</h3>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* ✅ SMART EMPTY STATE - Different messages for different scenarios */}
-              {displayTrending.length === 0 && displayPicked.length === 0 && (
-                <div className="text-center py-20">
-                  {searchQuery ? (
-                    // Scenario 1: Search with no results
-                    <>
-                      <p className="text-gray-500 text-lg mb-2">
-                        No events found for "{searchQuery}"
-                      </p>
-                      <p className="text-gray-400 text-sm">
-                        Try a different search term
-                      </p>
-                    </>
-                  ) : !hasEventsInUserCity && userCity.toLowerCase() !== 'lagos' ? (
-                    // Scenario 2: User in different city with NO events at all (city-level empty)
-                    <div className="max-w-md mx-auto">
-                      <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <MapPin size={32} className="text-gray-400" />
-                      </div>
-                      <p className="text-gray-700 text-lg mb-2 font-medium">
-                        No events in {userCity.split(',')[0]} yet
-                      </p>
-                      <p className="text-gray-500 text-sm mb-6">
-                        We're currently only available in Lagos, but we're expanding soon!
-                      </p>
-                      
-                      <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                        <button
-                          onClick={() => navigate('/settings')}
-                          className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition"
-                        >
-                          Change to Lagos
-                        </button>
-                        <button
-                          onClick={() => window.open('https://forms.gle/your-create-event-form', '_blank')}
-                          className="px-6 py-2.5 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
-                        >
-                          Create an Event
-                        </button>
-                      </div>
-                    </div>
-                  ) : activeCategory !== 'All' ? (
-                    // Scenario 3: Category filter with no results (user HAS events in their city, just not in this category)
-                    <>
-                      <p className="text-gray-500 text-lg mb-2">
-                        No {activeCategory} events available yet
-                      </p>
-                      <p className="text-gray-400 text-sm mb-4">
-                        Try selecting a different category or check back soon
-                      </p>
-                      <button
-                        onClick={() => setActiveCategory('All')}
-                        className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition inline-flex items-center gap-2"
-                      >
-                        View All Events
-                      </button>
-                    </>
-                  ) : (
-                    // Scenario 4: User's city has events normally, but somehow empty now (rare case)
-                    <>
-                      <p className="text-gray-500 text-lg mb-2">
-                        No events available yet
-                      </p>
-                      <p className="text-gray-400 text-sm mb-4">
-                        Check back soon for exciting events!
-                      </p>
-                      <button
-                        onClick={() => window.open('https://forms.gle/your-create-event-form', '_blank')}
-                        className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition"
-                      >
-                        Create an Event
-                      </button>
-                    </>
-                  )}
                 </div>
+              ) : activeCategory !== 'All' ? (
+                <>
+                  <p className="text-gray-500 text-lg mb-2">
+                    No {activeCategory} events available yet
+                  </p>
+                  <p className="text-gray-400 text-sm mb-4">
+                    Try selecting a different category or check back soon
+                  </p>
+                  <button
+                    onClick={() => setActiveCategory('All')}
+                    className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition inline-flex items-center gap-2"
+                  >
+                    View All Events
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-500 text-lg mb-2">
+                    No events available yet
+                  </p>
+                  <p className="text-gray-400 text-sm mb-4">
+                    Check back soon for exciting events!
+                  </p>
+                  <button
+                    onClick={() => window.open('https://forms.gle/your-create-event-form', '_blank')}
+                    className="px-6 py-2.5 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition"
+                  >
+                    Create an Event
+                  </button>
+                </>
               )}
-            </>
+            </div>
           )}
-        </div>
-      </main>
+        </>
+      )}
     </div>
   );
 }

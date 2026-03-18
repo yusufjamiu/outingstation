@@ -1,7 +1,7 @@
 import { Helmet } from 'react-helmet';
 
 export default function SEO({ 
-  title = 'OutingStation - Discover Amazing Events in Nigeria',
+  title = 'OutingStation - Discover Amazing Events & Places in Nigeria',
   description = 'Find and book the best events, webinars, and campus activities across Nigeria. Connect with organizers and never miss an event.',
   image = 'https://outingstation.com/og-image.jpg',
   url = 'https://outingstation.com',

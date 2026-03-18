@@ -28,8 +28,11 @@ const openInMaps = (event) => {
   window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
 };
 
-// ✅ UPDATED: Smart registration handler with popups
+// ✅ FIXED: Smart registration handler - prevents multiple popups, better free event message
 const handleRegister = (event, currentUser, navigate) => {
+  // ✅ FIX 1: Dismiss any existing toasts first to prevent multiples
+  toast.dismiss();
+  
   if (!currentUser) {
     toast.error('Please login to register for this event');
     navigate('/login');
@@ -66,24 +69,35 @@ const handleRegister = (event, currentUser, navigate) => {
           </button>
         </div>
       </div>
-    ), { duration: Infinity, icon: '🏪' });
+    ), { 
+      duration: Infinity, 
+      icon: '🏪',
+      id: 'place-info' // ✅ FIX 2: Unique ID prevents duplicates
+    });
     return;
   }
   
-  // ✅ For FREE EVENTS or NO LINK - Show contact organizer popup
+  // ✅ FIX 3: IMPROVED FREE EVENT MESSAGE
   if (event.isFree || !event.ticketLink || event.ticketLink.trim() === '') {
     toast((t) => (
       <div className="flex flex-col gap-3">
         <div>
-          <p className="font-semibold">ℹ️ Contact Organizer</p>
+          <p className="font-semibold">🎉 Free Event - You're All Set!</p>
           <p className="text-sm text-gray-600 mt-1">
-            {event.isFree 
-              ? 'This is a free event! Please contact the organizer for registration or attendance details.'
-              : 'Tickets are not available online. Please contact the organizer for ticket information.'
-            }
+            This event is completely free! Just show up at the venue on the event day. See you there!
           </p>
+          <div className="mt-3 bg-cyan-50 rounded-lg p-3 text-sm">
+            <p className="font-medium text-gray-800 mb-1">📅 Event Details:</p>
+            <p className="text-gray-700">
+              <strong>Date:</strong> {event.date?.toDate?.().toLocaleDateString() || event.startDate || 'TBD'}
+            </p>
+            <p className="text-gray-700">
+              <strong>Location:</strong> {event.location || event.address || 'TBD'}
+            </p>
+          </div>
           {(event.organizerEmail || event.organizerPhone) && (
             <div className="mt-2 text-sm text-gray-700">
+              <p className="font-medium mb-1">Questions? Contact the organizer:</p>
               {event.organizerEmail && <p>📧 {event.organizerEmail}</p>}
               {event.organizerPhone && <p>📞 {event.organizerPhone}</p>}
             </div>
@@ -93,10 +107,14 @@ const handleRegister = (event, currentUser, navigate) => {
           onClick={() => toast.dismiss(t.id)}
           className="px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
         >
-          Close
+          Got it, thanks!
         </button>
       </div>
-    ), { duration: Infinity, icon: event.isFree ? '🎉' : 'ℹ️' });
+    ), { 
+      duration: Infinity, 
+      icon: '🎉',
+      id: 'free-event-info' // ✅ FIX 2: Unique ID prevents duplicates
+    });
     return;
   }
   
@@ -128,7 +146,10 @@ const handleRegister = (event, currentUser, navigate) => {
         </button>
       </div>
     </div>
-  ), { duration: Infinity });
+  ), { 
+    duration: Infinity,
+    id: 'paid-event-info' // ✅ FIX 2: Unique ID prevents duplicates
+  });
 };
 
 export default function EventDetails() {
@@ -146,6 +167,13 @@ export default function EventDetails() {
     loadEventDetails();
     checkIfSaved();
   }, [id, currentUser]);
+
+  // ✅ FIX 2: Cleanup toasts when component unmounts or navigates away
+  useEffect(() => {
+    return () => {
+      toast.dismiss();
+    };
+  }, []);
 
   const loadEventDetails = async () => {
     try {
@@ -250,16 +278,13 @@ export default function EventDetails() {
     setShowShareMenu(false);
   };
 
-  // ✅ UPDATED: Handle places with availability
   const getDate = (event) => {
     if (!event) return 'TBD';
     
-    // For places, show availability
     if (event.subCategory === 'places') {
       return event.placeAvailability || 'Always Open';
     }
     
-    // For events
     if (event.date) {
       const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
       return date.toLocaleDateString('en-US', { 
@@ -281,11 +306,9 @@ export default function EventDetails() {
     return 'TBD';
   };
 
-  // ✅ UPDATED: Handle places with opening hours
   const getTime = (event) => {
     if (!event) return '';
     
-    // For places, show opening hours
     if (event.subCategory === 'places') {
       if (event.openingTime && event.closingTime) {
         return `${event.openingTime} - ${event.closingTime}`;
@@ -293,7 +316,6 @@ export default function EventDetails() {
       return '';
     }
     
-    // For events
     return event.time || event.dailyStartTime || event.recurringTime || 'TBD';
   };
 
@@ -334,7 +356,6 @@ export default function EventDetails() {
     );
   }
 
-  // ✅ Check if it's a place
   const isPlace = event.subCategory === 'places';
 
   return (
@@ -384,7 +405,6 @@ export default function EventDetails() {
                     </span>
                   )}
                   
-                  {/* ✅ Place badge */}
                   {isPlace && (
                     <span className="bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
                       📍 PLACE

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, User, Eye, EyeOff, ArrowLeft, MapPin } from 'lucide-react';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import Create from './../assets/Create.jpg'
 import Image2 from './../assets/SignUp2.JPG'
 import Connected from './../assets/Connected.JPG'
@@ -30,6 +32,24 @@ export default function SignupPage() {
     const timer = setInterval(() => setCurrentSlide(p => (p + 1) % carouselImages.length), 5000);
     return () => clearInterval(timer);
   }, []);
+
+  // ✅ NEW: Create welcome notification for new users
+  const createWelcomeNotification = async (userId) => {
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        userId: userId,
+        title: "🎉 Welcome to OutingStation!",
+        message: "Discover amazing events happening around Lagos. Tap the bell icon anytime to stay updated!",
+        type: "welcome",
+        read: false,
+        createdAt: serverTimestamp()
+      });
+      console.log('✅ Welcome notification created for user:', userId);
+    } catch (error) {
+      console.error('❌ Error creating welcome notification:', error);
+      // Don't block signup if notification fails
+    }
+  };
 
   // ✅ VALIDATION FUNCTIONS
   const validateName = (name) => {
@@ -182,7 +202,15 @@ export default function SignupPage() {
     try {
       setError('');
       setLoading(true);
-      await signup(trimmedData.email, trimmedData.password, trimmedData.name, trimmedData.city);
+      
+      // ✅ UPDATED: Capture user credentials to get userId
+      const userCredential = await signup(trimmedData.email, trimmedData.password, trimmedData.name, trimmedData.city);
+      
+      // ✅ NEW: Create welcome notification
+      if (userCredential && userCredential.user) {
+        await createWelcomeNotification(userCredential.user.uid);
+      }
+      
       navigate('/dashboard');
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
@@ -202,7 +230,15 @@ export default function SignupPage() {
     try {
       setError('');
       setLoading(true);
-      await loginWithGoogle();
+      
+      // ✅ UPDATED: Capture user credentials
+      const userCredential = await loginWithGoogle();
+      
+      // ✅ NEW: Create welcome notification for Google signup
+      if (userCredential && userCredential.user) {
+        await createWelcomeNotification(userCredential.user.uid);
+      }
+      
       navigate('/dashboard');
     } catch (err) {
       setError('Failed to sign up with Google. Please try again.');

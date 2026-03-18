@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
-import { Mail, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Mail, CheckCircle, ArrowLeft, AlertCircle } from 'lucide-react';
 import OutingStation from '../assets/OutingStation.png';
 
 export default function ResetPasswordPage() {
@@ -10,45 +10,50 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [resendSuccess, setResendSuccess] = useState(false); // ✅ ADDED
+  const [resendSuccess, setResendSuccess] = useState(false);
   const navigate = useNavigate();
 
   const handleSendReset = async (e) => {
     e.preventDefault();
 
+    // ✅ Basic email validation before sending
+    if (!email.includes('@') || !email.includes('.')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
     try {
       setError('');
       setLoading(true);
       
-      // Send password reset email
+      // ✅ Send password reset email
+      // Note: Firebase returns success even if email doesn't exist (security feature)
       await sendPasswordResetEmail(auth, email);
       
       setSuccess(true);
     } catch (error) {
-      if (error.code === 'auth/user-not-found') {
-        setError('No account found with this email address.');
-      } else if (error.code === 'auth/invalid-email') {
+      // ✅ Handle actual Firebase errors (network issues, invalid format, etc.)
+      if (error.code === 'auth/invalid-email') {
         setError('Please enter a valid email address.');
+      } else if (error.code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please try again later.');
       } else {
-        setError('Failed to send reset email. Please try again.');
+        setError('Failed to send reset email. Please check your internet connection.');
       }
     }
     setLoading(false);
   };
 
-  // ✅ IMPROVED: Resend with success confirmation
   const handleResend = async () => {
     try {
       setError('');
-      setResendSuccess(false); // ✅ Reset before sending
+      setResendSuccess(false);
       setLoading(true);
       
       await sendPasswordResetEmail(auth, email);
       
-      // ✅ ADDED: Show success message
       setResendSuccess(true);
       
-      // ✅ ADDED: Auto-hide success message after 5 seconds
       setTimeout(() => {
         setResendSuccess(false);
       }, 5000);
@@ -110,12 +115,12 @@ export default function ResetPasswordPage() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-green-600">
                   <CheckCircle size={24} className="flex-shrink-0" />
-                  <p className="font-semibold text-sm sm:text-base">Email Sent Successfully!</p>
+                  <p className="font-semibold text-sm sm:text-base">Reset Link Sent!</p>
                 </div>
                 <p className="text-sm sm:text-base text-gray-600">
-                  We've sent a password reset link to{' '}
-                  <span className="font-semibold text-gray-900">{maskEmail(email)}</span>.
-                  Please check your email and click the link to reset your password.
+                  If an account exists for{' '}
+                  <span className="font-semibold text-gray-900">{maskEmail(email)}</span>,
+                  you'll receive a password reset link shortly.
                 </p>
               </div>
             )}
@@ -123,18 +128,22 @@ export default function ResetPasswordPage() {
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 p-3 sm:p-4 rounded-xl mb-4 sm:mb-6 text-xs sm:text-sm">
-              <p className="font-medium mb-1">Error</p>
-              <p>{error}</p>
+              <div className="flex items-start gap-2">
+                <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium mb-1">Error</p>
+                  <p>{error}</p>
+                </div>
+              </div>
             </div>
           )}
 
-          {/* ✅ ADDED: Resend Success Message */}
           {resendSuccess && (
             <div className="bg-green-50 border border-green-200 text-green-700 p-3 sm:p-4 rounded-xl mb-4 sm:mb-6 text-xs sm:text-sm animate-fadeIn">
               <div className="flex items-center gap-2">
                 <CheckCircle size={18} className="flex-shrink-0" />
                 <div>
-                  <p className="font-medium">Email Resent Successfully!</p>
+                  <p className="font-medium">Email Resent!</p>
                   <p className="text-xs mt-1">Check your inbox for the new reset link.</p>
                 </div>
               </div>
@@ -186,17 +195,27 @@ export default function ResetPasswordPage() {
           ) : (
             /* Success State */
             <div className="space-y-4 sm:space-y-5">
-              {/* Check Your Email Box */}
-              <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4 sm:p-6 text-center">
+              {/* ✅ UPDATED: Better messaging about email verification */}
+              <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4 sm:p-6">
                 <div className="w-16 h-16 bg-cyan-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Mail size={32} className="text-cyan-500" />
                 </div>
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2 text-center">
                   Check Your Email
                 </h3>
-                <p className="text-xs sm:text-sm text-gray-600">
-                  We sent a password reset link to your email. The link will expire in 1 hour.
+                <p className="text-xs sm:text-sm text-gray-600 text-center mb-4">
+                  If an account exists for this email, you'll receive a password reset link within a few minutes.
                 </p>
+                
+                {/* ✅ ADDED: Security notice */}
+                <div className="bg-white rounded-lg p-3 border border-cyan-100">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={16} className="text-cyan-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-gray-600">
+                      <span className="font-medium text-gray-900">Security Note:</span> For your protection, we don't reveal whether an email is registered.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <button
@@ -210,7 +229,6 @@ export default function ResetPasswordPage() {
                 <p className="text-xs sm:text-sm text-gray-600">
                   Didn't receive the email?
                 </p>
-                {/* ✅ IMPROVED: Resend button with loading state */}
                 <button
                   type="button"
                   onClick={handleResend}
@@ -228,15 +246,28 @@ export default function ResetPasswordPage() {
                 </button>
               </div>
 
-              {/* Tips */}
+              {/* ✅ UPDATED: Better tips including account verification */}
               <div className="bg-gray-50 rounded-xl p-4 sm:p-5 mt-4">
-                <p className="text-xs sm:text-sm font-medium text-gray-900 mb-2">
-                  📧 Email Tips:
+                <p className="text-xs sm:text-sm font-medium text-gray-900 mb-3">
+                  📧 Not receiving the email? Try these:
                 </p>
-                <ul className="text-xs sm:text-sm text-gray-600 space-y-1">
-                  <li>• Check your spam/junk folder</li>
-                  <li>• Make sure you entered the correct email</li>
-                  <li>• Wait a few minutes for the email to arrive</li>
+                <ul className="text-xs sm:text-sm text-gray-600 space-y-2">
+                  <li className="flex items-start gap-2">
+                    <span className="text-cyan-500 font-bold">•</span>
+                    <span><span className="font-medium text-gray-900">Check spam/junk folder</span> - Reset emails sometimes end up there</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-cyan-500 font-bold">•</span>
+                    <span><span className="font-medium text-gray-900">Verify email address</span> - Make sure you entered the correct email</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-cyan-500 font-bold">•</span>
+                    <span><span className="font-medium text-gray-900">Wait a few minutes</span> - Email delivery can take up to 5 minutes</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-cyan-500 font-bold">•</span>
+                    <span><span className="font-medium text-gray-900">No account?</span> If you don't have an account with this email, <Link to="/signup" className="text-cyan-500 hover:text-cyan-600 font-semibold">sign up here</Link></span>
+                  </li>
                 </ul>
               </div>
             </div>
@@ -327,8 +358,8 @@ export default function ResetPasswordPage() {
                   </svg>
                 </div>
                 <div>
-                  <p className="font-semibold text-gray-900 text-sm">Easy Steps</p>
-                  <p className="text-xs text-gray-600">Simple and straightforward</p>
+                  <p className="font-semibold text-gray-900 text-sm">Privacy First</p>
+                  <p className="text-xs text-gray-600">Your account info stays protected</p>
                 </div>
               </div>
             </div>
@@ -338,21 +369,3 @@ export default function ResetPasswordPage() {
     </div>
   );
 }
-
-// ✅ ADDED: Fade-in animation for success message
-<style jsx>{`
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  .animate-fadeIn {
-    animation: fadeIn 0.3s ease-out;
-  }
-`}</style>
