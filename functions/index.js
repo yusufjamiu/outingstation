@@ -1,143 +1,86 @@
-// ✅ Firebase Functions v2 (Node 20+)
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
 
-// ✅ DELETE USER FUNCTION (Auth + Firestore + Notifications)
+// Delete User Function
 exports.deleteUser = onCall(async (request) => {
   const { data, auth } = request;
 
-  // ✅ SECURITY: Check if requester is authenticated
+  // Check if user is authenticated
   if (!auth) {
-    throw new HttpsError(
-      'unauthenticated',
-      'User must be authenticated to delete users'
-    );
+    throw new HttpsError('unauthenticated', 'User must be authenticated');
   }
 
-  // ✅ SECURITY: Check if requester is admin
-  const requesterId = auth.uid;
-  const requesterDoc = await admin.firestore()
-    .collection('users')
-    .doc(requesterId)
-    .get();
+  // Get the calling user's data
+  const callerDoc = await admin.firestore().collection('users').doc(auth.uid).get();
+  const callerData = callerDoc.data();
 
-  if (!requesterDoc.exists || requesterDoc.data().role !== 'admin') {
-    throw new HttpsError(
-      'permission-denied',
-      'Only admins can delete users'
-    );
+  // Check if caller is admin
+  if (!callerData || callerData.role !== 'admin') {
+    throw new HttpsError('permission-denied', 'Only admins can delete users');
   }
 
-  const { userId } = data;
+  const { uid } = data;
 
-  // ✅ PREVENT self-deletion
-  if (userId === requesterId) {
-    throw new HttpsError(
-      'invalid-argument',
-      'You cannot delete your own account'
-    );
+  if (!uid) {
+    throw new HttpsError('invalid-argument', 'User ID is required');
   }
 
   try {
-    // ✅ 1. Delete Firebase Auth account
-    try {
-      await admin.auth().deleteUser(userId);
-      console.log(`✅ Deleted Auth account: ${userId}`);
-    } catch (authError) {
-      // User might not exist in Auth (e.g., already deleted)
-      console.log(`⚠️ Auth deletion failed: ${authError.message}`);
-    }
+    // Delete user from Authentication
+    await admin.auth().deleteUser(uid);
 
-    // ✅ 2. Delete Firestore user document
-    await admin.firestore().collection('users').doc(userId).delete();
-    console.log(`✅ Deleted user document: ${userId}`);
+    // Delete user document from Firestore
+    await admin.firestore().collection('users').doc(uid).delete();
 
-    // ✅ 3. Delete user's notifications
-    const notificationsSnapshot = await admin.firestore()
-      .collection('notifications')
-      .where('userId', '==', userId)
-      .get();
-
-    if (!notificationsSnapshot.empty) {
-      const batch = admin.firestore().batch();
-      notificationsSnapshot.forEach(doc => {
-        batch.delete(doc.ref);
-      });
-      await batch.commit();
-      console.log(`✅ Deleted ${notificationsSnapshot.size} notifications for user: ${userId}`);
-    }
-
-    // ✅ 4. Remove user from savedEvents in events collection (optional cleanup)
-    const eventsSnapshot = await admin.firestore()
-      .collection('events')
-      .where('savedBy', 'array-contains', userId)
-      .get();
-
-    if (!eventsSnapshot.empty) {
-      const eventBatch = admin.firestore().batch();
-      eventsSnapshot.forEach(doc => {
-        eventBatch.update(doc.ref, {
-          savedBy: admin.firestore.FieldValue.arrayRemove(userId)
-        });
-      });
-      await eventBatch.commit();
-      console.log(`✅ Removed user from ${eventsSnapshot.size} saved events`);
-    }
-
-    return { 
-      success: true, 
-      message: 'User deleted successfully',
-      deletedNotifications: notificationsSnapshot.size,
-      cleanedEvents: eventsSnapshot.size
-    };
-
+    return { success: true, message: 'User deleted successfully' };
   } catch (error) {
-    console.error('❌ Error deleting user:', error);
+    console.error('Error deleting user:', error);
     throw new HttpsError('internal', error.message);
   }
 });
 
-// ✅ OPTIONAL: Function to update user role (called from admin panel)
+// Update User Role Function
 exports.updateUserRole = onCall(async (request) => {
   const { data, auth } = request;
 
-  // Check authentication
+  // Check if user is authenticated
   if (!auth) {
-    throw new HttpsError('unauthenticated', 'Must be authenticated');
+    throw new HttpsError('unauthenticated', 'User must be authenticated');
   }
 
-  // Check if requester is admin
-  const requesterId = auth.uid;
-  const requesterDoc = await admin.firestore()
-    .collection('users')
-    .doc(requesterId)
-    .get();
+  // Get the calling user's data
+  const callerDoc = await admin.firestore().collection('users').doc(auth.uid).get();
+  const callerData = callerDoc.data();
 
-  if (!requesterDoc.exists || requesterDoc.data().role !== 'admin') {
-    throw new HttpsError('permission-denied', 'Only admins can update roles');
+  // Check if caller is admin
+  if (!callerData || callerData.role !== 'admin') {
+    throw new HttpsError('permission-denied', 'Only admins can update user roles');
   }
 
-  const { userId, role } = data;
+  const { uid, newRole } = data;
+
+  if (!uid || !newRole) {
+    throw new HttpsError('invalid-argument', 'User ID and new role are required');
+  }
 
   // Validate role
-  if (!['user', 'organizer', 'admin'].includes(role)) {
-    throw new HttpsError('invalid-argument', 'Invalid role');
+  const validRoles = ['user', 'admin', 'organizer'];
+  if (!validRoles.includes(newRole)) {
+    throw new HttpsError('invalid-argument', 'Invalid role specified');
   }
 
   try {
-    // Update Firestore
-    await admin.firestore().collection('users').doc(userId).update({
-      role: role,
+    // Update role in Firestore
+    await admin.firestore().collection('users').doc(uid).update({
+      role: newRole,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // Set custom claim for role-based access
-    await admin.auth().setCustomUserClaims(userId, { role });
-
-    return { success: true, message: `User role updated to ${role}` };
+    return { success: true, message: 'User role updated successfully' };
   } catch (error) {
+    console.error('Error updating user role:', error);
     throw new HttpsError('internal', error.message);
   }
 });
