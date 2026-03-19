@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Menu, Search, Edit, Trash2, Shield, Ban, CheckCircle, X, Save } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { db, functions } from '../../firebase'; // ✅ Added functions import
-import { httpsCallable } from 'firebase/functions'; // ✅ Added
+import { db, functions } from '../../firebase';
+import { httpsCallable } from 'firebase/functions';
 
 export default function AdminUsers() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -39,21 +39,21 @@ export default function AdminUsers() {
     }
   };
 
-  // ✅ UPDATED: Use Cloud Function for complete deletion
+  // ✅ FIXED: Changed userId to uid parameter
   const handleDeleteUser = async (userId, userName) => {
-    if (window.confirm(`⚠️ PERMANENT DELETION\n\nAre you sure you want to permanently delete ${userName}?\n\nThis will:\n• Delete their Firebase Auth account\n• Delete their user profile\n• Delete all their notifications\n• Remove them from all saved events\n\nThis action CANNOT be undone!`)) {
+    if (window.confirm(`⚠️ PERMANENT DELETION\n\nAre you sure you want to permanently delete ${userName}?\n\nThis will:\n• Delete their Firebase Auth account\n• Delete their user profile\n\nThis action CANNOT be undone!`)) {
       try {
         setLoading(true);
         
-        // ✅ Call Cloud Function
+        // ✅ Call Cloud Function with correct parameter name: uid (not userId)
         const deleteUserFunc = httpsCallable(functions, 'deleteUser');
-        const result = await deleteUserFunc({ userId });
+        const result = await deleteUserFunc({ uid: userId });
         
         // ✅ Remove from local state
         setUsers(users.filter(u => u.id !== userId));
         
         // ✅ Show success message
-        alert(`✅ User deleted successfully!\n\n${result.data.message}\n• Notifications deleted: ${result.data.deletedNotifications}\n• Events cleaned: ${result.data.cleanedEvents}`);
+        alert(`✅ ${result.data.message}`);
         
         setLoading(false);
       } catch (err) {
@@ -64,7 +64,7 @@ export default function AdminUsers() {
         if (err.code === 'functions/permission-denied') {
           alert('❌ Permission denied: Only admins can delete users');
         } else if (err.code === 'functions/invalid-argument') {
-          alert('❌ You cannot delete your own account');
+          alert('❌ Invalid request');
         } else if (err.code === 'functions/unauthenticated') {
           alert('❌ You must be logged in to delete users');
         } else {
