@@ -306,7 +306,7 @@ export default function AdminEvents() {
 
               {filteredEvents.length === 0 && (
                 <div className="text-center py-12 text-gray-500">
-                  No events found matching your filters.
+                  No events found matching your filters. Yup
                 </div>
               )}
             </div>
