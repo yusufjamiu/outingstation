@@ -3,14 +3,13 @@ import { Menu, Save, X, Upload } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { db, auth } from '../../firebase'; // ✅ ADDED auth
 import { uploadWithProgress, compressImage } from '../../services/firebaseStorageService';
 
 export default function AdminEventForm() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
-
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetchingEvent, setFetchingEvent] = useState(isEdit);
@@ -18,7 +17,7 @@ export default function AdminEventForm() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [formType, setFormType] = useState('event');
-
+  
   const [formData, setFormData] = useState({
     title: '', description: '', category: '',
     subCategory: 'events', religionType: '', eventType: 'regular', 
@@ -60,6 +59,7 @@ export default function AdminEventForm() {
         try {
           const docRef = doc(db, 'events', id);
           const docSnap = await getDoc(docRef);
+          
           if (docSnap.exists()) {
             const data = docSnap.data();
             
@@ -145,7 +145,7 @@ export default function AdminEventForm() {
       );
 
       console.log('✅ Upload complete:', imageUrl);
-
+      
       setFormData(prev => ({
         ...prev,
         imageUrl: imageUrl
@@ -153,7 +153,6 @@ export default function AdminEventForm() {
 
       setUploading(false);
       setUploadProgress(0);
-
     } catch (error) {
       console.error('❌ Upload error:', error);
       alert(error.message || 'Failed to upload image. Please try again.');
@@ -175,12 +174,19 @@ export default function AdminEventForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     if (!formData.category) {
       alert('Please select a category');
       return;
     }
 
+    if (!formData.imageUrl) {
+      alert('Please upload an image');
+      return;
+    }
+
     setLoading(true);
+
     try {
       const eventData = {
         ...formData,
@@ -196,16 +202,21 @@ export default function AdminEventForm() {
         await updateDoc(doc(db, 'events', id), eventData);
         alert(`✅ ${formType === 'place' ? 'Place' : 'Event'} updated successfully!`);
       } else {
+        // ✅ NEW: Add createdBy and other fields for new events
+        eventData.createdBy = auth.currentUser?.uid || 'admin';
         eventData.createdAt = serverTimestamp();
         eventData.savedCount = 0;
+        
         await addDoc(collection(db, 'events'), eventData);
         alert(`✅ ${formType === 'place' ? 'Place' : 'Event'} created successfully!`);
       }
+
       navigate('/admin/events');
     } catch (err) {
       console.error('Error saving event:', err);
       alert('❌ Error saving: ' + err.message);
     }
+
     setLoading(false);
   };
 
@@ -223,7 +234,7 @@ export default function AdminEventForm() {
   return (
     <div className="flex h-screen bg-gray-50">
       <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-
+      
       <main className="flex-1 overflow-auto">
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sticky top-0 z-30">
           <div className="flex items-center justify-between">
@@ -244,7 +255,7 @@ export default function AdminEventForm() {
         <div className="p-4 sm:p-6 lg:p-8">
           <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
-
+              
               {/* Event/Place Toggle */}
               {!isEdit && (
                 <div className="bg-gray-50 p-4 rounded-lg">
@@ -418,6 +429,7 @@ export default function AdminEventForm() {
                             <option value="weekdays">Weekdays Only</option>
                           </select>
                         </div>
+
                         {formData.recurringPattern === 'weekly' && (
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Day of Week *</label>
@@ -429,6 +441,7 @@ export default function AdminEventForm() {
                             </select>
                           </div>
                         )}
+
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Time *</label>
                           <input type="time" name="recurringTime" value={formData.recurringTime} onChange={handleChange} required
@@ -453,6 +466,7 @@ export default function AdminEventForm() {
                         <option value="Mon-Sat">Mon-Sat</option>
                       </select>
                     </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Opening Time *</label>
@@ -492,6 +506,7 @@ export default function AdminEventForm() {
                       <option value="">Select platform</option>
                       {platforms.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
+
                     <input type="url" name="platformLink" value={formData.platformLink} onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                       placeholder="Meeting link (optional)" />
@@ -508,10 +523,12 @@ export default function AdminEventForm() {
                   <input type="text" name="organizerName" value={formData.organizerName} onChange={handleChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                     placeholder={isPlace ? 'Contact person name' : 'Organizer name'} />
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <input type="tel" name="organizerPhone" value={formData.organizerPhone} onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                       placeholder="Phone number" />
+                    
                     <input type="email" name="organizerEmail" value={formData.organizerEmail} onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                       placeholder="Email address" />
@@ -527,9 +544,11 @@ export default function AdminEventForm() {
                     <input type="text" name="location" value={formData.location} onChange={handleChange} required
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                       placeholder="City, Country (e.g. Lagos, Nigeria)" />
+
                     <input type="text" name="address" value={formData.address} onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                       placeholder={isPlace ? 'Full address (e.g. 123 Victoria Island, Lagos)' : 'Full venue address'} />
+
                     <input type="url" name="mapLocation" value={formData.mapLocation} onChange={handleChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                       placeholder="Google Maps link (optional)" />
@@ -611,7 +630,7 @@ export default function AdminEventForm() {
                         <p className="text-xs text-gray-500">PNG, JPG, WEBP up to 10MB</p>
                       </>
                     )}
-
+                    
                     {uploading && (
                       <div className="mt-4">
                         <div className="w-full bg-gray-200 rounded-full h-2">
@@ -639,12 +658,14 @@ export default function AdminEventForm() {
                     <option value="draft">Draft</option>
                     <option value="pending">Pending Review</option>
                   </select>
+
                   <div className="flex gap-6">
                     <label className="flex items-center gap-2">
                       <input type="checkbox" name="isFeatured" checked={formData.isFeatured} onChange={handleChange}
                         className="w-4 h-4 text-cyan-500 border-gray-300 rounded focus:ring-cyan-400" />
                       <span className="text-sm font-medium text-gray-700">Featured</span>
                     </label>
+
                     <label className="flex items-center gap-2">
                       <input type="checkbox" name="isTrending" checked={formData.isTrending} onChange={handleChange}
                         className="w-4 h-4 text-cyan-500 border-gray-300 rounded focus:ring-cyan-400" />
@@ -661,6 +682,7 @@ export default function AdminEventForm() {
                   <Save size={20} />
                   <span>{loading ? 'Saving...' : (isEdit ? `Update ${isPlace ? 'Place' : 'Event'}` : `Create ${isPlace ? 'Place' : 'Event'}`)}</span>
                 </button>
+
                 <button type="button" onClick={() => navigate('/admin/events')}
                   className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium">
                   Cancel
