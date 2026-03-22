@@ -10,7 +10,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyC6ERKqVd6IlqC6yo0_dfCI9wBivDHTRvk",
   authDomain: "outingstation-app.firebaseapp.com",
   projectId: "outingstation-app",
-  storageBucket: "outingstation-app.firebasestorage.app",
+  storageBucket: "outingstation-app.appspot.com",
   messagingSenderId: "775142188021",
   appId: "1:775142188021:web:5d7b920a29131a9228f6bc",
   measurementId: "G-J4DWTE4VGX"
