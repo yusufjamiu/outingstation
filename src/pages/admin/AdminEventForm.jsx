@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../../firebase'; // ✅ ADDED auth
 import { uploadWithProgress, compressImage } from '../../services/firebaseStorageService';
+import NotifyUsersModal from '../../components/NotifyUsersModal'; // ✅ ADDED
 
 export default function AdminEventForm() {
   const navigate = useNavigate();
@@ -17,6 +18,8 @@ export default function AdminEventForm() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [formType, setFormType] = useState('event');
+  const [showNotifyModal, setShowNotifyModal] = useState(false); // ✅ ADDED
+  const [createdEvent, setCreatedEvent] = useState(null); // ✅ ADDED
   
   const [formData, setFormData] = useState({
     title: '', description: '', category: '',
@@ -201,17 +204,22 @@ export default function AdminEventForm() {
       if (isEdit) {
         await updateDoc(doc(db, 'events', id), eventData);
         alert(`✅ ${formType === 'place' ? 'Place' : 'Event'} updated successfully!`);
+        navigate('/admin/events');
       } else {
         // ✅ NEW: Add createdBy and other fields for new events
         eventData.createdBy = auth.currentUser?.uid || 'admin';
         eventData.createdAt = serverTimestamp();
         eventData.savedCount = 0;
         
-        await addDoc(collection(db, 'events'), eventData);
-        alert(`✅ ${formType === 'place' ? 'Place' : 'Event'} created successfully!`);
+        const docRef = await addDoc(collection(db, 'events'), eventData);
+        
+        // ✅ NEW: Show notification modal instead of navigating
+        setCreatedEvent({
+          id: docRef.id,
+          ...eventData
+        });
+        setShowNotifyModal(true);
       }
-
-      navigate('/admin/events');
     } catch (err) {
       console.error('Error saving event:', err);
       alert('❌ Error saving: ' + err.message);
@@ -692,6 +700,17 @@ export default function AdminEventForm() {
           </form>
         </div>
       </main>
+
+      {/* ✅ Notification Modal */}
+      {showNotifyModal && createdEvent && (
+        <NotifyUsersModal 
+          event={createdEvent}
+          onClose={() => {
+            setShowNotifyModal(false);
+            navigate('/admin/events');
+          }}
+        />
+      )}
     </div>
   );
 }
