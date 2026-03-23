@@ -4,7 +4,7 @@ import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../../firebase'; // ✅ ADDED auth
-import { uploadWithProgress, compressImage } from '../../services/firebaseStorageService';
+import { uploadWithProgress, compressImage } from '../../services/cloudinaryService';
 import NotifyUsersModal from '../../components/NotifyUsersModal'; // ✅ ADDED
 
 export default function AdminEventForm() {
