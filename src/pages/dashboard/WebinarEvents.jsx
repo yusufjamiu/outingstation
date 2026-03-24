@@ -5,12 +5,12 @@ import { useAuth } from '../../context/AuthContext';
 import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { formatEventDate, formatEventTime } from '../../utils/dateTimeHelpers';
 
 export default function WebinarEvents() {
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
   
-  // ✅ Get searchQuery from parent UserLayout
   const { searchQuery } = useOutletContext();
 
   const [savedEventIds, setSavedEventIds] = useState([]);
@@ -102,15 +102,6 @@ export default function WebinarEvents() {
     }
   };
 
-  const getDate = (event) => {
-    if (event.date) {
-      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
-      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    }
-    return 'TBD';
-  };
-
-  const getTime = (event) => event.time || event.dailyStartTime || '';
   const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&q=80';
 
   return (
@@ -137,84 +128,88 @@ export default function WebinarEvents() {
         <>
           {displayEvents.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-              {displayEvents.map((event) => (
-                <div 
-                  key={event.id}
-                  onClick={() => handleEventClick(event.id)}
-                  className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
-                >
-                  <div className="relative h-48 sm:h-56">
-                    <img 
-                      src={getImage(event)} 
-                      alt={event.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                    />
-                    
-                    <div className="absolute top-3 left-3">
-                      <span className="bg-purple-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-full">
-                        📹 Virtual
-                      </span>
-                    </div>
-
-                    <button 
-                      onClick={(e) => handleSaveClick(e, event.id)}
-                      className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
-                    >
-                      <Heart 
-                        size={18}
-                        className={`sm:w-5 sm:h-5 ${savedEventIds.includes(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-600'}`}
+              {displayEvents.map((event) => {
+                const eventTime = formatEventTime(event);
+                
+                return (
+                  <div 
+                    key={event.id}
+                    onClick={() => handleEventClick(event.id)}
+                    className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
+                  >
+                    <div className="relative h-48 sm:h-56">
+                      <img 
+                        src={getImage(event)} 
+                        alt={event.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                       />
-                    </button>
-
-                    {event.isFree && (
-                      <div className="absolute bottom-3 right-3">
-                        <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
-                          Free
+                      
+                      <div className="absolute top-3 left-3">
+                        <span className="bg-purple-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-full">
+                          📹 Virtual
                         </span>
                       </div>
-                    )}
-                  </div>
 
-                  <div className="p-4 sm:p-5">
-                    <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
-                      {event.title}
-                    </h3>
-                    
-                    <div className="space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
-                      <div className="flex items-center gap-2">
-                        <Calendar size={14} />
-                        <span>{getDate(event)}</span>
-                        {getTime(event) && (
-                          <>
-                            <Clock size={14} />
-                            <span>{getTime(event)}</span>
-                          </>
-                        )}
-                      </div>
-                      {event.platform && (
-                        <div className="flex items-center gap-2">
-                          <MapPin size={14} />
-                          <span>{event.platform}</span>
+                      <button 
+                        onClick={(e) => handleSaveClick(e, event.id)}
+                        className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
+                      >
+                        <Heart 
+                          size={18}
+                          className={`sm:w-5 sm:h-5 ${savedEventIds.includes(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-600'}`}
+                        />
+                      </button>
+
+                      {event.isFree && (
+                        <div className="absolute bottom-3 right-3">
+                          <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
+                            Free
+                          </span>
                         </div>
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      {event.platformLink && (
-                        <a 
-                          href={event.platformLink}
-                          onClick={(e) => e.stopPropagation()}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-cyan-500 text-xs sm:text-sm hover:underline"
-                        >
-                          Join Meeting →
-                        </a>
-                      )}
+                    <div className="p-4 sm:p-5">
+                      <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
+                        {event.title}
+                      </h3>
+                      
+                      <div className="space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
+                        <div className="flex items-center gap-2">
+                          <Calendar size={14} />
+                          <span>{formatEventDate(event)}</span>
+                          {eventTime && (
+                            <>
+                              <Clock size={14} />
+                              <span>{eventTime}</span>
+                            </>
+                          )}
+                        </div>
+                        {event.platform && (
+                          <div className="flex items-center gap-2">
+                            <MapPin size={14} />
+                            <span>{event.platform}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        {event.platformLink && (
+                          <a 
+                            href={event.platformLink}
+                            onClick={(e) => e.stopPropagation()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-500 text-xs sm:text-sm hover:underline"
+                          >
+                            Join Meeting →
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-20">

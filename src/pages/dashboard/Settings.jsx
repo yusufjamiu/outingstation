@@ -3,16 +3,13 @@ import { useNavigate, Link, useOutletContext } from 'react-router-dom';
 import { X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Phone, Camera } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../firebase';
+import { db } from '../../firebase';
 
 export default function Settings() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   
-  // ✅ Get searchQuery from parent UserLayout (not used but available)
   const { searchQuery } = useOutletContext();
-  
   const { currentUser, userProfile, logout, updateProfile } = useAuth();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -82,6 +79,38 @@ export default function Settings() {
     }
   };
 
+  // ✅ CLOUDINARY UPLOAD FUNCTION
+  const uploadToCloudinary = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+    formData.append('folder', 'outingstation/profiles');
+
+    try {
+      console.log('📤 Uploading to Cloudinary...');
+      
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Cloudinary upload successful!');
+      return data.secure_url;
+    } catch (error) {
+      console.error('❌ Cloudinary upload error:', error);
+      throw error;
+    }
+  };
+
+  // ✅ UPDATED IMAGE UPLOAD WITH CLOUDINARY
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
@@ -102,16 +131,12 @@ export default function Settings() {
       let imageUrl = '';
 
       try {
-        console.log('🔥 Uploading profile picture to Firebase Storage...');
+        console.log('📤 Uploading profile picture to Cloudinary...');
         
-        const uploadPromise = (async () => {
-          const storageRef = ref(storage, `profile_images/${currentUser.uid}`);
-          await uploadBytes(storageRef, file);
-          return await getDownloadURL(storageRef);
-        })();
+        const uploadPromise = uploadToCloudinary(file);
 
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Upload timeout after 5 seconds')), 5000)
+          setTimeout(() => reject(new Error('Upload timeout after 10 seconds')), 10000)
         );
 
         imageUrl = await Promise.race([uploadPromise, timeoutPromise]);
@@ -159,15 +184,11 @@ export default function Settings() {
         updatedAt: new Date()
       });
 
-      console.log('✅ Firestore updated');
-
       await updateProfile({
         name: formData.name,
         phone: formData.phone,
         city: formData.city
       });
-
-      console.log('✅ AuthContext updated');
 
       setIsEditing(false);
       setShowSavedNotification(true);

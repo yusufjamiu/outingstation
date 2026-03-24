@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Menu, Calendar, Users, Eye, TrendingUp } from 'lucide-react';
+import { Menu, Calendar, Users, Eye, TrendingUp, RefreshCw } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -14,6 +14,7 @@ export default function AdminDashboard() {
   });
   const [recentEvents, setRecentEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -21,6 +22,8 @@ export default function AdminDashboard() {
 
   const loadDashboardData = async () => {
     try {
+      setLoading(true);
+      
       // Load events
       const eventsSnap = await getDocs(collection(db, 'events'));
       const allEvents = eventsSnap.docs.map(d => ({
@@ -50,9 +53,23 @@ export default function AdminDashboard() {
       setRecentEvents(sorted);
     } catch (err) {
       console.error('Error loading dashboard:', err);
+      alert('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
     }
+  };
 
-    setLoading(false);
+  // ✅ FIXED REFRESH HANDLER
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadDashboardData();
+      // Show brief success feedback
+      setTimeout(() => setRefreshing(false), 500);
+    } catch (err) {
+      console.error('Refresh error:', err);
+      setRefreshing(false);
+    }
   };
 
   // ✅ FIXED DATE FORMATTER
@@ -106,12 +123,20 @@ export default function AdminDashboard() {
             </h2>
 
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">Admin</span>
+              <span className="text-sm text-gray-600 hidden sm:inline">Admin</span>
+              {/* ✅ FIXED REFRESH BUTTON */}
               <button
-                onClick={loadDashboardData}
-                className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
+                onClick={handleRefresh}
+                disabled={refreshing || loading}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                ↻ Refresh
+                <RefreshCw 
+                  size={16} 
+                  className={refreshing ? 'animate-spin' : ''} 
+                />
+                <span className="hidden sm:inline">
+                  {refreshing ? 'Refreshing...' : 'Refresh'}
+                </span>
               </button>
             </div>
           </div>
@@ -131,7 +156,7 @@ export default function AdminDashboard() {
                   return (
                     <div
                       key={index}
-                      className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+                      className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition"
                     >
                       <div className="flex items-center justify-between mb-4">
                         <div
@@ -156,7 +181,7 @@ export default function AdminDashboard() {
                     Recent Events
                   </h3>
                   <span className="text-sm text-gray-500">
-                    Live from Firestore
+                    {recentEvents.length > 0 ? `${recentEvents.length} events` : 'No events'}
                   </span>
                 </div>
 
@@ -179,7 +204,7 @@ export default function AdminDashboard() {
 
                     <tbody className="divide-y divide-gray-200">
                       {recentEvents.map((event) => (
-                        <tr key={event.id} className="hover:bg-gray-50">
+                        <tr key={event.id} className="hover:bg-gray-50 transition">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               {event.imageUrl && (
@@ -252,15 +277,14 @@ export default function AdminDashboard() {
 
                   {recentEvents.length === 0 && (
                     <div className="text-center py-12">
-                      <p className="text-gray-500">
-                        No events yet.{' '}
-                        <a
-                          href="#/admin/events/create"
-                          className="text-cyan-500 font-medium"
-                        >
-                          Create your first event →
-                        </a>
-                      </p>
+                      <Calendar size={48} className="mx-auto text-gray-300 mb-4" />
+                      <p className="text-gray-500 mb-2">No events yet</p>
+                      <a
+                        href="#/admin/events/create"
+                        className="text-cyan-500 hover:text-cyan-600 font-medium"
+                      >
+                        Create your first event →
+                      </a>
                     </div>
                   )}
                 </div>

@@ -6,6 +6,7 @@ import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { db } from '../../firebase';
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
+import { formatEventDate, formatEventTime } from '../../utils/dateTimeHelpers';
 
 export default function CampusEventsPage() {
   const navigate = useNavigate();
@@ -18,12 +19,11 @@ export default function CampusEventsPage() {
   const [allEvents, setAllEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Filter states
   const [dateFilter, setDateFilter] = useState('any');
   const [statusFilter, setStatusFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
 
-  const currentUser = null; // Public user
+  const currentUser = null;
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -41,7 +41,6 @@ export default function CampusEventsPage() {
     try {
       setLoading(true);
 
-      // Load universities
       const uniSnapshot = await getDocs(collection(db, 'universities'));
       const uniImagesMap = {};
       const uniList = ['All Universities'];
@@ -57,19 +56,16 @@ export default function CampusEventsPage() {
       setUniversityImages(uniImagesMap);
       setUniversities(uniList);
 
-      // Load campus events
       const snapshot = await getDocs(collection(db, 'events'));
       const eventsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
 
-      // Filter campus events
       let campusEvents = eventsData.filter(e => 
         e.eventType === 'campus' && e.status === 'published'
       );
 
-      // ✅ FILTER OUT PAST EVENTS
       campusEvents = filterUpcomingEvents(campusEvents);
 
       setAllEvents(campusEvents);
@@ -79,16 +75,13 @@ export default function CampusEventsPage() {
     setLoading(false);
   };
 
-  // Apply all filters
   const getFilteredEvents = () => {
     let filtered = [...allEvents];
 
-    // University filter
     if (selectedUniversity !== 'All Universities') {
       filtered = filtered.filter(e => e.university === selectedUniversity);
     }
 
-    // Date filter
     if (dateFilter !== 'any') {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -118,7 +111,6 @@ export default function CampusEventsPage() {
       });
     }
 
-    // Status filter (free/paid)
     if (statusFilter !== 'all') {
       if (statusFilter === 'free') {
         filtered = filtered.filter(e => e.isFree === true);
@@ -127,7 +119,6 @@ export default function CampusEventsPage() {
       }
     }
 
-    // Location filter
     if (locationFilter !== 'all') {
       if (locationFilter === 'on-campus') {
         filtered = filtered.filter(e => 
@@ -167,15 +158,6 @@ export default function CampusEventsPage() {
     return universityImages[selectedUniversity] || 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80';
   };
 
-  const getDate = (event) => {
-    if (event.date) {
-      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
-      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    }
-    return 'TBD';
-  };
-
-  const getTime = (event) => event.time || 'TBD';
   const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1562774053-701939374585?w=800&q=80';
 
   return (
@@ -183,7 +165,6 @@ export default function CampusEventsPage() {
       <Navbar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Header with University Selector */}
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Campus Events</h1>
@@ -192,7 +173,6 @@ export default function CampusEventsPage() {
             </p>
           </div>
           
-          {/* University Dropdown */}
           <div className="relative">
             <button 
               onClick={() => setShowUniversityDropdown(!showUniversityDropdown)}
@@ -232,7 +212,6 @@ export default function CampusEventsPage() {
           </div>
         </div>
 
-        {/* University Banner */}
         <div className="relative rounded-xl sm:rounded-2xl overflow-hidden mb-6 sm:mb-8 shadow-lg">
           <img 
             src={getUniversityBannerImage()}
@@ -255,7 +234,6 @@ export default function CampusEventsPage() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
           <div className="flex-1 sm:flex-initial">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Date:</label>
@@ -302,76 +280,83 @@ export default function CampusEventsPage() {
           </div>
         </div>
 
-        {/* Loading State */}
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
           </div>
         ) : filteredEvents.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-            {filteredEvents.map((event) => (
-              <div 
-                key={event.id} 
-                onClick={() => handleEventClick(event.id)}
-                className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
-              >
-                <div className="relative h-48 sm:h-56">
-                  <img 
-                    src={getImage(event)} 
-                    alt={event.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  />
-                  
-                  <div className="absolute top-3 left-3">
-                    <span className="bg-blue-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-full">
-                      #{event.category}
-                    </span>
-                  </div>
-
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSaveClick(event.id);
-                    }}
-                    className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
-                  >
-                    <Heart size={18} className="sm:w-5 sm:h-5 text-gray-600" />
-                  </button>
-
-                  {event.isFree && (
-                    <div className="absolute bottom-3 right-3">
-                      <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
-                        Free
+            {filteredEvents.map((event) => {
+              const eventTime = formatEventTime(event);
+              
+              return (
+                <div 
+                  key={event.id} 
+                  onClick={() => handleEventClick(event.id)}
+                  className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
+                >
+                  <div className="relative h-48 sm:h-56">
+                    <img 
+                      src={getImage(event)} 
+                      alt={event.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                    
+                    <div className="absolute top-3 left-3">
+                      <span className="bg-blue-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-full">
+                        #{event.category}
                       </span>
                     </div>
-                  )}
-                </div>
 
-                <div className="p-4 sm:p-5">
-                  <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
-                    {event.title}
-                  </h3>
-                  
-                  <div className="space-y-2 text-xs sm:text-sm text-gray-600">
-                    {event.university && (
-                      <div className="flex items-center gap-2">
-                        <span>🏛️ {event.university}</span>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSaveClick(event.id);
+                      }}
+                      className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
+                    >
+                      <Heart size={18} className="sm:w-5 sm:h-5 text-gray-600" />
+                    </button>
+
+                    {event.isFree && (
+                      <div className="absolute bottom-3 right-3">
+                        <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
+                          Free
+                        </span>
                       </div>
                     )}
-                    <div className="flex items-center gap-2">
-                      <Calendar size={14} />
-                      <span>{getDate(event)}</span>
-                      <Clock size={14} />
-                      <span>{getTime(event)}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin size={14} />
-                      <span>{event.location || 'Campus'}</span>
+                  </div>
+
+                  <div className="p-4 sm:p-5">
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
+                      {event.title}
+                    </h3>
+                    
+                    <div className="space-y-2 text-xs sm:text-sm text-gray-600">
+                      {event.university && (
+                        <div className="flex items-center gap-2">
+                          <span>🏛️ {event.university}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <Calendar size={14} />
+                        <span>{formatEventDate(event)}</span>
+                        {eventTime && (
+                          <>
+                            <Clock size={14} />
+                            <span>{eventTime}</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin size={14} />
+                        <span>{event.location || 'Campus'}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-12">

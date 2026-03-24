@@ -5,12 +5,12 @@ import { useAuth } from '../../context/AuthContext';
 import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { formatEventDate, formatEventTime } from '../../utils/dateTimeHelpers';
 
 export default function CampusEvents() {
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
   
-  // ✅ Get searchQuery from parent UserLayout
   const { searchQuery } = useOutletContext();
 
   const [selectedUniversity, setSelectedUniversity] = useState('All Universities');
@@ -52,7 +52,6 @@ export default function CampusEvents() {
         }
       });
       
-      console.log('📷 Loaded university images:', uniImagesMap);
       setUniversityImages(uniImagesMap);
 
       const snapshot = await getDocs(collection(db, 'events'));
@@ -133,15 +132,6 @@ export default function CampusEvents() {
     }
   };
 
-  const getDate = (event) => {
-    if (event.date) {
-      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
-      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    }
-    return 'TBD';
-  };
-
-  const getTime = (event) => event.time || event.dailyStartTime || '';
   const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1562774053-701939374585?w=800&q=80';
 
   const getUniversityBannerImage = () => {
@@ -150,8 +140,6 @@ export default function CampusEvents() {
     }
     
     const imageUrl = universityImages[selectedUniversity];
-    console.log(`🖼️ Banner for ${selectedUniversity}:`, imageUrl);
-    
     return imageUrl || 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80';
   };
 
@@ -187,7 +175,6 @@ export default function CampusEvents() {
                     <button
                       key={index}
                       onClick={() => {
-                        console.log('🎓 Selected university:', uni);
                         setSelectedUniversity(uni);
                         setShowUniversityDropdown(false);
                       }}
@@ -211,7 +198,6 @@ export default function CampusEvents() {
           alt={selectedUniversity}
           className="w-full h-48 sm:h-64 lg:h-80 object-cover"
           onError={(e) => {
-            console.error('❌ Failed to load banner image for:', selectedUniversity);
             e.target.src = 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80';
           }}
         />
@@ -237,77 +223,81 @@ export default function CampusEvents() {
         <>
           {displayEvents.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-              {displayEvents.map((event) => (
-                <div 
-                  key={event.id} 
-                  onClick={() => handleEventClick(event.id)}
-                  className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
-                >
-                  <div className="relative h-48 sm:h-56">
-                    <img 
-                      src={getImage(event)} 
-                      alt={event.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                    />
-                    
-                    <div className="absolute top-3 left-3">
-                      <span className="bg-blue-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-full">
-                        #{event.category}
-                      </span>
-                    </div>
-
-                    <button 
-                      onClick={(e) => handleSaveClick(e, event.id)}
-                      className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
-                    >
-                      <Heart 
-                        size={18}
-                        className={`sm:w-5 sm:h-5 ${
-                          savedEventIds.includes(event.id) 
-                            ? 'text-red-500 fill-red-500' 
-                            : 'text-gray-600'
-                        }`}
+              {displayEvents.map((event) => {
+                const eventTime = formatEventTime(event);
+                
+                return (
+                  <div 
+                    key={event.id} 
+                    onClick={() => handleEventClick(event.id)}
+                    className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
+                  >
+                    <div className="relative h-48 sm:h-56">
+                      <img 
+                        src={getImage(event)} 
+                        alt={event.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                       />
-                    </button>
-
-                    {event.isFree && (
-                      <div className="absolute bottom-3 right-3">
-                        <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
-                          Free
+                      
+                      <div className="absolute top-3 left-3">
+                        <span className="bg-blue-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-full">
+                          #{event.category}
                         </span>
                       </div>
-                    )}
-                  </div>
 
-                  <div className="p-4 sm:p-5">
-                    <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
-                      {event.title}
-                    </h3>
-                    
-                    <div className="space-y-2 text-xs sm:text-sm text-gray-600">
-                      {event.university && (
-                        <div className="flex items-center gap-2">
-                          <span>🏛️ {event.university}</span>
+                      <button 
+                        onClick={(e) => handleSaveClick(e, event.id)}
+                        className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
+                      >
+                        <Heart 
+                          size={18}
+                          className={`sm:w-5 sm:h-5 ${
+                            savedEventIds.includes(event.id) 
+                              ? 'text-red-500 fill-red-500' 
+                              : 'text-gray-600'
+                          }`}
+                        />
+                      </button>
+
+                      {event.isFree && (
+                        <div className="absolute bottom-3 right-3">
+                          <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
+                            Free
+                          </span>
                         </div>
                       )}
-                      <div className="flex items-center gap-2">
-                        <Calendar size={14} />
-                        <span>{getDate(event)}</span>
-                        {getTime(event) && (
-                          <>
-                            <Clock size={14} />
-                            <span>{getTime(event)}</span>
-                          </>
+                    </div>
+
+                    <div className="p-4 sm:p-5">
+                      <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
+                        {event.title}
+                      </h3>
+                      
+                      <div className="space-y-2 text-xs sm:text-sm text-gray-600">
+                        {event.university && (
+                          <div className="flex items-center gap-2">
+                            <span>🏛️ {event.university}</span>
+                          </div>
                         )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin size={14} />
-                        <span>{event.location || 'Campus'}</span>
+                        <div className="flex items-center gap-2">
+                          <Calendar size={14} />
+                          <span>{formatEventDate(event)}</span>
+                          {eventTime && (
+                            <>
+                              <Clock size={14} />
+                              <span>{eventTime}</span>
+                            </>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <MapPin size={14} />
+                          <span>{event.location || 'Campus'}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-20">

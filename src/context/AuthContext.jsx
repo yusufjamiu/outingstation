@@ -9,9 +9,9 @@ import {
   updatePassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
-  sendEmailVerification // ✅ ADDED
+  sendEmailVerification
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 const AuthContext = createContext();
@@ -25,76 +25,103 @@ export function AuthProvider({ children }) {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Email/Password Signup
-  async function signup(email, password, name, city = '', phone = '') {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-
-    await setDoc(doc(db, 'users', user.uid), {
-      name,
-      email,
-      phone,
-      city,
-      savedEvents: [],
-      isNewUser: true,
-      role: 'user',
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
-
-    return userCredential;
-  }
-
-  // ✅ Email/Password Login - UPDATED to return userCredential
-  async function login(email, password) {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+  // ✅ CRITICAL FIX: Ensure user document exists with retry logic
+  async function ensureUserDocument(user, additionalData = {}) {
+    const userRef = doc(db, 'users', user.uid);
     
-    // ✅ Mark as returning user after login
-    const userRef = doc(db, 'users', userCredential.user.uid);
-    await updateDoc(userRef, {
-      isNewUser: false,
-      lastLoginAt: new Date()
-    });
-
-    return userCredential; // ✅ RETURN userCredential for verification check
-  }
-
-  // ✅ Google Sign-In
-  async function loginWithGoogle() {
-    const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-
-    // Check if user doc exists already
-    const docRef = doc(db, 'users', user.uid);
-    const docSnap = await getDoc(docRef);
-
-    if (!docSnap.exists()) {
-      // New Google user - create profile
-      await setDoc(docRef, {
-        name: user.displayName || '',
+    // Check if document already exists
+    const userSnap = await getDoc(userRef);
+    
+    if (!userSnap.exists()) {
+      // Create new user document
+      console.log('📝 Creating user document for:', user.uid);
+      
+      const userData = {
+        uid: user.uid,
+        name: additionalData.name || user.displayName || '',
         email: user.email || '',
-        phone: user.phoneNumber || '',
-        city: '',
+        phone: additionalData.phone || user.phoneNumber || '',
+        city: additionalData.city || '',
         avatar: user.photoURL || '',
         savedEvents: [],
-        isNewUser: true,
         role: 'user',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-    } else {
-      // Returning Google user
-      await updateDoc(docRef, {
-        isNewUser: false,
-        lastLoginAt: new Date()
-      });
-    }
+        status: 'active',
+        isNewUser: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
 
-    return result;
+      // ✅ Use setDoc with merge to prevent race conditions
+      await setDoc(userRef, userData, { merge: true });
+      console.log('✅ User document created successfully');
+      
+      return userData;
+    } else {
+      // Update last login for existing user
+      console.log('✅ User document already exists, updating lastLoginAt');
+      await updateDoc(userRef, {
+        lastLoginAt: serverTimestamp(),
+        isNewUser: false,
+      });
+      
+      return userSnap.data();
+    }
   }
 
-  // ✅ NEW: Resend Verification Email
+  // ✅ Email/Password Signup with guaranteed document creation
+  async function signup(email, password, name, city = '', phone = '') {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // ✅ CRITICAL: Create user document immediately after signup
+      await ensureUserDocument(user, { name, city, phone });
+
+      return userCredential;
+    } catch (error) {
+      console.error('❌ Signup error:', error);
+      throw error;
+    }
+  }
+
+  // ✅ Email/Password Login
+  async function login(email, password) {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // ✅ Ensure user document exists (in case it was missing)
+      await ensureUserDocument(userCredential.user);
+
+      return userCredential;
+    } catch (error) {
+      console.error('❌ Login error:', error);
+      throw error;
+    }
+  }
+
+  // ✅ Google Sign-In with GUARANTEED document creation
+  async function loginWithGoogle() {
+    try {
+      const provider = new GoogleAuthProvider();
+      // ✅ Force account selection every time to prevent auto-login issues
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
+      
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      // ✅ CRITICAL: Always ensure document exists
+      await ensureUserDocument(user);
+
+      return result;
+    } catch (error) {
+      console.error('❌ Google login error:', error);
+      throw error;
+    }
+  }
+
+  // ✅ Resend Verification Email
   async function resendVerificationEmail() {
     if (currentUser && !currentUser.emailVerified) {
       await sendEmailVerification(currentUser);
@@ -114,7 +141,7 @@ export function AuthProvider({ children }) {
     const docRef = doc(db, 'users', currentUser.uid);
     await updateDoc(docRef, {
       ...data,
-      updatedAt: new Date()
+      updatedAt: serverTimestamp()
     });
     // Refresh local profile
     const snap = await getDoc(docRef);
@@ -142,10 +169,14 @@ export function AuthProvider({ children }) {
       setCurrentUser(user);
 
       if (user) {
-        const docRef = doc(db, 'users', user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setUserProfile(docSnap.data());
+        try {
+          // ✅ Ensure user document exists on every auth state change
+          const userData = await ensureUserDocument(user);
+          setUserProfile(userData);
+        } catch (error) {
+          console.error('❌ Error ensuring user document:', error);
+          // Even if document creation fails, don't crash the app
+          setUserProfile(null);
         }
       } else {
         setUserProfile(null);
@@ -167,7 +198,7 @@ export function AuthProvider({ children }) {
     updateProfile,
     changePassword,
     getUserData,
-    resendVerificationEmail // ✅ ADDED
+    resendVerificationEmail
   };
 
   return (

@@ -4,12 +4,12 @@ import { Calendar, Clock, MapPin, X, Bookmark, Heart } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { doc, getDoc, updateDoc, arrayRemove } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { formatEventDate, formatEventTime } from '../../utils/dateTimeHelpers';
 
 export default function SavedEvents() {
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
   
-  // ✅ Get searchQuery from parent UserLayout
   const { searchQuery } = useOutletContext();
 
   const [savedEvents, setSavedEvents] = useState([]);
@@ -17,8 +17,7 @@ export default function SavedEvents() {
   const [eventToRemove, setEventToRemove] = useState(null);
   const [savedEventIds, setSavedEventIds] = useState([]);
   
-  // ✅ Tab state
-  const [activeTab, setActiveTab] = useState('upcoming'); // all, upcoming, past
+  const [activeTab, setActiveTab] = useState('upcoming');
 
   useEffect(() => {
     loadSavedEvents();
@@ -64,7 +63,6 @@ export default function SavedEvents() {
     setLoading(false);
   };
 
-  // ✅ Filter events by tab
   const getFilteredEventsByTab = (events) => {
     const now = new Date();
     
@@ -128,23 +126,8 @@ export default function SavedEvents() {
     }
   };
 
-  const getDate = (e) => {
-    if (e.date) {
-      const date = e.date.toDate ? e.date.toDate() : new Date(e.date);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    }
-    if (e.startDate) {
-      const date = e.startDate.toDate ? e.startDate.toDate() : new Date(e.startDate);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    }
-    if (e.recurringPattern) return `Every ${e.recurringDay || e.recurringPattern}`;
-    return 'TBD';
-  };
-
-  const getTime = (e) => e.time || e.dailyStartTime || e.recurringTime || '';
   const getImage = (e) => e.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400&q=80';
 
-  // ✅ Count events for each tab
   const upcomingCount = savedEvents.filter(e => {
     const eventDate = e.date?.toDate ? e.date.toDate() : e.startDate?.toDate ? e.startDate.toDate() : new Date(e.date || e.startDate);
     return eventDate >= new Date();
@@ -166,7 +149,6 @@ export default function SavedEvents() {
         </div>
       </div>
 
-      {/* ✅ TABS */}
       <div className="flex gap-2 mb-6 border-b border-gray-200">
         <button
           onClick={() => setActiveTab('all')}
@@ -206,65 +188,69 @@ export default function SavedEvents() {
         </div>
       ) : displayEvents.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
-          {displayEvents.map((event) => (
-            <div 
-              key={event.id} 
-              onClick={() => handleEventClick(event.id)} 
-              className="relative group cursor-pointer"
-            >
-              <div className="relative h-48 sm:h-56 rounded-xl overflow-hidden">
-                <img 
-                  src={getImage(event)} 
-                  alt={event.title} 
-                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+          {displayEvents.map((event) => {
+            const eventTime = formatEventTime(event);
+            
+            return (
+              <div 
+                key={event.id} 
+                onClick={() => handleEventClick(event.id)} 
+                className="relative group cursor-pointer"
+              >
+                <div className="relative h-48 sm:h-56 rounded-xl overflow-hidden">
+                  <img 
+                    src={getImage(event)} 
+                    alt={event.title} 
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300" 
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
 
-                <button
-                  onClick={(e) => handleRemoveClick(e, event)}
-                  className="absolute top-2 sm:top-3 right-2 sm:right-3 p-1.5 sm:p-2 bg-white rounded-full hover:bg-gray-100 transition z-10"
-                >
-                  <Heart size={16} className="text-red-500 fill-red-500" />
-                </button>
+                  <button
+                    onClick={(e) => handleRemoveClick(e, event)}
+                    className="absolute top-2 sm:top-3 right-2 sm:right-3 p-1.5 sm:p-2 bg-white rounded-full hover:bg-gray-100 transition z-10"
+                  >
+                    <Heart size={16} className="text-red-500 fill-red-500" />
+                  </button>
 
-                {event.category && (
-                  <span className="absolute top-2 sm:top-3 left-2 sm:left-3 px-2 sm:px-3 py-0.5 sm:py-1 bg-white/90 rounded-full text-xs font-semibold text-cyan-500">
-                    #{event.category}
-                  </span>
-                )}
+                  {event.category && (
+                    <span className="absolute top-2 sm:top-3 left-2 sm:left-3 px-2 sm:px-3 py-0.5 sm:py-1 bg-white/90 rounded-full text-xs font-semibold text-cyan-500">
+                      #{event.category}
+                    </span>
+                  )}
 
-                {event.isFree && (
-                  <span className="absolute top-10 sm:top-12 left-2 sm:left-3 px-2 sm:px-3 py-0.5 sm:py-1 bg-emerald-500 text-white rounded-lg text-xs font-semibold">
-                    Free
-                  </span>
-                )}
+                  {event.isFree && (
+                    <span className="absolute top-10 sm:top-12 left-2 sm:left-3 px-2 sm:px-3 py-0.5 sm:py-1 bg-emerald-500 text-white rounded-lg text-xs font-semibold">
+                      Free
+                    </span>
+                  )}
 
-                <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 text-white">
-                  <h3 className="text-sm sm:text-base font-bold mb-1.5 sm:mb-2 line-clamp-2">
-                    {event.title}
-                  </h3>
-                  
-                  <div className="flex items-center gap-2 sm:gap-3 text-xs mb-1.5 sm:mb-2">
-                    <div className="flex items-center gap-1">
-                      <Calendar size={11} />
-                      <span>{getDate(event)}</span>
-                    </div>
-                    {getTime(event) && (
+                  <div className="absolute bottom-0 left-0 right-0 p-3 sm:p-4 text-white">
+                    <h3 className="text-sm sm:text-base font-bold mb-1.5 sm:mb-2 line-clamp-2">
+                      {event.title}
+                    </h3>
+                    
+                    <div className="flex items-center gap-2 sm:gap-3 text-xs mb-1.5 sm:mb-2">
                       <div className="flex items-center gap-1">
-                        <Clock size={11} />
-                        <span>{getTime(event)}</span>
+                        <Calendar size={11} />
+                        <span>{formatEventDate(event)}</span>
                       </div>
-                    )}
-                  </div>
+                      {eventTime && (
+                        <div className="flex items-center gap-1">
+                          <Clock size={11} />
+                          <span>{eventTime}</span>
+                        </div>
+                      )}
+                    </div>
 
-                  <div className="flex items-center gap-1 text-xs">
-                    <MapPin size={11} className="flex-shrink-0" />
-                    <span className="truncate">{event.location || 'Online'}</span>
+                    <div className="flex items-center gap-1 text-xs">
+                      <MapPin size={11} className="flex-shrink-0" />
+                      <span className="truncate">{event.location || 'Online'}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="flex items-center justify-center min-h-[400px] sm:min-h-[500px]">

@@ -4,7 +4,7 @@ import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../../firebase'; // ✅ ADDED auth
-import { uploadWithProgress, compressImage } from '../../services/cloudinaryService';
+import { uploadWithProgress, compressImage } from '../../services/firebaseStorageService';
 import NotifyUsersModal from '../../components/NotifyUsersModal'; // ✅ ADDED
 
 export default function AdminEventForm() {
@@ -203,8 +203,13 @@ export default function AdminEventForm() {
 
       if (isEdit) {
         await updateDoc(doc(db, 'events', id), eventData);
-        alert(`✅ ${formType === 'place' ? 'Place' : 'Event'} updated successfully!`);
-        navigate('/admin/events');
+        
+        // ✅ NEW: Show notification modal for updates too
+        setCreatedEvent({
+          id: id,
+          ...eventData
+        });
+        setShowNotifyModal(true);
       } else {
         // ✅ NEW: Add createdBy and other fields for new events
         eventData.createdBy = auth.currentUser?.uid || 'admin';
@@ -705,6 +710,7 @@ export default function AdminEventForm() {
       {showNotifyModal && createdEvent && (
         <NotifyUsersModal 
           event={createdEvent}
+          notificationType={isEdit ? 'update' : 'new'}
           onClose={() => {
             setShowNotifyModal(false);
             navigate('/admin/events');

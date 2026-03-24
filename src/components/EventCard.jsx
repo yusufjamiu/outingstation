@@ -4,6 +4,7 @@ import { Calendar, Clock, MapPin, Heart } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { formatEventDate, formatEventTime } from '../utils/dateTimeHelpers';
 
 export default function EventCard({ event }) {
   const navigate = useNavigate();
@@ -36,9 +37,7 @@ export default function EventCard({ event }) {
     e.preventDefault();
     e.stopPropagation();
 
-    // Check if user is logged in
     if (!currentUser) {
-      // Prompt user to login
       const shouldLogin = window.confirm('Please login to save events. Would you like to login now?');
       if (shouldLogin) {
         navigate('/login');
@@ -53,13 +52,11 @@ export default function EventCard({ event }) {
       const userRef = doc(db, 'users', currentUser.uid);
 
       if (isSaved) {
-        // Unsave
         await updateDoc(userRef, {
           savedEvents: arrayRemove(event.id)
         });
         setIsSaved(false);
       } else {
-        // Save
         await updateDoc(userRef, {
           savedEvents: arrayUnion(event.id)
         });
@@ -73,11 +70,8 @@ export default function EventCard({ event }) {
     }
   };
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return 'TBD';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  };
+  const isPlace = event.subCategory === 'places';
+  const eventTime = formatEventTime(event);
 
   return (
     <Link to={`/event/${event.id}`}>
@@ -120,6 +114,15 @@ export default function EventCard({ event }) {
             )}
           </button>
 
+          {/* Place Badge - bottom left */}
+          {isPlace && (
+            <div className="absolute bottom-3 left-3">
+              <span className="bg-orange-500 text-white text-xs px-3 py-1 rounded-full font-semibold">
+                📍 Place
+              </span>
+            </div>
+          )}
+
           {/* Price Badge - bottom right of image */}
           <div className="absolute bottom-3 right-3">
             <span className={`${event.isFree ? 'bg-emerald-500' : 'bg-blue-500'} text-white text-xs px-3 py-1 rounded-full font-semibold`}>
@@ -137,20 +140,20 @@ export default function EventCard({ event }) {
           <div className="space-y-1.5 text-xs sm:text-sm text-gray-500">
             <div className="flex items-center gap-1.5">
               <Calendar size={13} className="text-gray-400 shrink-0" />
-              <span className="truncate">{formatDate(event.date)}</span>
+              <span className="truncate">{formatEventDate(event)}</span>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <Clock size={13} className="text-gray-400 shrink-0" />
-              <span>{event.time || 'TBD'}</span>
-            </div>
+            {eventTime && (
+              <div className="flex items-center gap-1.5">
+                <Clock size={13} className="text-gray-400 shrink-0" />
+                <span>{eventTime}</span>
+              </div>
+            )}
 
             <div className="flex items-center gap-1.5">
               <MapPin size={13} className="text-gray-400 shrink-0" />
               <span className="line-clamp-1">
-                {event.location && event.city
-                  ? `${event.location}, ${event.city}`
-                  : event.location || event.city || 'Location TBA'}
+                {event.address || event.location || 'Location TBA'}
               </span>
             </div>
           </div>

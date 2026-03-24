@@ -3,7 +3,6 @@ import { Menu, Plus, Edit, Trash2, GraduationCap, X, Save, Upload } from 'lucide
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { uploadToFirebase } from '../../services/firebaseStorageService';
 
 export default function AdminUniversities() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -72,7 +71,38 @@ export default function AdminUniversities() {
     setFormData({ ...formData, name, slug: generateSlug(name) });
   };
 
-  // ✅ Firebase Storage Image Upload Handler
+  // ✅ CLOUDINARY UPLOAD FUNCTION
+  const uploadToCloudinary = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+    formData.append('folder', 'outingstation/universities');
+
+    try {
+      console.log('📤 Uploading to Cloudinary...');
+      
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Cloudinary upload successful!');
+      return data.secure_url;
+    } catch (error) {
+      console.error('❌ Cloudinary upload error:', error);
+      throw error;
+    }
+  };
+
+  // ✅ CLOUDINARY IMAGE UPLOAD HANDLER
   const handleUniversityImageUpload = async (e, universityId) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -92,9 +122,9 @@ export default function AdminUniversities() {
 
       setUploadingUniImage(universityId);
 
-      // Upload to Firebase Storage
-      console.log('🔥 Uploading university image to Firebase Storage...');
-      const imageUrl = await uploadToFirebase(file, 'universities');
+      // Upload to Cloudinary
+      console.log('📤 Uploading university image to Cloudinary...');
+      const imageUrl = await uploadToCloudinary(file);
       console.log('✅ Upload complete:', imageUrl);
 
       // Update university in Firestore

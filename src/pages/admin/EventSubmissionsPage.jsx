@@ -1,10 +1,11 @@
 // src/pages/admin/EventSubmissionsPage.jsx
 // Admin page to review event submissions from organizers
-// ✅ UPDATED: Shows university events and custom cities
+// ✅ UPDATED: Shows university events, custom cities, and AdminSidebar
 
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { AdminSidebar } from '../../components/AdminSidebar';
 import { 
   Eye, 
   Check, 
@@ -17,17 +18,20 @@ import {
   Phone,
   ExternalLink,
   Clock,
-  Building,
   Filter,
-  GraduationCap
+  GraduationCap,
+  Menu,
+  RefreshCw
 } from 'lucide-react';
 
 export default function EventSubmissionsPage() {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     fetchSubmissions();
@@ -50,6 +54,18 @@ export default function EventSubmissionsPage() {
       alert('Failed to load submissions');
     }
     setLoading(false);
+  };
+
+  // ✅ REFRESH HANDLER
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchSubmissions();
+      setTimeout(() => setRefreshing(false), 500);
+    } catch (err) {
+      console.error('Refresh error:', err);
+      setRefreshing(false);
+    }
   };
 
   const handleApprove = async (submissionId) => {
@@ -138,227 +154,267 @@ export default function EventSubmissionsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading submissions...</p>
+      <div className="flex h-screen bg-gray-50">
+        <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading submissions...</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Event Submissions</h1>
-        <p className="text-gray-600">Review and manage event/place submissions from organizers</p>
-      </div>
+    <div className="flex h-screen bg-gray-50">
+      {/* ✅ ADMIN SIDEBAR */}
+      <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-          <div className="text-2xl font-bold text-gray-900">{submissions.length}</div>
-          <div className="text-sm text-gray-600">Total Submissions</div>
-        </div>
-        <div className="bg-yellow-50 rounded-xl p-6 shadow-sm border border-yellow-200">
-          <div className="text-2xl font-bold text-yellow-800">
-            {submissions.filter(s => s.status === 'pending' || !s.status).length}
-          </div>
-          <div className="text-sm text-yellow-700">Pending Review</div>
-        </div>
-        <div className="bg-green-50 rounded-xl p-6 shadow-sm border border-green-200">
-          <div className="text-2xl font-bold text-green-800">
-            {submissions.filter(s => s.status === 'approved').length}
-          </div>
-          <div className="text-sm text-green-700">Approved</div>
-        </div>
-        <div className="bg-red-50 rounded-xl p-6 shadow-sm border border-red-200">
-          <div className="text-2xl font-bold text-red-800">
-            {submissions.filter(s => s.status === 'rejected').length}
-          </div>
-          <div className="text-sm text-red-700">Rejected</div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6">
-        <div className="flex items-center gap-4">
-          <Filter size={20} className="text-gray-600" />
-          <div className="flex gap-4 flex-wrap">
-            <div>
-              <label className="text-sm font-medium text-gray-700 mr-2">Status:</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+      {/* ✅ MAIN CONTENT */}
+      <main className="flex-1 overflow-auto">
+        {/* ✅ HEADER WITH MENU BUTTON */}
+        <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
               >
-                <option value="all">All</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
+                <Menu size={24} />
+              </button>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Event Submissions</h1>
+                <p className="text-sm text-gray-600 hidden sm:block">Review and manage submissions from organizers</p>
+              </div>
             </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mr-2">Type:</label>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="all">All</option>
-                <option value="event">Events</option>
-                <option value="place">Places</option>
-              </select>
+
+            {/* ✅ REFRESH BUTTON */}
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw 
+                size={16} 
+                className={refreshing ? 'animate-spin' : ''} 
+              />
+              <span className="hidden sm:inline">
+                {refreshing ? 'Refreshing...' : 'Refresh'}
+              </span>
+            </button>
+          </div>
+        </header>
+
+        {/* ✅ PAGE CONTENT */}
+        <div className="p-4 sm:p-6">
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-gray-200">
+              <div className="text-xl sm:text-2xl font-bold text-gray-900">{submissions.length}</div>
+              <div className="text-xs sm:text-sm text-gray-600">Total Submissions</div>
+            </div>
+            <div className="bg-yellow-50 rounded-xl p-4 sm:p-6 shadow-sm border border-yellow-200">
+              <div className="text-xl sm:text-2xl font-bold text-yellow-800">
+                {submissions.filter(s => s.status === 'pending' || !s.status).length}
+              </div>
+              <div className="text-xs sm:text-sm text-yellow-700">Pending Review</div>
+            </div>
+            <div className="bg-green-50 rounded-xl p-4 sm:p-6 shadow-sm border border-green-200">
+              <div className="text-xl sm:text-2xl font-bold text-green-800">
+                {submissions.filter(s => s.status === 'approved').length}
+              </div>
+              <div className="text-xs sm:text-sm text-green-700">Approved</div>
+            </div>
+            <div className="bg-red-50 rounded-xl p-4 sm:p-6 shadow-sm border border-red-200">
+              <div className="text-xl sm:text-2xl font-bold text-red-800">
+                {submissions.filter(s => s.status === 'rejected').length}
+              </div>
+              <div className="text-xs sm:text-sm text-red-700">Rejected</div>
             </div>
           </div>
-          <span className="ml-auto text-sm text-gray-600">
-            {filteredSubmissions.length} results
-          </span>
-        </div>
-      </div>
 
-      {/* Submissions Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Submission
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Organizer
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Type
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date/Hours
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredSubmissions.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
-                    No submissions found
-                  </td>
-                </tr>
-              ) : (
-                filteredSubmissions.map((submission) => (
-                  <tr key={submission.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-start gap-3">
-                        {submission.imageUrl && (
-                          <img 
-                            src={submission.imageUrl} 
-                            alt={submission.eventTitle}
-                            className="w-16 h-16 object-cover rounded-lg"
-                          />
-                        )}
-                        <div>
-                          <div className="font-semibold text-gray-900">{submission.eventTitle}</div>
-                          <div className="text-sm text-gray-600">{submission.eventCategory}</div>
-                          <div className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                            <MapPin size={14} />
-                            {submission.city}
-                          </div>
-                          {/* ✅ NEW: University Badge */}
-                          {submission.isUniversityEvent && submission.universityName && (
-                            <div className="text-xs text-blue-600 font-semibold mt-1 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded">
-                              🎓 {submission.universityName}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">{submission.organizerName}</div>
-                        <div className="text-gray-600">{submission.organizationName || 'Individual'}</div>
-                        <div className="text-gray-500 flex items-center gap-1 mt-1">
-                          <Mail size={12} />
-                          {submission.organizerEmail}
-                        </div>
-                        <div className="text-gray-500 flex items-center gap-1">
-                          <Phone size={12} />
-                          {submission.organizerPhone}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                        submission.listingType === 'event' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-purple-100 text-purple-800'
-                      }`}>
-                        {submission.listingType === 'event' ? '🎉 Event' : '🏛️ Place'}
-                      </span>
-                      {submission.listingType === 'event' && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          {submission.eventType}
-                        </div>
-                      )}
-                      {/* ✅ NEW: SubCategory badge */}
-                      {submission.subCategory === 'campus' && (
-                        <div className="text-xs text-blue-600 font-semibold mt-1">
-                          Campus Event
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {submission.listingType === 'event' ? (
-                        <>
-                          <div className="flex items-center gap-1">
-                            <Calendar size={14} />
-                            {submission.startDate || 'N/A'}
-                          </div>
-                          <div className="flex items-center gap-1 text-gray-500">
-                            <Clock size={14} />
-                            {submission.startTime || 'N/A'}
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-xs">
-                          {submission.alwaysOpen ? (
-                            <span className="text-green-600 font-semibold">24/7 Open</span>
-                          ) : (
-                            <div className="text-gray-600 whitespace-pre-line">
-                              {submission.operatingHours?.substring(0, 50)}
-                              {submission.operatingHours?.length > 50 && '...'}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      {getStatusBadge(submission.status)}
-                      <div className="text-xs text-gray-500 mt-1">
-                        {formatDate(submission.submittedAt)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => setSelectedSubmission(submission)}
-                        className="flex items-center gap-1 text-cyan-600 hover:text-cyan-700 font-medium text-sm"
-                      >
-                        <Eye size={16} />
-                        View Details
-                      </button>
-                    </td>
+          {/* Filters */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <Filter size={20} className="text-gray-600 hidden sm:block" />
+              <div className="flex flex-col sm:flex-row gap-4 flex-1">
+                <div className="flex-1 sm:flex-initial">
+                  <label className="text-sm font-medium text-gray-700 mr-2">Status:</label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  >
+                    <option value="all">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+                <div className="flex-1 sm:flex-initial">
+                  <label className="text-sm font-medium text-gray-700 mr-2">Type:</label>
+                  <select
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value)}
+                    className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  >
+                    <option value="all">All</option>
+                    <option value="event">Events</option>
+                    <option value="place">Places</option>
+                  </select>
+                </div>
+              </div>
+              <span className="text-sm text-gray-600">
+                {filteredSubmissions.length} results
+              </span>
+            </div>
+          </div>
+
+          {/* Submissions Table */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Submission
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Organizer
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Type
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Date/Hours
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredSubmissions.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                        No submissions found
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSubmissions.map((submission) => (
+                      <tr key={submission.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4">
+                          <div className="flex items-start gap-3">
+                            {submission.imageUrl && (
+                              <img 
+                                src={submission.imageUrl} 
+                                alt={submission.eventTitle}
+                                className="w-16 h-16 object-cover rounded-lg"
+                              />
+                            )}
+                            <div>
+                              <div className="font-semibold text-gray-900">{submission.eventTitle}</div>
+                              <div className="text-sm text-gray-600">{submission.eventCategory}</div>
+                              <div className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                                <MapPin size={14} />
+                                {submission.city}
+                              </div>
+                              {/* ✅ University Badge */}
+                              {submission.isUniversityEvent && submission.universityName && (
+                                <div className="text-xs text-blue-600 font-semibold mt-1 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded">
+                                  🎓 {submission.universityName}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm">
+                            <div className="font-medium text-gray-900">{submission.organizerName}</div>
+                            <div className="text-gray-600">{submission.organizationName || 'Individual'}</div>
+                            <div className="text-gray-500 flex items-center gap-1 mt-1">
+                              <Mail size={12} />
+                              {submission.organizerEmail}
+                            </div>
+                            <div className="text-gray-500 flex items-center gap-1">
+                              <Phone size={12} />
+                              {submission.organizerPhone}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            submission.listingType === 'event' 
+                              ? 'bg-blue-100 text-blue-800' 
+                              : 'bg-purple-100 text-purple-800'
+                          }`}>
+                            {submission.listingType === 'event' ? '🎉 Event' : '🏛️ Place'}
+                          </span>
+                          {submission.listingType === 'event' && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {submission.eventType}
+                            </div>
+                          )}
+                          {/* ✅ SubCategory badge */}
+                          {submission.subCategory === 'campus' && (
+                            <div className="text-xs text-blue-600 font-semibold mt-1">
+                              Campus Event
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">
+                          {submission.listingType === 'event' ? (
+                            <>
+                              <div className="flex items-center gap-1">
+                                <Calendar size={14} />
+                                {submission.startDate || 'N/A'}
+                              </div>
+                              <div className="flex items-center gap-1 text-gray-500">
+                                <Clock size={14} />
+                                {submission.startTime || 'N/A'}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-xs">
+                              {submission.alwaysOpen ? (
+                                <span className="text-green-600 font-semibold">24/7 Open</span>
+                              ) : (
+                                <div className="text-gray-600 whitespace-pre-line">
+                                  {submission.operatingHours?.substring(0, 50)}
+                                  {submission.operatingHours?.length > 50 && '...'}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {getStatusBadge(submission.status)}
+                          <div className="text-xs text-gray-500 mt-1">
+                            {formatDate(submission.submittedAt)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => setSelectedSubmission(submission)}
+                            className="flex items-center gap-1 text-cyan-600 hover:text-cyan-700 font-medium text-sm"
+                          >
+                            <Eye size={16} />
+                            View Details
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      </main>
 
       {/* Detail Modal */}
       {selectedSubmission && (
@@ -369,7 +425,7 @@ export default function EventSubmissionsPage() {
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">{selectedSubmission.eventTitle}</h2>
                 <p className="text-gray-600">{selectedSubmission.eventCategory}</p>
-                {/* ✅ NEW: University badge in header */}
+                {/* ✅ University badge in header */}
                 {selectedSubmission.isUniversityEvent && selectedSubmission.universityName && (
                   <div className="mt-2 inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
                     <GraduationCap size={16} />
@@ -399,10 +455,10 @@ export default function EventSubmissionsPage() {
               )}
 
               {/* Status */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <span className="font-semibold text-gray-700">Status:</span>
                 {getStatusBadge(selectedSubmission.status)}
-                {/* ✅ NEW: Show subCategory */}
+                {/* ✅ Show subCategory */}
                 {selectedSubmission.subCategory && (
                   <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
                     {selectedSubmission.subCategory.toUpperCase()}
@@ -616,7 +672,7 @@ export default function EventSubmissionsPage() {
             </div>
 
             {/* Modal Actions */}
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 flex gap-3 justify-end">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 flex gap-3 justify-end flex-wrap">
               {selectedSubmission.status !== 'approved' && (
                 <button
                   onClick={() => handleApprove(selectedSubmission.id)}

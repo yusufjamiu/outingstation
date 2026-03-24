@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, User, Eye, EyeOff, ArrowLeft, MapPin } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, ArrowLeft, MapPin, Phone } from 'lucide-react';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import Create from './../assets/Create.jpg'
@@ -9,7 +9,7 @@ import Image2 from './../assets/SignUp2.JPG'
 import Connected from './../assets/Connected.JPG'
 
 export default function SignupPage() {
-  const [formData, setFormData] = useState({ name: '', email: '', city: '', password: '', confirmPassword: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', city: '', password: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -33,7 +33,7 @@ export default function SignupPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // ✅ NEW: Create welcome notification for new users
+  // ✅ Create welcome notification for new users
   const createWelcomeNotification = async (userId) => {
     try {
       await addDoc(collection(db, 'notifications'), {
@@ -47,7 +47,6 @@ export default function SignupPage() {
       console.log('✅ Welcome notification created for user:', userId);
     } catch (error) {
       console.error('❌ Error creating welcome notification:', error);
-      // Don't block signup if notification fails
     }
   };
 
@@ -55,12 +54,10 @@ export default function SignupPage() {
   const validateName = (name) => {
     const trimmedName = name.trim();
     
-    // Check if empty or only spaces
     if (!trimmedName) {
       return 'Name is required';
     }
     
-    // Check length (2-50 characters)
     if (trimmedName.length < 2) {
       return 'Name must be at least 2 characters';
     }
@@ -68,13 +65,11 @@ export default function SignupPage() {
       return 'Name must be less than 50 characters';
     }
     
-    // Check for alphabetical characters only (including spaces, hyphens, apostrophes)
     const nameRegex = /^[a-zA-Z\s'-]+$/;
     if (!nameRegex.test(trimmedName)) {
       return 'Name can only contain letters, spaces, hyphens, and apostrophes';
     }
     
-    // Check for at least 2 alphabetical characters (prevent names like "  " or "---")
     const alphaCount = trimmedName.replace(/[^a-zA-Z]/g, '').length;
     if (alphaCount < 2) {
       return 'Name must contain at least 2 letters';
@@ -90,7 +85,6 @@ export default function SignupPage() {
       return null; // City is optional
     }
     
-    // Length validation (2-100 characters)
     if (trimmedCity.length < 2) {
       return 'City must be at least 2 characters';
     }
@@ -98,7 +92,6 @@ export default function SignupPage() {
       return 'City must be less than 100 characters';
     }
     
-    // Allow letters, spaces, hyphens, commas (for "Lagos, Nigeria")
     const cityRegex = /^[a-zA-Z\s,'-]+$/;
     if (!cityRegex.test(trimmedCity)) {
       return 'City can only contain letters, spaces, commas, and hyphens';
@@ -107,8 +100,26 @@ export default function SignupPage() {
     return null;
   };
 
+  const validatePhone = (phone) => {
+    const trimmedPhone = phone.trim();
+    
+    if (!trimmedPhone) {
+      return null; // Phone is optional
+    }
+    
+    // Remove spaces, dashes, parentheses
+    const cleanPhone = trimmedPhone.replace(/[\s\-()]/g, '');
+    
+    // Allow + at start for international format
+    const phoneRegex = /^\+?[0-9]{10,15}$/;
+    if (!phoneRegex.test(cleanPhone)) {
+      return 'Please enter a valid phone number (10-15 digits)';
+    }
+    
+    return null;
+  };
+
   const validatePassword = (password) => {
-    // Length validation (8-128 characters)
     if (password.length < 8) {
       return 'Password must be at least 8 characters';
     }
@@ -116,22 +127,18 @@ export default function SignupPage() {
       return 'Password must be less than 128 characters';
     }
     
-    // Check for uppercase letter
     if (!/[A-Z]/.test(password)) {
       return 'Password must contain at least one uppercase letter';
     }
     
-    // Check for lowercase letter
     if (!/[a-z]/.test(password)) {
       return 'Password must contain at least one lowercase letter';
     }
     
-    // Check for number
     if (!/[0-9]/.test(password)) {
       return 'Password must contain at least one number';
     }
     
-    // Check for special character
     if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
       return 'Password must contain at least one special character (!@#$%^&*...)';
     }
@@ -142,14 +149,12 @@ export default function SignupPage() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     
-    // Prevent leading spaces on name and city fields
     if ((name === 'name' || name === 'city') && value.startsWith(' ')) {
       return;
     }
     
     setFormData({ ...formData, [name]: value });
     
-    // Clear error when user starts typing
     if (error) setError('');
   };
 
@@ -160,15 +165,24 @@ export default function SignupPage() {
     const trimmedData = {
       name: formData.name.trim(),
       email: formData.email.trim(),
+      phone: formData.phone.trim(),
       city: formData.city.trim(),
-      password: formData.password, // Don't trim password
-      confirmPassword: formData.confirmPassword // Don't trim password
+      password: formData.password,
+      confirmPassword: formData.confirmPassword
     };
     
     // Validate name
     const nameError = validateName(trimmedData.name);
     if (nameError) {
       return setError(nameError);
+    }
+    
+    // Validate phone (if provided)
+    if (trimmedData.phone) {
+      const phoneError = validatePhone(trimmedData.phone);
+      if (phoneError) {
+        return setError(phoneError);
+      }
     }
     
     // Validate city (if provided)
@@ -203,10 +217,16 @@ export default function SignupPage() {
       setError('');
       setLoading(true);
       
-      // ✅ UPDATED: Capture user credentials to get userId
-      const userCredential = await signup(trimmedData.email, trimmedData.password, trimmedData.name, trimmedData.city);
+      // ✅ UPDATED: Pass phone number to signup
+      const userCredential = await signup(
+        trimmedData.email, 
+        trimmedData.password, 
+        trimmedData.name, 
+        trimmedData.city, 
+        trimmedData.phone
+      );
       
-      // ✅ NEW: Create welcome notification
+      // ✅ Create welcome notification
       if (userCredential && userCredential.user) {
         await createWelcomeNotification(userCredential.user.uid);
       }
@@ -231,10 +251,9 @@ export default function SignupPage() {
       setError('');
       setLoading(true);
       
-      // ✅ UPDATED: Capture user credentials
       const userCredential = await loginWithGoogle();
       
-      // ✅ NEW: Create welcome notification for Google signup
+      // ✅ Create welcome notification for Google signup
       if (userCredential && userCredential.user) {
         await createWelcomeNotification(userCredential.user.uid);
       }
@@ -318,6 +337,20 @@ export default function SignupPage() {
                 onChange={handleChange}
                 className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
                 placeholder="Email address" 
+              />
+            </div>
+
+            {/* ✅ ADDED: Phone number field */}
+            <div className="relative">
+              <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <input 
+                type="tel" 
+                name="phone" 
+                value={formData.phone} 
+                onChange={handleChange}
+                maxLength={20}
+                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                placeholder="Phone number (Optional)" 
               />
             </div>
 

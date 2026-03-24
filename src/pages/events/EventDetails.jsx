@@ -11,6 +11,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
+import { formatEventDateFull, formatEventTime } from '../../utils/dateTimeHelpers';
 
 const openInMaps = (event) => {
   if (event.mapLocation) {
@@ -28,9 +29,7 @@ const openInMaps = (event) => {
   window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
 };
 
-// ✅ FIXED: Smart registration handler - prevents multiple popups, better free event message
 const handleRegister = (event, currentUser, navigate) => {
-  // ✅ FIX 1: Dismiss any existing toasts first to prevent multiples
   toast.dismiss();
   
   if (!currentUser) {
@@ -39,7 +38,6 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
   
-  // ✅ For PLACES - Show visit place popup
   if (event.subCategory === 'places') {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -72,12 +70,11 @@ const handleRegister = (event, currentUser, navigate) => {
     ), { 
       duration: Infinity, 
       icon: '🏪',
-      id: 'place-info' // ✅ FIX 2: Unique ID prevents duplicates
+      id: 'place-info'
     });
     return;
   }
   
-  // ✅ FIX 3: IMPROVED FREE EVENT MESSAGE
   if (event.isFree || !event.ticketLink || event.ticketLink.trim() === '') {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -89,7 +86,7 @@ const handleRegister = (event, currentUser, navigate) => {
           <div className="mt-3 bg-cyan-50 rounded-lg p-3 text-sm">
             <p className="font-medium text-gray-800 mb-1">📅 Event Details:</p>
             <p className="text-gray-700">
-              <strong>Date:</strong> {event.date?.toDate?.().toLocaleDateString() || event.startDate || 'TBD'}
+              <strong>Date:</strong> {formatEventDateFull(event)}
             </p>
             <p className="text-gray-700">
               <strong>Location:</strong> {event.location || event.address || 'TBD'}
@@ -113,12 +110,11 @@ const handleRegister = (event, currentUser, navigate) => {
     ), { 
       duration: Infinity, 
       icon: '🎉',
-      id: 'free-event-info' // ✅ FIX 2: Unique ID prevents duplicates
+      id: 'free-event-info'
     });
     return;
   }
   
-  // ✅ For PAID EVENTS with link - Show buy tickets popup
   toast((t) => (
     <div className="flex flex-col gap-3">
       <div>
@@ -148,8 +144,12 @@ const handleRegister = (event, currentUser, navigate) => {
     </div>
   ), { 
     duration: Infinity,
-    id: 'paid-event-info' // ✅ FIX 2: Unique ID prevents duplicates
+    id: 'paid-event-info'
   });
+};
+
+const getImage = (event) => {
+  return event?.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80';
 };
 
 export default function EventDetails() {
@@ -168,7 +168,6 @@ export default function EventDetails() {
     checkIfSaved();
   }, [id, currentUser]);
 
-  // ✅ FIX 2: Cleanup toasts when component unmounts or navigates away
   useEffect(() => {
     return () => {
       toast.dismiss();
@@ -278,51 +277,6 @@ export default function EventDetails() {
     setShowShareMenu(false);
   };
 
-  const getDate = (event) => {
-    if (!event) return 'TBD';
-    
-    if (event.subCategory === 'places') {
-      return event.placeAvailability || 'Always Open';
-    }
-    
-    if (event.date) {
-      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
-      return date.toLocaleDateString('en-US', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      });
-    }
-    if (event.startDate) {
-      const date = event.startDate.toDate ? event.startDate.toDate() : new Date(event.startDate);
-      return date.toLocaleDateString('en-US', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
-      });
-    }
-    return 'TBD';
-  };
-
-  const getTime = (event) => {
-    if (!event) return '';
-    
-    if (event.subCategory === 'places') {
-      if (event.openingTime && event.closingTime) {
-        return `${event.openingTime} - ${event.closingTime}`;
-      }
-      return '';
-    }
-    
-    return event.time || event.dailyStartTime || event.recurringTime || 'TBD';
-  };
-
-  const getImage = (event) => {
-    return event?.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80';
-  };
-
   if (loading) {
     return (
       <>
@@ -357,6 +311,8 @@ export default function EventDetails() {
   }
 
   const isPlace = event.subCategory === 'places';
+  const eventDate = formatEventDateFull(event);
+  const eventTime = formatEventTime(event);
 
   return (
     <>
@@ -608,18 +564,18 @@ export default function EventDetails() {
                       <p className="font-semibold text-gray-900 text-sm">
                         {isPlace ? 'Availability' : 'Date'}
                       </p>
-                      <p className="text-gray-600 text-sm">{getDate(event)}</p>
+                      <p className="text-gray-600 text-sm">{eventDate}</p>
                     </div>
                   </div>
 
-                  {getTime(event) && (
+                  {eventTime && eventTime !== 'TBD' && (
                     <div className="flex items-start gap-3">
                       <Clock size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                       <div>
                         <p className="font-semibold text-gray-900 text-sm">
                           {isPlace ? 'Hours' : 'Time'}
                         </p>
-                        <p className="text-gray-600 text-sm">{getTime(event)}</p>
+                        <p className="text-gray-600 text-sm">{eventTime}</p>
                       </div>
                     </div>
                   )}
@@ -721,7 +677,7 @@ export default function EventDetails() {
                       </h3>
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Calendar size={14} />
-                        <span>{getDate(similar)}</span>
+                        <span>{formatEventDateFull(similar)}</span>
                       </div>
                     </div>
                   </Link>

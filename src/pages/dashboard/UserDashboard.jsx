@@ -5,12 +5,12 @@ import { useAuth } from '../../context/AuthContext';
 import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { formatEventDate, formatEventTime } from '../../utils/dateTimeHelpers';
 
 export default function UserDashboard() {
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
   
-  // ✅ Get searchQuery from parent UserLayout
   const { searchQuery } = useOutletContext();
 
   const [activeCategory, setActiveCategory] = useState('All');
@@ -72,47 +72,29 @@ export default function UserDashboard() {
       allEvents = allEvents.filter(e => e.status === 'published');
       allEvents = filterUpcomingEvents(allEvents);
 
-      console.log(`📊 Total published upcoming events: ${allEvents.length}`);
-      console.log(`👤 User city: "${userCity}"`);
-
-      // City filtering
       if (userCity && userCity.toLowerCase().trim() !== 'lagos') {
         const userCityNormalized = userCity.toLowerCase().split(',')[0].trim();
-        
-        console.log(`🔍 Looking for events EXACTLY in: "${userCityNormalized}"`);
         
         const cityMatchedEvents = allEvents.filter(e => {
           const eventLocation = (e.location || '').toLowerCase();
           const eventCity = eventLocation.split(',')[0].trim();
-          const isMatch = eventCity === userCityNormalized;
-          
-          if (isMatch) {
-            console.log(`Event: "${e.title}" | ✅ MATCH in ${eventCity}`);
-          }
-          
-          return isMatch;
+          return eventCity === userCityNormalized;
         });
 
-        console.log(`✅ Events EXACTLY matching "${userCity}": ${cityMatchedEvents.length}`);
-
         if (cityMatchedEvents.length === 0) {
-          console.log('❌ NO EVENTS FOUND - Showing empty state');
           setHasEventsInUserCity(false);
           setTrendingEvents([]);
           setPickedEvents([]);
           setLoadingEvents(false);
           return;
         } else {
-          console.log(`✅ ${cityMatchedEvents.length} EVENTS FOUND - Showing filtered events`);
           setHasEventsInUserCity(true);
           allEvents = cityMatchedEvents;
         }
       } else {
-        console.log('✅ User in Lagos or default - Showing all events');
         setHasEventsInUserCity(true);
       }
 
-      // Category filtering
       if (activeCategory !== 'All') {
         allEvents = allEvents.filter(e => e.category === activeCategory);
       }
@@ -128,8 +110,6 @@ export default function UserDashboard() {
 
       setTrendingEvents(featured.length > 0 ? featured.slice(0, 3) : allEvents.slice(0, 3));
       setPickedEvents(regular.length > 0 ? regular.slice(0, 6) : allEvents.slice(3, 9));
-
-      console.log(`📈 Final: ${trendingEvents.length} trending, ${pickedEvents.length} picked`);
 
     } catch (err) {
       console.error('Error loading events:', err);
@@ -184,29 +164,8 @@ export default function UserDashboard() {
   };
 
   const isEventSaved = (eventId) => savedEventIds.includes(eventId);
-
   const getImage = event => event.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80';
-
-  const getDate = event => {
-    if (event.date) {
-      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    }
-    if (event.startDate) {
-      const date = event.startDate.toDate ? event.startDate.toDate() : new Date(event.startDate);
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    }
-    if (event.recurringPattern) {
-      return `Every ${event.recurringDay || event.recurringPattern}`;
-    }
-    return 'TBD';
-  };
-
-  const getTime = event => event.time || event.dailyStartTime || event.recurringTime || '';
-
-  const handleViewAllTrending = () => {
-    navigate('/events', { state: { filter: 'trending' } });
-  };
+  const handleViewAllTrending = () => navigate('/events', { state: { filter: 'trending' } });
 
   return (
     <div className="px-6 py-6">
@@ -285,59 +244,63 @@ export default function UserDashboard() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {displayTrending.map(event => (
-                  <div
-                    key={event.id}
-                    onClick={() => handleEventClick(event.id)}
-                    className="relative group cursor-pointer"
-                  >
-                    <div className="relative h-72 rounded-xl overflow-hidden">
-                      <img
-                        src={getImage(event)}
-                        alt={event.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                      />
-
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
-
-                      <button
-                        onClick={e => handleSaveEvent(e, event.id)}
-                        className="absolute top-4 right-4 p-2 bg-white rounded-full hover:bg-gray-100 z-10"
-                      >
-                        <Heart
-                          size={18}
-                          className={isEventSaved(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-700'}
+                {displayTrending.map(event => {
+                  const eventTime = formatEventTime(event);
+                  
+                  return (
+                    <div
+                      key={event.id}
+                      onClick={() => handleEventClick(event.id)}
+                      className="relative group cursor-pointer"
+                    >
+                      <div className="relative h-72 rounded-xl overflow-hidden">
+                        <img
+                          src={getImage(event)}
+                          alt={event.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
                         />
-                      </button>
 
-                      {event.category && (
-                        <span className="absolute top-4 left-4 px-3 py-1 bg-white/90 rounded-full text-xs font-semibold text-cyan-500">
-                          #{event.category}
-                        </span>
-                      )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
 
-                      <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
-                        <h3 className="text-lg font-bold mb-2 line-clamp-2">{event.title}</h3>
+                        <button
+                          onClick={e => handleSaveEvent(e, event.id)}
+                          className="absolute top-4 right-4 p-2 bg-white rounded-full hover:bg-gray-100 z-10"
+                        >
+                          <Heart
+                            size={18}
+                            className={isEventSaved(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-700'}
+                          />
+                        </button>
 
-                        <div className="flex items-center gap-3 text-sm mb-2">
-                          <Calendar size={14} />
-                          <span>{getDate(event)}</span>
-                          {getTime(event) && (
-                            <>
-                              <Clock size={14} />
-                              <span>{getTime(event)}</span>
-                            </>
-                          )}
-                        </div>
+                        {event.category && (
+                          <span className="absolute top-4 left-4 px-3 py-1 bg-white/90 rounded-full text-xs font-semibold text-cyan-500">
+                            #{event.category}
+                          </span>
+                        )}
 
-                        <div className="flex items-center gap-2 text-sm">
-                          <MapPin size={14} />
-                          <span>{event.location || 'Online'}</span>
+                        <div className="absolute bottom-0 left-0 right-0 p-5 text-white">
+                          <h3 className="text-lg font-bold mb-2 line-clamp-2">{event.title}</h3>
+
+                          <div className="flex items-center gap-3 text-sm mb-2">
+                            <Calendar size={14} />
+                            <span>{formatEventDate(event)}</span>
+                            {eventTime && (
+                              <>
+                                <Clock size={14} />
+                                <span>{eventTime}</span>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 text-sm">
+                            <MapPin size={14} />
+                            <span>{event.location || 'Online'}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}

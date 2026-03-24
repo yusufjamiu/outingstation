@@ -1,10 +1,7 @@
-// COMPLETE SubmitEventPage.jsx - WITH TIMEOUT FIX
-// ✅ Fixes infinite "rolling" submit button issue
-
+// COMPLETE SubmitEventPage.jsx - WITH CLOUDINARY UPLOAD
 import React, { useState } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db } from '../firebase';
 
 const SubmitEventPage = () => {
   const [formData, setFormData] = useState({
@@ -25,7 +22,7 @@ const SubmitEventPage = () => {
     operatingHours: '',
     alwaysOpen: false,
     city: '',
-    customCity: '', // ✅ NEW: For "Others" city
+    customCity: '',
     venueName: '',
     address: '',
     mapsLink: '',
@@ -38,8 +35,8 @@ const SubmitEventPage = () => {
     eventImage: null,
     additionalInfo: '',
     agreedToTerms: false,
-    isUniversityEvent: false, // ✅ NEW: Flag for university events
-    universityName: '', // ✅ NEW: University name
+    isUniversityEvent: false,
+    universityName: '',
   });
 
   const [imagePreview, setImagePreview] = useState(null);
@@ -68,6 +65,35 @@ const SubmitEventPage = () => {
     'Twitter Space',
     'Other'
   ];
+
+  const uploadToCloudinary = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+
+    try {
+      console.log('📤 Uploading to Cloudinary...');
+      
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Cloudinary upload failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Cloudinary upload successful!');
+      return data.secure_url;
+    } catch (error) {
+      console.error('❌ Cloudinary upload error:', error);
+      throw error;
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -127,7 +153,6 @@ const SubmitEventPage = () => {
         if (!formData.webinarLink.trim()) e.webinarLink = 'Registration link required';
       }
 
-      // ✅ NEW: Validate university event
       if (formData.isUniversityEvent && !formData.universityName.trim()) {
         e.universityName = 'University name required';
       }
@@ -139,7 +164,6 @@ const SubmitEventPage = () => {
     
     if (!formData.city) e.city = 'City required';
     
-    // ✅ NEW: Validate custom city
     if (formData.city === 'Others' && !formData.customCity.trim()) {
       e.customCity = 'Please specify city';
     }
@@ -173,19 +197,14 @@ const SubmitEventPage = () => {
     try {
       let imageUrl = 'https://via.placeholder.com/800x400/0891b2/ffffff?text=Event+Image';
       
-      // ✅ TRY TO UPLOAD IMAGE WITH 5-SECOND TIMEOUT
       if (formData.eventImage) {
         try {
-          console.log('📤 Attempting image upload...');
+          console.log('📤 Attempting Cloudinary upload...');
           
-          const uploadPromise = (async () => {
-            const imageRef = ref(storage, `event-submissions/${Date.now()}_${formData.eventImage.name}`);
-            await uploadBytes(imageRef, formData.eventImage);
-            return await getDownloadURL(imageRef);
-          })();
+          const uploadPromise = uploadToCloudinary(formData.eventImage);
           
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Upload timeout after 5 seconds')), 5000)
+            setTimeout(() => reject(new Error('Upload timeout after 10 seconds')), 10000)
           );
           
           imageUrl = await Promise.race([uploadPromise, timeoutPromise]);
@@ -201,7 +220,6 @@ const SubmitEventPage = () => {
         ? formData.customCategory.trim()
         : formData.eventCategory;
 
-      // ✅ Determine final city
       const finalCity = formData.city === 'Others' && formData.customCity.trim()
         ? formData.customCity.trim()
         : formData.city;
@@ -223,7 +241,7 @@ const SubmitEventPage = () => {
         endTime: formData.listingType === 'event' ? (formData.endTime || formData.startTime) : null,
         operatingHours: formData.listingType === 'place' ? (formData.alwaysOpen ? 'Always Open' : formData.operatingHours) : null,
         alwaysOpen: formData.listingType === 'place' ? formData.alwaysOpen : false,
-        city: finalCity, // ✅ Uses custom city if "Others"
+        city: finalCity,
         venueName: formData.venueName,
         address: formData.address,
         mapsLink: formData.mapsLink || null,
@@ -235,8 +253,8 @@ const SubmitEventPage = () => {
         externalTicketLink: formData.externalTicketLink || null,
         imageUrl: imageUrl,
         additionalInfo: formData.additionalInfo || null,
-        isUniversityEvent: formData.isUniversityEvent || false, // ✅ NEW
-        universityName: formData.universityName || null, // ✅ NEW
+        isUniversityEvent: formData.isUniversityEvent || false,
+        universityName: formData.universityName || null,
         status: 'pending',
         submittedAt: serverTimestamp(),
       });
@@ -247,9 +265,7 @@ const SubmitEventPage = () => {
     } catch (error) {
       console.error('❌ SUBMISSION ERROR:', error);
       let errorMessage = 'Submission failed. ';
-      if (error.code === 'storage/unauthorized') {
-        errorMessage += 'Storage permission denied.';
-      } else if (error.code === 'permission-denied') {
+      if (error.code === 'permission-denied') {
         errorMessage += 'Firestore permission denied.';
       } else if (error.message) {
         errorMessage += error.message;
@@ -468,7 +484,6 @@ const SubmitEventPage = () => {
                       ))}
                     </div>
 
-                    {/* ✅ NEW: University Event Checkbox */}
                     <div className="mt-4 bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
                       <div className="flex items-start">
                         <input 
@@ -486,7 +501,6 @@ const SubmitEventPage = () => {
                         </div>
                       </div>
 
-                      {/* ✅ NEW: University Name Input */}
                       {formData.isUniversityEvent && (
                         <div className="mt-3">
                           <input
@@ -594,7 +608,6 @@ const SubmitEventPage = () => {
                   </select>
                   {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
                   
-                  {/* ✅ NEW: Custom City Input */}
                   {formData.city === 'Others' && (
                     <div className="mt-3">
                       <input

@@ -10,6 +10,7 @@ import { filterUpcomingEvents } from '../../utils/eventFilters';
 import { db } from '../../firebase';
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
+import { formatEventDate, formatEventTime } from '../../utils/dateTimeHelpers';
 
 export default function GenericCategoryPage() {
   const { slug } = useParams();
@@ -20,14 +21,12 @@ export default function GenericCategoryPage() {
   const [allEvents, setAllEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Filter states
   const [dateFilter, setDateFilter] = useState('any');
   const [locationFilter, setLocationFilter] = useState('all');
   const [priceFilter, setPriceFilter] = useState('any');
 
-  const currentUser = null; // Public user
+  const currentUser = null;
 
-  // Category mapping
   const categoryMap = {
     'business-tech': { name: 'Business & Tech', icon: Briefcase, color: 'bg-blue-500', hasPlaces: false, isReligion: false },
     'art-culture': { name: 'Art & Culture', icon: Palette, color: 'bg-purple-500', hasPlaces: true, isReligion: false },
@@ -60,7 +59,6 @@ export default function GenericCategoryPage() {
         ...doc.data()
       }));
 
-      // Filter published and by category
       const categoryName = currentCategory.name;
       let categoryEvents = eventsData.filter(e => 
         e.status === 'published' && e.category === categoryName
@@ -74,21 +72,17 @@ export default function GenericCategoryPage() {
     setLoading(false);
   };
 
-  // Apply all filters
   const getFilteredEvents = () => {
     let filtered = [...allEvents];
 
-    // Tab filter (events/places)
     if (currentCategory.hasPlaces) {
       filtered = filtered.filter(e => e.subCategory === activeTab);
     }
 
-    // Religion filter
     if (currentCategory.isReligion && religionFilter !== 'all') {
       filtered = filtered.filter(e => e.religionType === religionFilter);
     }
 
-    // Date filter (only for events, not places)
     if (dateFilter !== 'any' && activeTab === 'events') {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -118,14 +112,12 @@ export default function GenericCategoryPage() {
       });
     }
 
-    // Location filter
     if (locationFilter !== 'all') {
       filtered = filtered.filter(e => 
         e.location?.toLowerCase().includes(locationFilter.toLowerCase())
       );
     }
 
-    // Price filter
     if (priceFilter !== 'any') {
       if (priceFilter === 'free') {
         filtered = filtered.filter(e => e.isFree === true);
@@ -151,38 +143,6 @@ export default function GenericCategoryPage() {
     navigate(`/event/${eventId}`);
   };
 
-  // ✅ UPDATED: Handle Places with opening hours
-  const getDate = (event) => {
-    // For places, show availability
-    if (event.subCategory === 'places') {
-      return event.placeAvailability || 'Always Open';
-    }
-    
-    // For events
-    if (event.date) {
-      const date = event.date.toDate ? event.date.toDate() : new Date(event.date);
-      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    }
-    if (event.startDate) {
-      const date = event.startDate.toDate ? event.startDate.toDate() : new Date(event.startDate);
-      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    }
-    return 'TBD';
-  };
-
-  // ✅ UPDATED: Handle Places with opening hours
-  const getTime = (event) => {
-    // For places, show opening hours
-    if (event.subCategory === 'places') {
-      return event.openingTime && event.closingTime 
-        ? `${event.openingTime} - ${event.closingTime}`
-        : '';
-    }
-    
-    // For events
-    return event.time || event.dailyStartTime || event.recurringTime || 'TBD';
-  };
-
   const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80';
 
   return (
@@ -190,7 +150,6 @@ export default function GenericCategoryPage() {
       <Navbar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Header */}
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <div className={`w-14 h-14 sm:w-16 sm:h-16 ${currentCategory.color} rounded-2xl flex items-center justify-center flex-shrink-0`}>
             <CategoryIcon size={28} className="sm:w-8 sm:h-8 text-white" />
@@ -203,7 +162,6 @@ export default function GenericCategoryPage() {
           </div>
         </div>
 
-        {/* Events/Places Tabs */}
         {currentCategory.hasPlaces && (
           <div className="flex gap-2 mb-6 border-b border-gray-200">
             <button
@@ -229,7 +187,6 @@ export default function GenericCategoryPage() {
           </div>
         )}
 
-        {/* Religion Filter */}
         {currentCategory.isReligion && (
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Religion:</label>
@@ -251,7 +208,6 @@ export default function GenericCategoryPage() {
           </div>
         )}
 
-        {/* Filters - Only show date filter for events */}
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
           {activeTab === 'events' && (
             <div className="flex-1 sm:flex-initial">
@@ -301,72 +257,75 @@ export default function GenericCategoryPage() {
           </div>
         </div>
 
-        {/* Loading State */}
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
           </div>
         ) : events.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-            {events.map((event) => (
-              <div 
-                key={event.id}
-                onClick={() => handleEventClick(event.id)}
-                className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
-              >
-                <div className="relative h-48 sm:h-56">
-                  <img 
-                    src={getImage(event)} 
-                    alt={event.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  />
-                  
-                  <div className="absolute top-3 left-3">
-                    <span className={`${currentCategory.color} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
-                      #{currentCategory.name}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={(e) => handleSaveClick(e, event.id)}
-                    className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
-                  >
-                    <Heart size={18} className="sm:w-5 sm:h-5 text-gray-600" />
-                  </button>
-
-                  {event.isFree && (
-                    <div className="absolute bottom-3 right-3">
-                      <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
-                        Free
+            {events.map((event) => {
+              const eventTime = formatEventTime(event);
+              
+              return (
+                <div 
+                  key={event.id}
+                  onClick={() => handleEventClick(event.id)}
+                  className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
+                >
+                  <div className="relative h-48 sm:h-56">
+                    <img 
+                      src={getImage(event)} 
+                      alt={event.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                    
+                    <div className="absolute top-3 left-3">
+                      <span className={`${currentCategory.color} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
+                        #{currentCategory.name}
                       </span>
                     </div>
-                  )}
-                </div>
 
-                <div className="p-4 sm:p-5">
-                  <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
-                    {event.title}
-                  </h3>
-                  
-                  <div className="space-y-2 text-xs sm:text-sm text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <Calendar size={14} />
-                      <span>{getDate(event)}</span>
-                      {getTime(event) && (
-                        <>
-                          <Clock size={14} />
-                          <span>{getTime(event)}</span>
-                        </>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin size={14} />
-                      <span>{event.location || 'Online'}</span>
+                    <button
+                      onClick={(e) => handleSaveClick(e, event.id)}
+                      className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
+                    >
+                      <Heart size={18} className="sm:w-5 sm:h-5 text-gray-600" />
+                    </button>
+
+                    {event.isFree && (
+                      <div className="absolute bottom-3 right-3">
+                        <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
+                          Free
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 sm:p-5">
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
+                      {event.title}
+                    </h3>
+                    
+                    <div className="space-y-2 text-xs sm:text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <Calendar size={14} />
+                        <span>{formatEventDate(event)}</span>
+                        {eventTime && (
+                          <>
+                            <Clock size={14} />
+                            <span>{eventTime}</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin size={14} />
+                        <span>{event.location || 'Online'}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-12">

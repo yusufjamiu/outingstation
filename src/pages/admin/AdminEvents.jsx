@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Menu, Plus, Edit, Trash2, Eye } from 'lucide-react';
+import { Menu, Plus, Edit, Trash2, Eye, Bell } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { isUpcomingEvent } from '../../utils/eventFilters';
+import NotifyUsersModal from '../../components/NotifyUsersModal'; // ✅ ADDED
 
 export default function AdminEvents() {
   const navigate = useNavigate();
@@ -14,6 +15,10 @@ export default function AdminEvents() {
   const [filterTime, setFilterTime] = useState('all'); // NEW: all, upcoming, past
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // ✅ ADDED: Notification modal state
+  const [showNotifyModal, setShowNotifyModal] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
 
   useEffect(() => {
     loadEvents();
@@ -53,6 +58,12 @@ export default function AdminEvents() {
         alert('Error: ' + err.message);
       }
     }
+  };
+
+  // ✅ ADDED: Handle notify button
+  const handleNotifyUpdate = (event) => {
+    setSelectedEvent(event);
+    setShowNotifyModal(true);
   };
 
   const formatSingleDate = (rawDate) => {
@@ -274,7 +285,7 @@ export default function AdminEvents() {
                           <div className="flex gap-2">
                             <button
                               onClick={() => navigate(`/event/${event.id}`)}
-                              className="p-2 text-blue-600"
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
                               title="View"
                             >
                               <Eye size={18} />
@@ -282,15 +293,24 @@ export default function AdminEvents() {
 
                             <button
                               onClick={() => navigate(`/admin/events/edit/${event.id}`)}
-                              className="p-2 text-green-600"
+                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
                               title="Edit"
                             >
                               <Edit size={18} />
                             </button>
 
+                            {/* ✅ ADDED: Notify Button */}
+                            <button
+                              onClick={() => handleNotifyUpdate(event)}
+                              className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition"
+                              title="Notify Users"
+                            >
+                              <Bell size={18} />
+                            </button>
+
                             <button
                               onClick={() => handleDelete(event.id)}
-                              className="p-2 text-red-600"
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
                               title="Delete"
                             >
                               <Trash2 size={18} />
@@ -306,13 +326,25 @@ export default function AdminEvents() {
 
               {filteredEvents.length === 0 && (
                 <div className="text-center py-12 text-gray-500">
-                  No events found matching your filters. Yup
+                  No events found matching your filters.
                 </div>
               )}
             </div>
           )}
         </div>
       </main>
+
+      {/* ✅ ADDED: Notification Modal */}
+      {showNotifyModal && selectedEvent && (
+        <NotifyUsersModal
+          event={selectedEvent}
+          notificationType="update"
+          onClose={() => {
+            setShowNotifyModal(false);
+            setSelectedEvent(null);
+          }}
+        />
+      )}
     </div>
   );
 }
