@@ -32,3 +32,6 @@ firebase.js
 *.njsproj
 *.sln
 *.sw?
+
+# Firebase Functions (contains secrets)
+functions/index.js

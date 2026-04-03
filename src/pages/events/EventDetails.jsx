@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import SEO from '../../components/SEO';
 import { 
   Calendar, Clock, MapPin, DollarSign, Users, Share2, Heart, 
-  ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft, CheckCircle, Navigation
+  ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft, CheckCircle, Navigation, Ticket
 } from 'lucide-react';
 import { doc, getDoc, collection, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -12,6 +12,7 @@ import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import { formatEventDateFull, formatEventTime } from '../../utils/dateTimeHelpers';
+import { PaystackButton } from 'react-paystack';
 
 const openInMaps = (event) => {
   if (event.mapLocation) {
@@ -27,6 +28,230 @@ const openInMaps = (event) => {
   
   const query = encodeURIComponent(location);
   window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+};
+
+// ✅ NEW: Calculate fees
+const calculateServiceFee = (event) => {
+  if (event.serviceFeeType === 'fixed') {
+    return event.serviceFeeAmount || 100;
+  } else if (event.serviceFeeType === 'percentage') {
+    return Math.round((event.ticketPrice || 0) * ((event.serviceFeePercentage || 2) / 100));
+  } else {
+    return 0;
+  }
+};
+
+const calculatePaystackFee = (event) => {
+  const ticketPrice = event.ticketPrice || 0;
+  const serviceFee = calculateServiceFee(event);
+  const subtotal = ticketPrice + serviceFee;
+  return Math.round((subtotal * 0.015) + 100);
+};
+
+const calculateTotal = (event) => {
+  const ticketPrice = event.ticketPrice || 0;
+  const serviceFee = calculateServiceFee(event);
+  const paystackFee = calculatePaystackFee(event);
+  return ticketPrice + serviceFee + paystackFee;
+};
+
+// ✅ NEW: Ticket Purchase Component
+const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
+  const [buyerName, setBuyerName] = useState(currentUser?.displayName || '');
+  const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
+  const [quantity, setQuantity] = useState(1);
+  const [showPaystackButton, setShowPaystackButton] = useState(false);
+
+  const ticketPrice = event.ticketPrice || 0;
+  const serviceFee = calculateServiceFee(event);
+  const paystackFee = calculatePaystackFee(event);
+  const total = calculateTotal(event);
+  const ticketsRemaining = (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
+
+  const paystackConfig = {
+    reference: `OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    email: buyerEmail,
+    amount: total * 100, // Paystack expects amount in kobo
+    publicKey: process.env.REACT_APP_PAYSTACK_PUBLIC_KEY,
+    metadata: {
+      custom_fields: [
+        {
+          display_name: "Event",
+          variable_name: "event_id",
+          value: event.id
+        },
+        {
+          display_name: "Buyer Name",
+          variable_name: "buyer_name",
+          value: buyerName
+        },
+        {
+          display_name: "Ticket Price",
+          variable_name: "ticket_price",
+          value: ticketPrice
+        },
+        {
+          display_name: "Service Fee",
+          variable_name: "service_fee",
+          value: serviceFee
+        },
+        {
+          display_name: "Quantity",
+          variable_name: "quantity",
+          value: quantity
+        }
+      ]
+    }
+  };
+
+  const handleSuccess = (reference) => {
+    console.log('Payment successful!', reference);
+    toast.success('🎉 Payment successful! Check your email for tickets.', { duration: 5000 });
+    // TODO: Firebase function will handle ticket generation
+  };
+
+  const handleClose = () => {
+    toast.error('Payment cancelled');
+  };
+
+  const handleProceedToPayment = () => {
+    if (!currentUser) {
+      toast.error('Please login to purchase tickets');
+      navigate('/login');
+      return;
+    }
+
+    if (!buyerName || !buyerEmail) {
+      toast.error('Please enter your name and email');
+      return;
+    }
+
+    if (quantity < 1) {
+      toast.error('Please select at least 1 ticket');
+      return;
+    }
+
+    if (quantity > ticketsRemaining) {
+      toast.error(`Only ${ticketsRemaining} tickets remaining`);
+      return;
+    }
+
+    setShowPaystackButton(true);
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-6 shadow-sm border-2 border-cyan-100">
+      <div className="flex items-center gap-2 mb-4">
+        <Ticket className="text-cyan-500" size={24} />
+        <h3 className="text-xl font-bold text-gray-900">Purchase Tickets</h3>
+      </div>
+
+      {/* Tickets Remaining */}
+      <div className="bg-cyan-50 rounded-lg p-3 mb-4">
+        <p className="text-sm text-gray-700">
+          <span className="font-semibold">{ticketsRemaining}</span> tickets remaining
+        </p>
+        {ticketsRemaining < 10 && ticketsRemaining > 0 && (
+          <p className="text-xs text-orange-600 mt-1">⚠️ Selling fast!</p>
+        )}
+        {ticketsRemaining === 0 && (
+          <p className="text-xs text-red-600 mt-1">❌ Sold out!</p>
+        )}
+      </div>
+
+      {/* Buyer Information */}
+      <div className="space-y-3 mb-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+          <input
+            type="text"
+            value={buyerName}
+            onChange={(e) => setBuyerName(e.target.value)}
+            placeholder="John Doe"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+          <input
+            type="email"
+            value={buyerEmail}
+            onChange={(e) => setBuyerEmail(e.target.value)}
+            placeholder="john@example.com"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+          <input
+            type="number"
+            value={quantity}
+            onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+            min="1"
+            max={ticketsRemaining}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+          />
+        </div>
+      </div>
+
+      {/* Price Breakdown */}
+      <div className="bg-gray-50 rounded-lg p-4 mb-4">
+        <p className="text-sm font-semibold text-gray-900 mb-2">Price Breakdown:</p>
+        <div className="space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Ticket Price ({quantity}x):</span>
+            <span className="font-medium">₦{(ticketPrice * quantity).toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Service Fee:</span>
+            <span className="font-medium">₦{(serviceFee * quantity).toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Payment Processing:</span>
+            <span className="font-medium">₦{(paystackFee * quantity).toLocaleString()}</span>
+          </div>
+          <div className="border-t pt-2 mt-2 flex justify-between">
+            <span className="font-bold text-gray-900">Total:</span>
+            <span className="font-bold text-cyan-600 text-lg">₦{(total * quantity).toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Payment Button */}
+      {ticketsRemaining > 0 ? (
+        showPaystackButton ? (
+          <PaystackButton
+            {...paystackConfig}
+            text={`Pay ₦${(total * quantity).toLocaleString()}`}
+            onSuccess={handleSuccess}
+            onClose={handleClose}
+            className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition"
+          />
+        ) : (
+          <button
+            onClick={handleProceedToPayment}
+            className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
+          >
+            <Ticket size={20} />
+            Proceed to Payment
+          </button>
+        )
+      ) : (
+        <button
+          disabled
+          className="w-full bg-gray-300 text-gray-500 py-3 rounded-xl font-semibold cursor-not-allowed"
+        >
+          Sold Out
+        </button>
+      )}
+
+      <p className="text-xs text-gray-500 text-center mt-3">
+        🔒 Secure payment powered by Paystack
+      </p>
+    </div>
+  );
 };
 
 const handleRegister = (event, currentUser, navigate) => {
@@ -75,7 +300,55 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
   
-  if (event.isFree || !event.ticketLink || event.ticketLink.trim() === '') {
+  // ✅ UPDATED: Check for OutingStation ticketing
+  if (event.ticketingOption === 'outingstation' && event.ticketingEnabled) {
+    // Scroll to ticket section
+    const ticketSection = document.getElementById('ticket-purchase-section');
+    if (ticketSection) {
+      ticketSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      toast.success('👇 Fill in your details below to purchase tickets');
+    }
+    return;
+  }
+
+  // ✅ UPDATED: Check for external ticketing
+  if (event.ticketingOption === 'external' && event.externalTicketLink) {
+    toast((t) => (
+      <div className="flex flex-col gap-3">
+        <div>
+          <p className="font-semibold">🎟️ External Ticketing</p>
+          <p className="text-sm text-gray-600 mt-1">{event.title}</p>
+          <p className="text-sm font-semibold text-cyan-600 mt-1">
+            Price: ₦{event.price?.toLocaleString()}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              window.open(event.externalTicketLink, '_blank');
+              toast.dismiss(t.id);
+            }}
+            className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
+          >
+            Buy Tickets
+          </button>
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ), { 
+      duration: Infinity,
+      id: 'external-ticket-info'
+    });
+    return;
+  }
+  
+  // Free event or no ticketing
+  if (event.isFree || event.ticketingOption === 'none') {
     toast((t) => (
       <div className="flex flex-col gap-3">
         <div>
@@ -114,38 +387,6 @@ const handleRegister = (event, currentUser, navigate) => {
     });
     return;
   }
-  
-  toast((t) => (
-    <div className="flex flex-col gap-3">
-      <div>
-        <p className="font-semibold">🎟️ Ticket Required</p>
-        <p className="text-sm text-gray-600 mt-1">{event.title}</p>
-        <p className="text-sm font-semibold text-cyan-600 mt-1">
-          Price: ₦{event.price?.toLocaleString()}
-        </p>
-      </div>
-      <div className="flex gap-2">
-        <button
-          onClick={() => {
-            window.open(event.ticketLink, '_blank');
-            toast.dismiss(t.id);
-          }}
-          className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
-        >
-          Buy Tickets
-        </button>
-        <button
-          onClick={() => toast.dismiss(t.id)}
-          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  ), { 
-    duration: Infinity,
-    id: 'paid-event-info'
-  });
 };
 
 const getImage = (event) => {
@@ -313,6 +554,7 @@ export default function EventDetails() {
   const isPlace = event.subCategory === 'places';
   const eventDate = formatEventDateFull(event);
   const eventTime = formatEventTime(event);
+  const hasOutingStationTicketing = event.ticketingOption === 'outingstation' && event.ticketingEnabled;
 
   return (
     <>
@@ -459,6 +701,17 @@ export default function EventDetails() {
                   {event.description || 'No description available.'}
                 </p>
               </div>
+
+              {/* ✅ NEW: Ticket Purchase Section */}
+              {hasOutingStationTicketing && (
+                <div id="ticket-purchase-section" className="mb-6">
+                  <TicketPurchaseSection 
+                    event={event} 
+                    currentUser={currentUser} 
+                    navigate={navigate} 
+                  />
+                </div>
+              )}
 
               {(event.university || event.platform || event.religion) && (
                 <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
@@ -614,7 +867,9 @@ export default function EventDetails() {
                         {isPlace ? 'Entry Fee' : 'Price'}
                       </p>
                       <p className="text-gray-600 text-sm">
-                        {event.isFree ? (
+                        {hasOutingStationTicketing ? (
+                          <span className="font-semibold">₦{event.ticketPrice?.toLocaleString()}</span>
+                        ) : event.isFree ? (
                           <span className="text-emerald-600 font-semibold">Free</span>
                         ) : (
                           <span className="font-semibold">₦{event.price?.toLocaleString() || 'Contact Organizer'}</span>
@@ -630,7 +885,7 @@ export default function EventDetails() {
                     className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
                   >
                     <CheckCircle size={20} />
-                    {isPlace ? 'Get Info' : (event.isFree ? 'Register' : 'Buy Tickets')}
+                    {hasOutingStationTicketing ? 'Buy Tickets' : isPlace ? 'Get Info' : (event.isFree ? 'Register' : 'Buy Tickets')}
                   </button>
 
                   <button 

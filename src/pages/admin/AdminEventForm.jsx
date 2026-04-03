@@ -3,9 +3,9 @@ import { Menu, Save, X, Upload } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { db, auth } from '../../firebase'; // ✅ ADDED auth
+import { db, auth } from '../../firebase';
 import { uploadWithProgress, compressImage } from '../../services/firebaseStorageService';
-import NotifyUsersModal from '../../components/NotifyUsersModal'; // ✅ ADDED
+import NotifyUsersModal from '../../components/NotifyUsersModal';
 
 export default function AdminEventForm() {
   const navigate = useNavigate();
@@ -18,8 +18,19 @@ export default function AdminEventForm() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [formType, setFormType] = useState('event');
-  const [showNotifyModal, setShowNotifyModal] = useState(false); // ✅ ADDED
-  const [createdEvent, setCreatedEvent] = useState(null); // ✅ ADDED
+  const [showNotifyModal, setShowNotifyModal] = useState(false);
+  const [createdEvent, setCreatedEvent] = useState(null);
+  
+  // ✅ TICKETING STATE
+  const [ticketingOption, setTicketingOption] = useState('none');
+  const [ticketPrice, setTicketPrice] = useState('');
+  const [ticketsAvailable, setTicketsAvailable] = useState(100);
+  const [externalTicketLink, setExternalTicketLink] = useState('');
+  
+  // ✅ SERVICE FEE STATE
+  const [serviceFeeType, setServiceFeeType] = useState('fixed');
+  const [serviceFeeAmount, setServiceFeeAmount] = useState(100);
+  const [serviceFeePercentage, setServiceFeePercentage] = useState(2);
   
   const [formData, setFormData] = useState({
     title: '', description: '', category: '',
@@ -33,6 +44,41 @@ export default function AdminEventForm() {
     isFree: false, capacity: '', imageUrl: '', ticketLink: '',
     status: 'published', isFeatured: false, isTrending: false
   });
+
+  // ✅ CALCULATION HELPERS
+  const calculateServiceFee = () => {
+    const price = parseInt(ticketPrice || 0);
+    
+    if (serviceFeeType === 'fixed') {
+      return parseInt(serviceFeeAmount || 0);
+    } else if (serviceFeeType === 'percentage') {
+      return Math.round(price * (parseFloat(serviceFeePercentage || 0) / 100));
+    } else {
+      return 0;
+    }
+  };
+
+  const calculatePaystackFee = () => {
+    const price = parseInt(ticketPrice || 0);
+    const serviceFee = calculateServiceFee();
+    const subtotal = price + serviceFee;
+    
+    // Paystack: 1.5% + ₦100
+    return Math.round((subtotal * 0.015) + 100);
+  };
+
+  const calculateTotal = () => {
+    const price = parseInt(ticketPrice || 0);
+    const serviceFee = calculateServiceFee();
+    const paystackFee = calculatePaystackFee();
+    
+    return price + serviceFee + paystackFee;
+  };
+
+  const calculateOrganizerReceives = () => {
+    const price = parseInt(ticketPrice || 0);
+    return price; // Organizer gets full ticket price
+  };
 
   useEffect(() => {
     loadUniversities();
@@ -78,6 +124,17 @@ export default function AdminEventForm() {
             }
             
             setFormData(prev => ({ ...prev, ...formattedData }));
+            
+            // ✅ Load ticketing data
+            if (data.ticketingOption) {
+              setTicketingOption(data.ticketingOption);
+              setTicketPrice(data.ticketPrice || '');
+              setTicketsAvailable(data.ticketsAvailable || 100);
+              setExternalTicketLink(data.externalTicketLink || '');
+              setServiceFeeType(data.serviceFeeType || 'fixed');
+              setServiceFeeAmount(data.serviceFeeAmount || 100);
+              setServiceFeePercentage(data.serviceFeePercentage || 2);
+            }
             
             if (data.subCategory === 'places') {
               setFormType('place');
@@ -188,6 +245,17 @@ export default function AdminEventForm() {
       return;
     }
 
+    // ✅ Validate ticketing
+    if (ticketingOption === 'outingstation' && !ticketPrice) {
+      alert('Please enter a ticket price');
+      return;
+    }
+
+    if (ticketingOption === 'external' && !externalTicketLink) {
+      alert('Please enter an external ticket link');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -198,27 +266,40 @@ export default function AdminEventForm() {
         date: stringToTimestamp(formData.date),
         startDate: stringToTimestamp(formData.startDate),
         endDate: stringToTimestamp(formData.endDate),
+        
+        // ✅ TICKETING DATA
+        ticketingOption: ticketingOption,
+        ticketingEnabled: ticketingOption === 'outingstation',
+        ticketPrice: ticketingOption === 'outingstation' ? Number(ticketPrice) : 0,
+        ticketsAvailable: ticketingOption === 'outingstation' ? Number(ticketsAvailable) : 0,
+        ticketsSold: 0,
+        
+        // ✅ SERVICE FEE DATA
+        serviceFeeType: serviceFeeType,
+        serviceFeeAmount: serviceFeeType === 'fixed' ? Number(serviceFeeAmount) : 0,
+        serviceFeePercentage: serviceFeeType === 'percentage' ? Number(serviceFeePercentage) : 0,
+        serviceFee: calculateServiceFee(),
+        
+        externalTicketLink: ticketingOption === 'external' ? externalTicketLink : null,
+        
         updatedAt: serverTimestamp()
       };
 
       if (isEdit) {
         await updateDoc(doc(db, 'events', id), eventData);
         
-        // ✅ NEW: Show notification modal for updates too
         setCreatedEvent({
           id: id,
           ...eventData
         });
         setShowNotifyModal(true);
       } else {
-        // ✅ NEW: Add createdBy and other fields for new events
         eventData.createdBy = auth.currentUser?.uid || 'admin';
         eventData.createdAt = serverTimestamp();
         eventData.savedCount = 0;
         
         const docRef = await addDoc(collection(db, 'events'), eventData);
         
-        // ✅ NEW: Show notification modal instead of navigating
         setCreatedEvent({
           id: docRef.id,
           ...eventData
@@ -374,6 +455,234 @@ export default function AdminEventForm() {
                   )}
                 </div>
               </div>
+
+              {/* ✅ TICKETING SECTION - EVENTS ONLY */}
+              {!isPlace && (
+                <div>
+                  <h3 className="text-lg font-bold mb-4">💳 Ticketing Options</h3>
+                  
+                  {/* Option 1: No Ticketing */}
+                  <div className="mb-4">
+                    <label className="flex items-start gap-3 cursor-pointer p-4 border rounded-lg hover:bg-gray-50">
+                      <input
+                        type="radio"
+                        name="ticketingOption"
+                        value="none"
+                        checked={ticketingOption === 'none'}
+                        onChange={(e) => setTicketingOption(e.target.value)}
+                        className="mt-1"
+                      />
+                      <div>
+                        <p className="font-semibold">No Ticketing</p>
+                        <p className="text-sm text-gray-600">Free event or handle tickets yourself</p>
+                      </div>
+                    </label>
+                  </div>
+                  
+                  {/* Option 2: OutingStation Ticketing */}
+                  <div className="mb-4">
+                    <label className="flex items-start gap-3 cursor-pointer p-4 border rounded-lg hover:bg-gray-50">
+                      <input
+                        type="radio"
+                        name="ticketingOption"
+                        value="outingstation"
+                        checked={ticketingOption === 'outingstation'}
+                        onChange={(e) => setTicketingOption(e.target.value)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <p className="font-semibold">OutingStation Ticketing ⭐</p>
+                        <p className="text-sm text-gray-600 mb-2">
+                          Sell tickets directly through OutingStation. Automatic payment, tickets, and check-in.
+                        </p>
+                        
+                        {ticketingOption === 'outingstation' && (
+                          <div className="mt-4 space-y-4 border-l-2 border-cyan-500 pl-4">
+                            
+                            {/* Ticket Price */}
+                            <div>
+                              <label className="block text-sm font-medium mb-1">Ticket Price (₦) *</label>
+                              <input
+                                type="number"
+                                value={ticketPrice}
+                                onChange={(e) => setTicketPrice(e.target.value)}
+                                placeholder="e.g., 5000"
+                                className="w-full px-3 py-2 border rounded-lg"
+                                required={ticketingOption === 'outingstation'}
+                              />
+                            </div>
+                            
+                            {/* Tickets Available */}
+                            <div>
+                              <label className="block text-sm font-medium mb-1">Tickets Available *</label>
+                              <input
+                                type="number"
+                                value={ticketsAvailable}
+                                onChange={(e) => setTicketsAvailable(e.target.value)}
+                                placeholder="e.g., 100"
+                                className="w-full px-3 py-2 border rounded-lg"
+                                required={ticketingOption === 'outingstation'}
+                              />
+                            </div>
+                            
+                            {/* ✅ SERVICE FEE OPTIONS */}
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                              <label className="block text-sm font-medium mb-3">Service Fee Structure</label>
+                              
+                              <div className="space-y-3">
+                                {/* Fixed Fee */}
+                                <div>
+                                  <label className="flex items-center gap-2">
+                                    <input
+                                      type="radio"
+                                      name="serviceFeeType"
+                                      value="fixed"
+                                      checked={serviceFeeType === 'fixed'}
+                                      onChange={(e) => setServiceFeeType(e.target.value)}
+                                    />
+                                    <span className="text-sm font-medium">Fixed Amount (₦)</span>
+                                  </label>
+                                  
+                                  {serviceFeeType === 'fixed' && (
+                                    <input
+                                      type="number"
+                                      value={serviceFeeAmount}
+                                      onChange={(e) => setServiceFeeAmount(e.target.value)}
+                                      placeholder="100"
+                                      className="w-full px-3 py-2 border rounded-lg text-sm mt-2"
+                                    />
+                                  )}
+                                </div>
+                                
+                                {/* Percentage Fee */}
+                                <div>
+                                  <label className="flex items-center gap-2">
+                                    <input
+                                      type="radio"
+                                      name="serviceFeeType"
+                                      value="percentage"
+                                      checked={serviceFeeType === 'percentage'}
+                                      onChange={(e) => setServiceFeeType(e.target.value)}
+                                    />
+                                    <span className="text-sm font-medium">Percentage (%)</span>
+                                  </label>
+                                  
+                                  {serviceFeeType === 'percentage' && (
+                                    <input
+                                      type="number"
+                                      value={serviceFeePercentage}
+                                      onChange={(e) => setServiceFeePercentage(e.target.value)}
+                                      placeholder="2"
+                                      step="0.1"
+                                      className="w-full px-3 py-2 border rounded-lg text-sm mt-2"
+                                    />
+                                  )}
+                                </div>
+                                
+                                {/* No Fee */}
+                                <div>
+                                  <label className="flex items-center gap-2">
+                                    <input
+                                      type="radio"
+                                      name="serviceFeeType"
+                                      value="none"
+                                      checked={serviceFeeType === 'none'}
+                                      onChange={(e) => setServiceFeeType(e.target.value)}
+                                    />
+                                    <span className="text-sm font-medium">No Service Fee</span>
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* ✅ PRICING BREAKDOWN - TRANSPARENT */}
+                            {ticketPrice > 0 && (
+                              <div className="bg-cyan-50 p-4 rounded-lg text-sm">
+                                <p className="font-medium mb-2">💰 Full Pricing Breakdown (Transparent):</p>
+                                
+                                <div className="space-y-1 mb-3">
+                                  <div className="flex justify-between">
+                                    <span>Ticket Price:</span>
+                                    <span>₦{parseInt(ticketPrice || 0).toLocaleString()}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>Service Fee (OutingStation):</span>
+                                    <span>₦{calculateServiceFee().toLocaleString()}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>Payment Processing (Paystack):</span>
+                                    <span>₦{calculatePaystackFee().toLocaleString()}</span>
+                                  </div>
+                                  <div className="border-t border-cyan-200 pt-2 mt-2 flex justify-between font-bold text-base">
+                                    <span>Total User Pays:</span>
+                                    <span className="text-cyan-700">₦{calculateTotal().toLocaleString()}</span>
+                                  </div>
+                                </div>
+                                
+                                <div className="pt-3 border-t border-cyan-200 space-y-1">
+                                  <div className="flex justify-between text-xs">
+                                    <span>💼 Organizer receives:</span>
+                                    <span className="font-semibold text-green-700">₦{calculateOrganizerReceives().toLocaleString()}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span>🏢 OutingStation earns:</span>
+                                    <span className="font-semibold text-blue-700">₦{calculateServiceFee().toLocaleString()}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span>💳 Paystack gets:</span>
+                                    <span className="font-semibold text-gray-700">₦{calculatePaystackFee().toLocaleString()}</span>
+                                  </div>
+                                </div>
+                                
+                                <p className="text-xs text-gray-600 mt-3 italic">
+                                  ✨ All fees shown transparently to users at checkout
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                  
+                  {/* Option 3: External Ticketing */}
+                  <div className="mb-4">
+                    <label className="flex items-start gap-3 cursor-pointer p-4 border rounded-lg hover:bg-gray-50">
+                      <input
+                        type="radio"
+                        name="ticketingOption"
+                        value="external"
+                        checked={ticketingOption === 'external'}
+                        onChange={(e) => setTicketingOption(e.target.value)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <p className="font-semibold">External Ticketing Link</p>
+                        <p className="text-sm text-gray-600 mb-2">
+                          Use Eventbrite, your own website, or another ticketing platform
+                        </p>
+                        
+                        {ticketingOption === 'external' && (
+                          <div className="mt-4 border-l-2 border-gray-500 pl-4">
+                            <label className="block text-sm font-medium mb-1">Ticket Link (URL) *</label>
+                            <input
+                              type="url"
+                              value={externalTicketLink}
+                              onChange={(e) => setExternalTicketLink(e.target.value)}
+                              placeholder="https://eventbrite.com/your-event or https://yourwebsite.com/tickets"
+                              className="w-full px-3 py-2 border rounded-lg"
+                              required={ticketingOption === 'external'}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Users will be redirected to this link to buy tickets
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
 
               {/* Schedule - EVENTS ONLY */}
               {!isPlace ? (
@@ -584,15 +893,17 @@ export default function AdminEventForm() {
                   </label>
 
                   {!formData.isFree && (
-                    <input type="number" name="price" value={formData.price} onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder={isPlace ? 'Average price / Entry fee in ₦' : 'Price in ₦'} />
-                  )}
-
-                  {!isPlace && (
-                    <input type="url" name="ticketLink" value={formData.ticketLink} onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
-                      placeholder="Ticket purchase link (optional)" />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Display Price (for event card) *
+                      </label>
+                      <input type="number" name="price" value={formData.price} onChange={handleChange}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                        placeholder={isPlace ? 'Average price / Entry fee in ₦' : 'Price in ₦'} />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {isPlace ? 'Average cost shown on event listings' : 'General price shown on event card (actual ticket pricing set in Ticketing Options above)'}
+                      </p>
+                    </div>
                   )}
 
                   <input type="number" name="capacity" value={formData.capacity} onChange={handleChange}
@@ -706,7 +1017,7 @@ export default function AdminEventForm() {
         </div>
       </main>
 
-      {/* ✅ Notification Modal */}
+      {/* Notification Modal */}
       {showNotifyModal && createdEvent && (
         <NotifyUsersModal 
           event={createdEvent}

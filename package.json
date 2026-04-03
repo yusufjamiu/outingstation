@@ -14,13 +14,16 @@
   },
   "dependencies": {
     "firebase": "^12.8.0",
+    "firebase-admin": "^13.7.0",
     "gh-pages": "^6.3.0",
     "lucide-react": "^0.562.0",
+    "nodemailer": "^8.0.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-helmet": "^6.1.0",
     "react-hot-toast": "^2.6.0",
     "react-icons": "^5.5.0",
+    "react-paystack": "^6.0.0",
     "react-router-dom": "^7.12.0"
   },
   "devDependencies": {
