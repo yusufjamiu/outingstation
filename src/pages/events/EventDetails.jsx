@@ -72,7 +72,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     reference: `OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     email: buyerEmail,
     amount: total * 100, // Paystack expects amount in kobo
-    publicKey: process.env.REACT_APP_PAYSTACK_PUBLIC_KEY,
+    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
     metadata: {
       custom_fields: [
         {

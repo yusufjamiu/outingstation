@@ -7,8 +7,12 @@ import admin from 'firebase-admin';
 
 // Initialize Firebase Admin (only once)
 if (!admin.apps.length) {
+  // Use environment variables for Vercel
+  const projectId = process.env.FIREBASE_PROJECT_ID || 'outingstation-app';
+  
   admin.initializeApp({
-    projectId: process.env.FIREBASE_PROJECT_ID,
+    projectId: projectId,
+    databaseURL: `https://${projectId}.firebaseio.com`
   });
 }
 
