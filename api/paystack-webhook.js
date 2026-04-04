@@ -1,22 +1,8 @@
 // api/paystack-webhook.js
-// Vercel Serverless Function for Paystack Webhook
+// Vercel Serverless Function - Using Firebase REST API (No Admin SDK needed!)
 
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
-import admin from 'firebase-admin';
-
-// Initialize Firebase Admin (only once)
-if (!admin.apps.length) {
-  // Use environment variables for Vercel
-  const projectId = process.env.FIREBASE_PROJECT_ID || 'outingstation-app';
-  
-  admin.initializeApp({
-    projectId: projectId,
-    databaseURL: `https://${projectId}.firebaseio.com`
-  });
-}
-
-const db = admin.firestore();
 
 // Helper: Generate ticket ID
 function generateTicketId() {
@@ -26,7 +12,7 @@ function generateTicketId() {
 // Helper: Format event date
 function formatEventDate(event) {
   if (event.eventDuration === 'single' && event.date) {
-    const date = event.date.toDate();
+    const date = new Date(event.date);
     return date.toLocaleDateString('en-US', { 
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
     });
@@ -143,16 +129,37 @@ export default async function handler(req, res) {
 
     console.log('Payment successful:', paymentData.reference);
 
-    // Get event details from Firestore
-    const eventRef = db.collection('events').doc(metadata.event_id);
-    const eventDoc = await eventRef.get();
+    // Get event details from Firestore using REST API
+    const eventId = metadata.event_id;
+    const projectId = process.env.FIREBASE_PROJECT_ID || 'outingstation-app';
+    
+    const eventResponse = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/events/${eventId}`,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
 
-    if (!eventDoc.exists) {
-      console.error('Event not found:', metadata.event_id);
+    if (!eventResponse.ok) {
+      console.error('Event not found:', eventId);
       return res.status(404).json({ error: 'Event not found' });
     }
 
-    const eventData = eventDoc.data();
+    const eventDoc = await eventResponse.json();
+    const eventData = {
+      id: eventId,
+      title: eventDoc.fields.title?.stringValue || '',
+      address: eventDoc.fields.address?.stringValue || '',
+      location: eventDoc.fields.location?.stringValue || '',
+      eventDuration: eventDoc.fields.eventDuration?.stringValue || '',
+      date: eventDoc.fields.date?.timestampValue || '',
+      time: eventDoc.fields.time?.stringValue || '',
+      openingTime: eventDoc.fields.openingTime?.stringValue || '',
+      closingTime: eventDoc.fields.closingTime?.stringValue || '',
+      placeAvailability: eventDoc.fields.placeAvailability?.stringValue || '',
+      ticketsSold: parseInt(eventDoc.fields.ticketsSold?.integerValue || '0')
+    };
 
     // Generate ticket
     const ticketId = generateTicketId();
@@ -168,20 +175,58 @@ export default async function handler(req, res) {
       paystackFee: Math.round((paymentData.amount / 100) * 0.015 + 100),
       totalPaid: paymentData.amount / 100,
       paymentReference: paymentData.reference,
-      purchasedAt: admin.firestore.FieldValue.serverTimestamp(),
+      purchasedAt: new Date().toISOString(),
       checkedIn: false,
       eventDate: formatEventDate(eventData),
       eventTime: formatEventTime(eventData),
       status: 'valid'
     };
 
-    // Save ticket to Firestore
-    await db.collection('tickets').doc(ticketId).set(ticketData);
+    // Save ticket to Firestore using REST API
+    const ticketPayload = {
+      fields: {
+        ticketId: { stringValue: ticketData.ticketId },
+        eventId: { stringValue: ticketData.eventId },
+        eventTitle: { stringValue: ticketData.eventTitle },
+        buyerName: { stringValue: ticketData.buyerName },
+        buyerEmail: { stringValue: ticketData.buyerEmail },
+        quantity: { integerValue: ticketData.quantity.toString() },
+        ticketPrice: { integerValue: ticketData.ticketPrice.toString() },
+        serviceFee: { integerValue: ticketData.serviceFee.toString() },
+        paystackFee: { integerValue: ticketData.paystackFee.toString() },
+        totalPaid: { integerValue: ticketData.totalPaid.toString() },
+        paymentReference: { stringValue: ticketData.paymentReference },
+        purchasedAt: { timestampValue: ticketData.purchasedAt },
+        checkedIn: { booleanValue: false },
+        eventDate: { stringValue: ticketData.eventDate },
+        eventTime: { stringValue: ticketData.eventTime },
+        status: { stringValue: 'valid' }
+      }
+    };
+
+    await fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/tickets/${ticketId}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ticketPayload)
+      }
+    );
 
     // Update event tickets sold count
-    await eventRef.update({
-      ticketsSold: admin.firestore.FieldValue.increment(ticketData.quantity)
-    });
+    const newTicketsSold = eventData.ticketsSold + ticketData.quantity;
+    await fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/events/${eventId}?updateMask.fieldPaths=ticketsSold`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            ticketsSold: { integerValue: newTicketsSold.toString() }
+          }
+        })
+      }
+    );
 
     // Send email
     const transporter = nodemailer.createTransport({
