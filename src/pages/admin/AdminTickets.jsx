@@ -34,6 +34,7 @@ export default function AdminTickets() {
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState([]);
   const [expandedEvent, setExpandedEvent] = useState(null);
+  const [eventFilter, setEventFilter] = useState('recent'); // ← NEW: recent, archived, all
   const [stats, setStats] = useState({
     totalEvents: 0,
     totalTicketsSold: 0,
@@ -206,6 +207,40 @@ export default function AdminTickets() {
     toast.success('✅ Admin export downloaded!');
   };
 
+  // ✅ FILTER EVENTS BY DATE
+  const getFilteredEvents = () => {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+
+    return events.filter(event => {
+      // Get event date (try different fields)
+      let eventDate = null;
+      
+      if (event.endDate?.seconds) {
+        eventDate = new Date(event.endDate.seconds * 1000);
+      } else if (event.startDate?.seconds) {
+        eventDate = new Date(event.startDate.seconds * 1000);
+      } else if (event.date?.seconds) {
+        eventDate = new Date(event.date.seconds * 1000);
+      }
+
+      if (!eventDate) return true; // Show if no date found
+
+      if (eventFilter === 'recent') {
+        // Show upcoming events + events from last 30 days
+        return eventDate >= thirtyDaysAgo;
+      } else if (eventFilter === 'archived') {
+        // Show events older than 30 days
+        return eventDate < thirtyDaysAgo;
+      } else {
+        // Show all events
+        return true;
+      }
+    });
+  };
+
+  const filteredEvents = getFilteredEvents();
+
   return (
     <div className="flex h-screen bg-gray-50">
       <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -304,18 +339,36 @@ export default function AdminTickets() {
 
             {/* Events List */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900">All Ticketed Events</h2>
+                
+                {/* ✅ FILTER DROPDOWN */}
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Show:</label>
+                  <select
+                    value={eventFilter}
+                    onChange={(e) => setEventFilter(e.target.value)}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                  >
+                    <option value="recent">📅 Upcoming & Recent</option>
+                    <option value="archived">📦 Archived (30+ days old)</option>
+                    <option value="all">📊 All Events</option>
+                  </select>
+                </div>
               </div>
 
-              {events.length === 0 ? (
+              {filteredEvents.length === 0 ? (
                 <div className="px-6 py-12 text-center text-gray-500">
                   <Ticket size={48} className="mx-auto mb-4 text-gray-300" />
-                  <p>No events with OutingStation ticketing yet</p>
+                  <p>
+                    {eventFilter === 'recent' && 'No upcoming or recent events with ticketing'}
+                    {eventFilter === 'archived' && 'No archived events'}
+                    {eventFilter === 'all' && 'No events with OutingStation ticketing yet'}
+                  </p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-200">
-                  {events.map((event) => (
+                  {filteredEvents.map((event) => (
                     <div key={event.id} className="hover:bg-gray-50 transition">
                       {/* Event Row */}
                       <div className="px-6 py-4">
