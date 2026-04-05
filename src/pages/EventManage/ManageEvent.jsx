@@ -363,8 +363,8 @@ export default function ManageEvent() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-sm font-semibold text-gray-900">
-                            ₦{ticket.totalPaid?.toLocaleString()}
-                          </span>
+                            ₦{((ticket.ticketPrice || 0) * (ticket.quantity || 1)).toLocaleString()}
+                            </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {ticket.purchasedAt?.seconds 
