@@ -42,6 +42,9 @@ import WebinarEvents from './pages/dashboard/WebinarEvents';
 import CategoryBrowse from './pages/dashboard/CategoryBrowse';
 import CampusEvents from './pages/dashboard/CampusEvents';
 
+// Event Management (NEW - for organizers with secret link)
+import ManageEvent from './pages/EventManage/ManageEvent';
+
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -83,6 +86,9 @@ function App() {
               <Route path="/about" element={<AboutUs />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/submit-event" element={<SubmitEventPage />} />
+
+              {/* ✅ NEW: Event Management Route (Public - uses secret link) */}
+              <Route path="/manage/:manageKey" element={<ManageEvent />} />
 
               {/* ✅ USER DASHBOARD ROUTES - ALL WRAPPED IN UserLayout */}
               {/* UserLayout provides: Navbar + Sidebar + Notifications for all child routes */}

@@ -6,6 +6,14 @@ import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, T
 import { db, auth } from '../../firebase';
 import { uploadWithProgress, compressImage } from '../../services/firebaseStorageService';
 import NotifyUsersModal from '../../components/NotifyUsersModal';
+import ManageLinkModal from '../../components/ManageLinkModal';
+
+// ✅ Helper: Generate random manage key for event ticketing
+const generateManageKey = () => {
+  return Array.from({length: 32}, () => 
+    Math.floor(Math.random() * 16).toString(16)
+  ).join('');
+};
 
 export default function AdminEventForm() {
   const navigate = useNavigate();
@@ -19,6 +27,7 @@ export default function AdminEventForm() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [formType, setFormType] = useState('event');
   const [showNotifyModal, setShowNotifyModal] = useState(false);
+  const [showManageLinkModal, setShowManageLinkModal] = useState(false);
   const [createdEvent, setCreatedEvent] = useState(null);
   
   // ✅ TICKETING STATE
@@ -31,6 +40,7 @@ export default function AdminEventForm() {
   const [serviceFeeType, setServiceFeeType] = useState('fixed');
   const [serviceFeeAmount, setServiceFeeAmount] = useState(100);
   const [serviceFeePercentage, setServiceFeePercentage] = useState(2);
+  
   
   const [formData, setFormData] = useState({
     title: '', description: '', category: '',
@@ -273,6 +283,11 @@ export default function AdminEventForm() {
         ticketPrice: ticketingOption === 'outingstation' ? Number(ticketPrice) : 0,
         ticketsAvailable: ticketingOption === 'outingstation' ? Number(ticketsAvailable) : 0,
         ticketsSold: 0,
+        
+        // ✅ AUTO-GENERATE MANAGE KEY for OutingStation ticketing (only on create, not edit)
+        ...(ticketingOption === 'outingstation' && !isEdit && {
+          manageKey: generateManageKey()
+        }),
         
         // ✅ SERVICE FEE DATA
         serviceFeeType: serviceFeeType,
@@ -1018,16 +1033,32 @@ export default function AdminEventForm() {
       </main>
 
       {/* Notification Modal */}
-      {showNotifyModal && createdEvent && (
-        <NotifyUsersModal 
-          event={createdEvent}
-          notificationType={isEdit ? 'update' : 'new'}
-          onClose={() => {
-            setShowNotifyModal(false);
-            navigate('/admin/events');
-          }}
-        />
-      )}
+{showNotifyModal && createdEvent && (
+  <NotifyUsersModal 
+    event={createdEvent}
+    notificationType={isEdit ? 'update' : 'new'}
+    onClose={() => {
+      setShowNotifyModal(false);
+      // Show manage link modal if event has ticketing
+      if (createdEvent.manageKey) {
+        setShowManageLinkModal(true);
+      } else {
+        navigate('/admin/events');
+      }
+    }}
+  />
+)}
+
+{/* Manage Link Modal - Shows after NotifyUsersModal */}
+{showManageLinkModal && createdEvent && createdEvent.manageKey && (
+  <ManageLinkModal 
+    event={createdEvent}
+    onClose={() => {
+      setShowManageLinkModal(false);
+      navigate('/admin/events');
+    }}
+  />
+)}
     </div>
   );
 }
