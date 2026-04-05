@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import Navbar from '../../components/Navbar';
+import PublicNavbar from '../../components/PublicNavbar';
 import Footer from '../../components/Footer';
 import { formatEventDateFull, formatEventTime } from '../../utils/dateTimeHelpers';
 
@@ -161,7 +161,7 @@ export default function ManageEvent() {
     return (
       <>
         <div className="min-h-screen bg-gray-50">
-          <Navbar />
+          <PublicNavbar />
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
           </div>
