@@ -280,6 +280,7 @@ export default function AdminEventForm() {
         // ✅ TICKETING DATA
         ticketingOption: ticketingOption,
         ticketingEnabled: ticketingOption === 'outingstation',
+        hasOutingStationTicketing: ticketingOption === 'outingstation',
         ticketPrice: ticketingOption === 'outingstation' ? Number(ticketPrice) : 0,
         ticketsAvailable: ticketingOption === 'outingstation' ? Number(ticketsAvailable) : 0,
         ticketsSold: 0,
