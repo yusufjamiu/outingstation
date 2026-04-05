@@ -53,6 +53,7 @@ import AdminEventForm from './pages/admin/AdminEventForm';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminUniversities from './pages/admin/Adminuniversities';
+import AdminTickets from './pages/admin/AdminTickets';
 import AdminSavedEventsAnalytics from './pages/admin/AdminSavedEventsAnalytics';
 import EventSubmissionsPage from './pages/admin/EventSubmissionsPage';
 import AdminNotifications from './pages/admin/AdminNotifications';
@@ -112,6 +113,7 @@ function App() {
               <Route path="/admin/users" element={<ProtectedAdminRoute><AdminUsers /></ProtectedAdminRoute>} />
               <Route path="/admin/event-submissions" element={<EventSubmissionsPage />} />
               <Route path="/admin/categories" element={<ProtectedAdminRoute><AdminCategories /></ProtectedAdminRoute>} />
+              <Route path="/admin/tickets" element={<ProtectedAdminRoute><AdminTickets /></ProtectedAdminRoute>} />
               <Route path="/admin/universities" element={<ProtectedAdminRoute><AdminUniversities /></ProtectedAdminRoute>} />
               <Route path="/admin/notifications" element={<ProtectedAdminRoute><AdminNotifications /></ProtectedAdminRoute>} />
               <Route path="/admin/saved-events-analytics" element={<ProtectedAdminRoute><AdminSavedEventsAnalytics /></ProtectedAdminRoute>} />

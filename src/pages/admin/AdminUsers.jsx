@@ -1,137 +1,217 @@
 import { useState, useEffect } from 'react';
-import { Menu, Search, Edit, Trash2, Shield, Ban, CheckCircle, X, Save } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  doc, 
+  updateDoc,
+  orderBy 
+} from 'firebase/firestore';
+import { db } from '../../firebase';
+import toast from 'react-hot-toast';
+import { 
+  Ticket, 
+  DollarSign, 
+  TrendingUp, 
+  Calendar,
+  Copy,
+  RefreshCw,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  CheckCircle,
+  Users,
+  Menu
+} from 'lucide-react';
+import { formatEventDateFull } from '../../utils/dateTimeHelpers';
 import { AdminSidebar } from '../../components/AdminSidebar';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { db, functions } from '../../firebase';
-import { httpsCallable } from 'firebase/functions';
 
-export default function AdminUsers() {
+export default function AdminTickets() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterRole, setFilterRole] = useState('all');
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingUser, setEditingUser] = useState(null);
-  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [formData, setFormData] = useState({ name: '', phone: '', city: '', role: 'user', status: 'active' });
+  const [events, setEvents] = useState([]);
+  const [expandedEvent, setExpandedEvent] = useState(null);
+  const [stats, setStats] = useState({
+    totalEvents: 0,
+    totalTicketsSold: 0,
+    totalRevenue: 0,
+    serviceFees: 0,
+    paystackFees: 0,
+    organizerRevenue: 0
+  });
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => {
+    loadTicketedEvents();
+  }, []);
 
-  const loadUsers = async () => {
+  const loadTicketedEvents = async () => {
     try {
       setLoading(true);
-      const snapshot = await getDocs(collection(db, 'users'));
-      const usersData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setUsers(usersData);
+
+      // Get all events with OutingStation ticketing
+      const eventsRef = collection(db, 'events');
+      const q = query(
+        eventsRef, 
+        where('hasOutingStationTicketing', '==', true),
+        orderBy('startDate', 'desc')
+      );
+      const eventsSnapshot = await getDocs(q);
+
+      const eventsData = await Promise.all(
+        eventsSnapshot.docs.map(async (eventDoc) => {
+          const eventData = { id: eventDoc.id, ...eventDoc.data() };
+
+          // Get tickets for this event
+          const ticketsRef = collection(db, 'tickets');
+          const ticketsQuery = query(ticketsRef, where('eventId', '==', eventDoc.id));
+          const ticketsSnapshot = await getDocs(ticketsQuery);
+
+          const ticketsData = ticketsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+
+          // Calculate event stats
+          const ticketsSold = ticketsData.reduce((sum, t) => sum + (t.quantity || 1), 0);
+          const checkedIn = ticketsData.filter(t => t.checkedIn).reduce((sum, t) => sum + (t.quantity || 1), 0);
+          
+          // Revenue breakdown
+          const organizerRevenue = ticketsData.reduce((sum, t) => {
+            return sum + ((t.ticketPrice || 0) * (t.quantity || 1));
+          }, 0);
+
+          const serviceFees = ticketsData.reduce((sum, t) => {
+            return sum + ((t.serviceFee || 0) * (t.quantity || 1));
+          }, 0);
+
+          const paystackFees = ticketsData.reduce((sum, t) => {
+            return sum + ((t.paystackFee || 0) * (t.quantity || 1));
+          }, 0);
+
+          const totalRevenue = organizerRevenue + serviceFees + paystackFees;
+
+          return {
+            ...eventData,
+            ticketsSold,
+            checkedIn,
+            organizerRevenue,
+            serviceFees,
+            paystackFees,
+            totalRevenue,
+            ticketsData
+          };
+        })
+      );
+
+      setEvents(eventsData);
+
+      // Calculate overall stats
+      const overallStats = eventsData.reduce((acc, event) => ({
+        totalEvents: acc.totalEvents + 1,
+        totalTicketsSold: acc.totalTicketsSold + event.ticketsSold,
+        totalRevenue: acc.totalRevenue + event.totalRevenue,
+        serviceFees: acc.serviceFees + event.serviceFees,
+        paystackFees: acc.paystackFees + event.paystackFees,
+        organizerRevenue: acc.organizerRevenue + event.organizerRevenue
+      }), {
+        totalEvents: 0,
+        totalTicketsSold: 0,
+        totalRevenue: 0,
+        serviceFees: 0,
+        paystackFees: 0,
+        organizerRevenue: 0
+      });
+
+      setStats(overallStats);
+
     } catch (err) {
-      console.error('Error loading users:', err);
+      console.error('Error loading ticketed events:', err);
+      toast.error('Failed to load ticketed events');
     }
     setLoading(false);
   };
 
-  const handleToggleStatus = async (userId, currentStatus) => {
-    const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
+  const copyManageLink = (manageKey) => {
+    const link = `${window.location.origin}/manage/${manageKey}`;
+    navigator.clipboard.writeText(link);
+    toast.success('📋 Manage link copied!');
+  };
+
+  const regenerateManageKey = async (eventId) => {
+    if (!confirm('Are you sure? This will invalidate the old link and anyone using it will lose access.')) {
+      return;
+    }
+
     try {
-      await updateDoc(doc(db, 'users', userId), { status: newStatus });
-      setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u));
-    } catch (err) { 
-      alert('Error: ' + err.message); 
-    }
-  };
+      const newManageKey = Array.from({length: 32}, () => 
+        Math.floor(Math.random() * 16).toString(16)
+      ).join('');
 
-  // ✅ FIXED: Changed userId to uid parameter
-  const handleDeleteUser = async (userId, userName) => {
-    if (window.confirm(`⚠️ PERMANENT DELETION\n\nAre you sure you want to permanently delete ${userName}?\n\nThis will:\n• Delete their Firebase Auth account\n• Delete their user profile\n\nThis action CANNOT be undone!`)) {
-      try {
-        setLoading(true);
-        
-        // ✅ Call Cloud Function with correct parameter name: uid (not userId)
-        const deleteUserFunc = httpsCallable(functions, 'deleteUser');
-        const result = await deleteUserFunc({ uid: userId });
-        
-        // ✅ Remove from local state
-        setUsers(users.filter(u => u.id !== userId));
-        
-        // ✅ Show success message
-        alert(`✅ ${result.data.message}`);
-        
-        setLoading(false);
-      } catch (err) {
-        setLoading(false);
-        console.error('Delete error:', err);
-        
-        // ✅ Better error messages
-        if (err.code === 'functions/permission-denied') {
-          alert('❌ Permission denied: Only admins can delete users');
-        } else if (err.code === 'functions/invalid-argument') {
-          alert('❌ Invalid request');
-        } else if (err.code === 'functions/unauthenticated') {
-          alert('❌ You must be logged in to delete users');
-        } else {
-          alert('❌ Error deleting user: ' + err.message);
-        }
-      }
-    }
-  };
-
-  const handleOpenEdit = (user) => {
-    setEditingUser(user);
-    setFormData({ 
-      name: user.name || '', 
-      phone: user.phone || '', 
-      city: user.city || '', 
-      role: user.role || 'user', 
-      status: user.status || 'active' 
-    });
-    setShowEditModal(true);
-  };
-
-  const handleSaveEdit = async (e) => {
-    e.preventDefault();
-    try {
-      await updateDoc(doc(db, 'users', editingUser.id), { 
-        ...formData, 
-        updatedAt: new Date() 
+      const eventRef = doc(db, 'events', eventId);
+      await updateDoc(eventRef, {
+        manageKey: newManageKey
       });
-      setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...formData } : u));
-      setShowEditModal(false);
-      alert('✅ User updated successfully!');
-    } catch (err) { 
-      alert('Error: ' + err.message); 
+
+      // Update local state
+      setEvents(prev => prev.map(event => 
+        event.id === eventId 
+          ? { ...event, manageKey: newManageKey }
+          : event
+      ));
+
+      toast.success('✅ New manage link generated!');
+    } catch (err) {
+      console.error('Error regenerating manage key:', err);
+      toast.error('Failed to regenerate manage link');
     }
   };
 
-  // Handle Firestore Timestamp
-  const formatDate = (user) => {
-    if (user.createdAt?.toDate) {
-      return user.createdAt.toDate().toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric' 
-      });
-    } else if (user.createdAt?.seconds) {
-      const date = new Date(user.createdAt.seconds * 1000);
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric' 
-      });
-    }
-    return 'N/A';
+  const toggleEventDetails = (eventId) => {
+    setExpandedEvent(expandedEvent === eventId ? null : eventId);
   };
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch =
-      (user.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (user.email || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filterRole === 'all' || (user.role || 'user') === filterRole;
-    return matchesSearch && matchesFilter;
-  });
+  const exportEventCSV = (event) => {
+    const headers = ['Ticket ID', 'Buyer Name', 'Email', 'Quantity', 'Ticket Price', 'Service Fee', 'Paystack Fee', 'Total Paid', 'Purchase Date', 'Checked In'];
+    const rows = event.ticketsData.map(ticket => [
+      ticket.ticketId,
+      ticket.buyerName,
+      ticket.buyerEmail,
+      ticket.quantity || 1,
+      `₦${((ticket.ticketPrice || 0) * (ticket.quantity || 1)).toLocaleString()}`,
+      `₦${((ticket.serviceFee || 0) * (ticket.quantity || 1)).toLocaleString()}`,
+      `₦${((ticket.paystackFee || 0) * (ticket.quantity || 1)).toLocaleString()}`,
+      `₦${ticket.totalPaid?.toLocaleString()}`,
+      ticket.purchasedAt?.seconds 
+        ? new Date(ticket.purchasedAt.seconds * 1000).toLocaleDateString()
+        : 'N/A',
+      ticket.checkedIn ? 'Yes' : 'No'
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${event.title}-admin-export-${Date.now()}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+
+    toast.success('✅ Admin export downloaded!');
+  };
 
   return (
     <div className="flex h-screen bg-gray-50">
       <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      
       <main className="flex-1 overflow-auto">
+        {/* Header */}
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -142,12 +222,12 @@ export default function AdminUsers() {
                 <Menu size={24} />
               </button>
               <div>
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Manage Users</h2>
-                <p className="text-sm text-gray-500">{users.length} registered users</p>
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Ticketing Dashboard</h2>
+                <p className="text-sm text-gray-500">Manage all events with OutingStation ticketing</p>
               </div>
             </div>
             <button 
-              onClick={loadUsers} 
+              onClick={loadTicketedEvents} 
               className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
             >
               ↻ Refresh
@@ -155,269 +235,253 @@ export default function AdminUsers() {
           </div>
         </header>
 
-        <div className="p-4 sm:p-6 lg:p-8">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-                <input 
-                  type="text" 
-                  placeholder="Search by name or email..." 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none" 
-                />
-              </div>
-              <select 
-                value={filterRole} 
-                onChange={(e) => setFilterRole(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-              >
-                <option value="all">All Roles</option>
-                <option value="user">Users</option>
-                <option value="organizer">Organizers</option>
-                <option value="admin">Admins</option>
-              </select>
-            </div>
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
           </div>
+        ) : (
+          <div className="p-4 sm:p-6 lg:p-8">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-3 mb-2">
+                  <Calendar className="text-cyan-500" size={24} />
+                  <p className="text-sm text-gray-600">Ticketed Events</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.totalEvents}</p>
+                <p className="text-xs text-gray-500 mt-1">with OutingStation ticketing</p>
+              </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Total Users</p>
-                  <p className="text-2xl font-bold text-gray-900">{users.length}</p>
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-3 mb-2">
+                  <Ticket className="text-purple-500" size={24} />
+                  <p className="text-sm text-gray-600">Tickets Sold</p>
                 </div>
-                <Shield size={40} className="text-blue-500" />
+                <p className="text-3xl font-bold text-gray-900">{stats.totalTicketsSold.toLocaleString()}</p>
+                <p className="text-xs text-gray-500 mt-1">across all events</p>
               </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Active Users</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {users.filter(u => !u.status || u.status === 'active').length}
-                  </p>
-                </div>
-                <CheckCircle size={40} className="text-green-500" />
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Suspended</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {users.filter(u => u.status === 'suspended').length}
-                  </p>
-                </div>
-                <Ban size={40} className="text-red-500" />
-              </div>
-            </div>
-          </div>
 
-          {loading ? (
-            <div className="flex justify-center py-20">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-3 mb-2">
+                  <TrendingUp className="text-green-500" size={24} />
+                  <p className="text-sm text-gray-600">Your Revenue</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">₦{stats.serviceFees.toLocaleString()}</p>
+                <p className="text-xs text-gray-500 mt-1">service fees collected</p>
+              </div>
+
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-3 mb-2">
+                  <DollarSign className="text-blue-500" size={24} />
+                  <p className="text-sm text-gray-600">Total Revenue</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">₦{stats.totalRevenue.toLocaleString()}</p>
+                <p className="text-xs text-gray-500 mt-1">all fees included</p>
+              </div>
             </div>
-          ) : (
+
+            {/* Revenue Breakdown Card */}
+            <div className="bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl p-6 shadow-lg mb-8 text-white">
+              <h2 className="text-xl font-bold mb-4">💰 Revenue Breakdown</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+                  <p className="text-sm text-white/80 mb-1">Organizers Get</p>
+                  <p className="text-2xl font-bold">₦{stats.organizerRevenue.toLocaleString()}</p>
+                  <p className="text-xs text-white/70 mt-1">Ticket sales only</p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+                  <p className="text-sm text-white/80 mb-1">OutingStation Gets</p>
+                  <p className="text-2xl font-bold">₦{stats.serviceFees.toLocaleString()}</p>
+                  <p className="text-xs text-white/70 mt-1">Service fees</p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+                  <p className="text-sm text-white/80 mb-1">Paystack Gets</p>
+                  <p className="text-2xl font-bold">₦{stats.paystackFees.toLocaleString()}</p>
+                  <p className="text-xs text-white/70 mt-1">Payment processing</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Events List */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      {['User', 'Phone', 'City', 'Role', 'Status', 'Joined', 'Saved Events', 'Actions'].map(h => (
-                        <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {filteredUsers.map((user) => (
-                      <tr key={user.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <img
-                              src={user.photoURL || user.photoUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name || user.email}`}
-                              alt={user.name} 
-                              className="w-9 h-9 rounded-full"
-                              onError={e => e.target.style.display='none'} 
-                            />
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {user.name || 'No name'}
-                              </div>
-                              <div className="text-sm text-gray-500">{user.email}</div>
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">All Ticketed Events</h2>
+              </div>
+
+              {events.length === 0 ? (
+                <div className="px-6 py-12 text-center text-gray-500">
+                  <Ticket size={48} className="mx-auto mb-4 text-gray-300" />
+                  <p>No events with OutingStation ticketing yet</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-200">
+                  {events.map((event) => (
+                    <div key={event.id} className="hover:bg-gray-50 transition">
+                      {/* Event Row */}
+                      <div className="px-6 py-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-lg font-semibold text-gray-900">{event.title}</h3>
+                              <span className="px-2 py-1 bg-cyan-100 text-cyan-700 rounded text-xs font-medium">
+                                {event.ticketsSold} / {event.ticketsAvailable} sold
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                              <span>{formatEventDateFull(event)}</span>
+                              <span>•</span>
+                              <span>{event.location}</span>
                             </div>
                           </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {user.phone || '-'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {user.city || '-'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                            user.role === 'admin' ? 'bg-red-100 text-red-700' :
-                            user.role === 'organizer' ? 'bg-purple-100 text-purple-700' :
-                            'bg-gray-100 text-gray-700'}`}>
-                            {user.role || 'user'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                            !user.status || user.status === 'active' ? 
-                            'bg-green-100 text-green-700' : 
-                            'bg-red-100 text-red-700'}`}>
-                            {user.status || 'active'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {formatDate(user)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {Array.isArray(user.savedEvents) ? user.savedEvents.length : 0}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="flex items-center gap-2">
-                            {/* Suspend/Activate Button */}
-                            <button 
-                              onClick={() => handleToggleStatus(user.id, user.status || 'active')}
-                              className={`p-2 rounded-lg transition ${
-                                !user.status || user.status === 'active' ? 
-                                'text-orange-600 hover:bg-orange-50' : 
-                                'text-green-600 hover:bg-green-50'}`}
-                              title={!user.status || user.status === 'active' ? 'Suspend' : 'Activate'}
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-right mr-4">
+                              <p className="text-sm text-gray-600">Total Revenue</p>
+                              <p className="text-xl font-bold text-gray-900">₦{event.totalRevenue.toLocaleString()}</p>
+                            </div>
+                            <button
+                              onClick={() => toggleEventDetails(event.id)}
+                              className="p-2 hover:bg-gray-100 rounded-lg transition"
                             >
-                              {!user.status || user.status === 'active' ? 
-                                <Ban size={18} /> : 
-                                <CheckCircle size={18} />
-                              }
-                            </button>
-                            
-                            {/* Edit Button */}
-                            <button 
-                              onClick={() => handleOpenEdit(user)} 
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition" 
-                              title="Edit"
-                            >
-                              <Edit size={18} />
-                            </button>
-                            
-                            {/* Delete Button */}
-                            <button 
-                              onClick={() => handleDeleteUser(user.id, user.name || user.email)} 
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition" 
-                              title="Delete Permanently"
-                            >
-                              <Trash2 size={18} />
+                              {expandedEvent === event.id ? (
+                                <ChevronUp size={20} className="text-gray-600" />
+                              ) : (
+                                <ChevronDown size={20} className="text-gray-600" />
+                              )}
                             </button>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {filteredUsers.length === 0 && (
-                <div className="text-center py-12">
-                  <p className="text-gray-500">
-                    {users.length === 0 ? 'No registered users yet.' : 'No users match your search.'}
-                  </p>
+                        </div>
+                      </div>
+
+                      {/* Expanded Details */}
+                      {expandedEvent === event.id && (
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                          {/* Stats Grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <div className="bg-white rounded-lg p-4 shadow-sm">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Ticket size={18} className="text-cyan-500" />
+                                <p className="text-xs text-gray-600">Tickets Sold</p>
+                              </div>
+                              <p className="text-2xl font-bold text-gray-900">{event.ticketsSold}</p>
+                            </div>
+
+                            <div className="bg-white rounded-lg p-4 shadow-sm">
+                              <div className="flex items-center gap-2 mb-2">
+                                <CheckCircle size={18} className="text-green-500" />
+                                <p className="text-xs text-gray-600">Checked In</p>
+                              </div>
+                              <p className="text-2xl font-bold text-gray-900">{event.checkedIn}</p>
+                              <p className="text-xs text-gray-500">
+                                {event.ticketsSold > 0 ? Math.round((event.checkedIn / event.ticketsSold) * 100) : 0}% attendance
+                              </p>
+                            </div>
+
+                            <div className="bg-white rounded-lg p-4 shadow-sm">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Users size={18} className="text-purple-500" />
+                                <p className="text-xs text-gray-600">Buyers</p>
+                              </div>
+                              <p className="text-2xl font-bold text-gray-900">{event.ticketsData.length}</p>
+                            </div>
+
+                            <div className="bg-white rounded-lg p-4 shadow-sm">
+                              <div className="flex items-center gap-2 mb-2">
+                                <TrendingUp size={18} className="text-green-500" />
+                                <p className="text-xs text-gray-600">Service Fees</p>
+                              </div>
+                              <p className="text-2xl font-bold text-gray-900">₦{event.serviceFees.toLocaleString()}</p>
+                            </div>
+                          </div>
+
+                          {/* Revenue Breakdown */}
+                          <div className="bg-white rounded-lg p-4 shadow-sm mb-4">
+                            <h4 className="font-semibold text-gray-900 mb-3">Revenue Breakdown</h4>
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-gray-600">Organizer Revenue (Ticket Sales)</span>
+                                <span className="font-semibold text-gray-900">₦{event.organizerRevenue.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-gray-600">OutingStation Service Fees</span>
+                                <span className="font-semibold text-green-600">₦{event.serviceFees.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-gray-600">Paystack Fees</span>
+                                <span className="font-semibold text-gray-900">₦{event.paystackFees.toLocaleString()}</span>
+                              </div>
+                              <div className="pt-2 border-t border-gray-200 flex justify-between">
+                                <span className="font-semibold text-gray-900">Total Revenue</span>
+                                <span className="font-bold text-gray-900">₦{event.totalRevenue.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Manage Link */}
+                          <div className="bg-white rounded-lg p-4 shadow-sm mb-4">
+                            <h4 className="font-semibold text-gray-900 mb-3">Event Management Link</h4>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <input
+                                type="text"
+                                value={`${window.location.origin}/manage/${event.manageKey}`}
+                                readOnly
+                                className="flex-1 min-w-[200px] px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-mono text-gray-700"
+                              />
+                              <button
+                                onClick={() => copyManageLink(event.manageKey)}
+                                className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition flex items-center gap-2"
+                              >
+                                <Copy size={16} />
+                                Copy
+                              </button>
+                              <a
+                                href={`/manage/${event.manageKey}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition flex items-center gap-2"
+                              >
+                                <ExternalLink size={16} />
+                                Open
+                              </a>
+                              <button
+                                onClick={() => regenerateManageKey(event.id)}
+                                className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition flex items-center gap-2"
+                              >
+                                <RefreshCw size={16} />
+                                Regenerate
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">
+                              ⚠️ Share this link with event organizers. They can check-in attendees without logging in.
+                            </p>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <button
+                              onClick={() => exportEventCSV(event)}
+                              className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition"
+                            >
+                              <Download size={18} />
+                              Export Full Report
+                            </button>
+                            <Link
+                              to={`/admin/events/edit/${event.id}`}
+                              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+                            >
+                              Edit Event
+                            </Link>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          )}
-        </div>
-      </main>
-
-      {/* Edit Modal */}
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900">Edit User</h3>
-              <button 
-                onClick={() => setShowEditModal(false)} 
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleSaveEdit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                <input 
-                  type="text" 
-                  value={formData.name} 
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                <input 
-                  type="tel" 
-                  value={formData.phone} 
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" 
-                  placeholder="+234 800 000 0000" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
-                <input 
-                  type="text" 
-                  value={formData.city} 
-                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
-                <select 
-                  value={formData.role} 
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                >
-                  <option value="user">User</option>
-                  <option value="organizer">Organizer</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                <select 
-                  value={formData.status} 
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                >
-                  <option value="active">Active</option>
-                  <option value="suspended">Suspended</option>
-                </select>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button 
-                  type="submit" 
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-2.5 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition font-medium"
-                >
-                  <Save size={20} />
-                  <span>Save Changes</span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setShowEditModal(false)} 
-                  className="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
+        )}
+      </main>
     </div>
   );
 }
