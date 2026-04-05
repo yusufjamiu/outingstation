@@ -3,9 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { 
   Calendar, Clock, MapPin, Users, Download, CheckCircle, XCircle,
-  Ticket, Mail, Phone, Search, Filter, AlertCircle
+  Ticket, Mail, Search, Filter, AlertCircle
 } from 'lucide-react';
-import { collection, query, where, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
@@ -61,10 +61,16 @@ export default function ManageEvent() {
 
       setTickets(ticketsData);
 
-      // Calculate stats
+      // ✅ Calculate stats - FIXED REVENUE CALCULATION
       const totalSold = ticketsData.reduce((sum, ticket) => sum + (ticket.quantity || 1), 0);
       const totalCheckedIn = ticketsData.filter(t => t.checkedIn).reduce((sum, ticket) => sum + (ticket.quantity || 1), 0);
-      const totalRevenue = ticketsData.reduce((sum, ticket) => sum + (ticket.totalPaid || 0), 0);
+      
+      // ✅ FIX: Organizer revenue = ticket price × quantity (NO fees!)
+      const totalRevenue = ticketsData.reduce((sum, ticket) => {
+        const ticketPrice = ticket.ticketPrice || 0;
+        const quantity = ticket.quantity || 1;
+        return sum + (ticketPrice * quantity);
+      }, 0);
 
       setStats({ totalSold, totalCheckedIn, totalRevenue });
 
@@ -105,14 +111,18 @@ export default function ManageEvent() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Ticket ID', 'Buyer Name', 'Email', 'Quantity', 'Total Paid', 'Purchase Date', 'Checked In'];
+    const headers = ['Ticket ID', 'Buyer Name', 'Email', 'Quantity', 'Ticket Price', 'Service Fee', 'Total Paid', 'Purchase Date', 'Checked In'];
     const rows = filteredTickets.map(ticket => [
       ticket.ticketId,
       ticket.buyerName,
       ticket.buyerEmail,
       ticket.quantity || 1,
+      `₦${(ticket.ticketPrice * (ticket.quantity || 1))?.toLocaleString()}`,
+      `₦${(ticket.serviceFee * (ticket.quantity || 1))?.toLocaleString()}`,
       `₦${ticket.totalPaid?.toLocaleString()}`,
-      new Date(ticket.purchasedAt?.seconds * 1000).toLocaleDateString(),
+      ticket.purchasedAt?.seconds 
+        ? new Date(ticket.purchasedAt.seconds * 1000).toLocaleDateString()
+        : 'N/A',
       ticket.checkedIn ? 'Yes' : 'No'
     ]);
 
@@ -257,11 +267,11 @@ export default function ManageEvent() {
             <div className="bg-white rounded-xl p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-2">
                 <span className="text-2xl">💰</span>
-                <p className="text-sm text-gray-600">Revenue</p>
+                <p className="text-sm text-gray-600">Your Revenue</p>
               </div>
               <p className="text-3xl font-bold text-gray-900">₦{stats.totalRevenue.toLocaleString()}</p>
               <p className="text-xs text-gray-500 mt-1">
-                total collected
+                ticket sales only
               </p>
             </div>
           </div>
@@ -310,7 +320,7 @@ export default function ManageEvent() {
                       Quantity
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Amount
+                      Total Paid
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Purchase Date
@@ -343,10 +353,7 @@ export default function ManageEvent() {
                         <td className="px-6 py-4">
                           <div>
                             <p className="text-sm font-medium text-gray-900">{ticket.buyerName}</p>
-                            <div className="flex items-center gap-1 text-xs text-gray-500">
-                              <Mail size={12} />
-                              <span>{ticket.buyerEmail}</span>
-                            </div>
+                            <p className="text-xs text-gray-500">{ticket.buyerEmail}</p>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
