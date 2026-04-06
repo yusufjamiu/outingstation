@@ -115,10 +115,23 @@ function extractMetadata(paymentData) {
   
   // Try custom_fields format first (web)
   if (rawMetadata.custom_fields && Array.isArray(rawMetadata.custom_fields)) {
-    return rawMetadata.custom_fields.reduce((acc, field) => {
+    const metadata = rawMetadata.custom_fields.reduce((acc, field) => {
       acc[field.variable_name] = field.value;
       return acc;
     }, {});
+    
+    // Return with consistent field names
+    return {
+      eventId: metadata.event_id || metadata.eventId,
+      eventTitle: metadata.event_title || metadata.eventTitle,
+      quantity: metadata.quantity,
+      buyerName: metadata.buyer_name || metadata.buyerName,
+      buyerPhone: metadata.buyer_phone || metadata.buyerPhone,
+      ticketPrice: metadata.ticket_price || metadata.ticketPrice,
+      serviceFee: metadata.service_fee || metadata.serviceFee,
+      paystackFee: metadata.paystack_fee || metadata.paystackFee,
+      totalPaid: metadata.total_paid || metadata.totalPaid,
+    };
   }
   
   // Otherwise use direct fields (mobile or fallback)
