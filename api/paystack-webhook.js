@@ -109,6 +109,32 @@ function generateTicketEmail(ticketData, eventData) {
   `;
 }
 
+// ✅ NEW: Extract metadata (handles both web and mobile formats!)
+function extractMetadata(paymentData) {
+  const rawMetadata = paymentData.metadata || {};
+  
+  // Try custom_fields format first (web)
+  if (rawMetadata.custom_fields && Array.isArray(rawMetadata.custom_fields)) {
+    return rawMetadata.custom_fields.reduce((acc, field) => {
+      acc[field.variable_name] = field.value;
+      return acc;
+    }, {});
+  }
+  
+  // Otherwise use direct fields (mobile or fallback)
+  return {
+    eventId: rawMetadata.eventId || rawMetadata.event_id,
+    eventTitle: rawMetadata.eventTitle || rawMetadata.event_title,
+    quantity: rawMetadata.quantity,
+    buyerName: rawMetadata.buyerName || rawMetadata.buyer_name,
+    buyerPhone: rawMetadata.buyerPhone || rawMetadata.buyer_phone,
+    ticketPrice: rawMetadata.ticketPrice || rawMetadata.ticket_price,
+    serviceFee: rawMetadata.serviceFee || rawMetadata.service_fee,
+    paystackFee: rawMetadata.paystackFee || rawMetadata.paystack_fee,
+    totalPaid: rawMetadata.totalPaid || rawMetadata.total_paid,
+  };
+}
+
 // Main webhook handler
 export default async function handler(req, res) {
   // Only allow POST
@@ -137,20 +163,17 @@ export default async function handler(req, res) {
 
     const paymentData = event.data;
     
-    // Extract metadata
-    const metadata = paymentData.metadata.custom_fields.reduce((acc, field) => {
-      acc[field.variable_name] = field.value;
-      return acc;
-    }, {});
-
-    console.log('Payment successful:', paymentData.reference);
+    // ✅ UPDATED: Extract metadata (handles both formats!)
+    const metadata = extractMetadata(paymentData);
+    
+    console.log('📦 Metadata extracted:', metadata);
 
     // Get event details from Firestore
-    const eventRef = doc(db, 'events', metadata.event_id);
+    const eventRef = doc(db, 'events', metadata.eventId);
     const eventDoc = await getDoc(eventRef);
 
     if (!eventDoc.exists()) {
-      console.error('Event not found:', metadata.event_id);
+      console.error('Event not found:', metadata.eventId);
       return res.status(404).json({ error: 'Event not found' });
     }
 
@@ -160,15 +183,16 @@ export default async function handler(req, res) {
     const ticketId = generateTicketId();
     const ticketData = {
       ticketId,
-      eventId: metadata.event_id,
+      eventId: metadata.eventId,
       eventTitle: eventData.title,
-      buyerName: metadata.buyer_name,
+      buyerName: metadata.buyerName,
       buyerEmail: paymentData.customer.email,
+      buyerPhone: metadata.buyerPhone,
       quantity: parseInt(metadata.quantity) || 1,
-      ticketPrice: parseInt(metadata.ticket_price) || 0,
-      serviceFee: parseInt(metadata.service_fee) || 0,
-      paystackFee: Math.round((paymentData.amount / 100) * 0.015 + 100),
-      totalPaid: paymentData.amount / 100,
+      ticketPrice: parseInt(metadata.ticketPrice) || 0,
+      serviceFee: parseInt(metadata.serviceFee) || 0,
+      paystackFee: parseInt(metadata.paystackFee) || Math.round((paymentData.amount / 100) * 0.015 + 100),
+      totalPaid: parseInt(metadata.totalPaid) || (paymentData.amount / 100),
       paymentReference: paymentData.reference,
       purchasedAt: serverTimestamp(),
       checkedIn: false,
@@ -177,6 +201,8 @@ export default async function handler(req, res) {
       status: 'valid'
     };
 
+    console.log('🎟️ Creating ticket:', ticketId);
+
     // Save ticket to Firestore
     await setDoc(doc(db, 'tickets', ticketId), ticketData);
 
@@ -184,6 +210,8 @@ export default async function handler(req, res) {
     await updateDoc(eventRef, {
       ticketsSold: increment(ticketData.quantity)
     });
+
+    console.log('📧 Sending email to:', paymentData.customer.email);
 
     // Send email
     const transporter = nodemailer.createTransport({
@@ -209,7 +237,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error('Webhook error:', error);
+    console.error('❌ Webhook error:', error);
     return res.status(500).json({ 
       error: 'Webhook processing failed',
       message: error.message 
