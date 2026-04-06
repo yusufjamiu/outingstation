@@ -30,7 +30,7 @@ const openInMaps = (event) => {
   window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
 };
 
-// ✅ NEW: Calculate fees
+// ✅ Calculate fees
 const calculateServiceFee = (event) => {
   if (event.serviceFeeType === 'fixed') {
     return event.serviceFeeAmount || 100;
@@ -55,10 +55,11 @@ const calculateTotal = (event) => {
   return ticketPrice + serviceFee + paystackFee;
 };
 
-// ✅ NEW: Ticket Purchase Component
+// ✅ Ticket Purchase Component
 const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [buyerName, setBuyerName] = useState(currentUser?.displayName || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
+  const [buyerPhone, setBuyerPhone] = useState(''); // ✅ ADDED: Phone number state
   const [quantity, setQuantity] = useState(1);
   const [showPaystackButton, setShowPaystackButton] = useState(false);
 
@@ -84,6 +85,11 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           display_name: "Buyer Name",
           variable_name: "buyer_name",
           value: buyerName
+        },
+        {
+          display_name: "Buyer Phone", // ✅ ADDED: Phone in metadata
+          variable_name: "buyer_phone",
+          value: buyerPhone
         },
         {
           display_name: "Ticket Price",
@@ -121,8 +127,9 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       return;
     }
 
-    if (!buyerName || !buyerEmail) {
-      toast.error('Please enter your name and email');
+    // ✅ UPDATED: Validate phone number too
+    if (!buyerName || !buyerEmail || !buyerPhone) {
+      toast.error('Please enter your name, email, and phone number');
       return;
     }
 
@@ -179,6 +186,18 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
             value={buyerEmail}
             onChange={(e) => setBuyerEmail(e.target.value)}
             placeholder="john@example.com"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
+          />
+        </div>
+
+        {/* ✅ ADDED: Phone Number Field */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+          <input
+            type="tel"
+            value={buyerPhone}
+            onChange={(e) => setBuyerPhone(e.target.value)}
+            placeholder="+234 800 000 0000"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
           />
         </div>
@@ -300,7 +319,7 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
   
-  // ✅ UPDATED: Check for OutingStation ticketing
+  // ✅ Check for OutingStation ticketing
   if (event.ticketingOption === 'outingstation' && event.ticketingEnabled) {
     // Scroll to ticket section
     const ticketSection = document.getElementById('ticket-purchase-section');
@@ -311,7 +330,7 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
 
-  // ✅ UPDATED: Check for external ticketing
+  // ✅ Check for external ticketing
   if (event.ticketingOption === 'external' && event.externalTicketLink) {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -702,7 +721,7 @@ export default function EventDetails() {
                 </p>
               </div>
 
-              {/* ✅ NEW: Ticket Purchase Section */}
+              {/* ✅ Ticket Purchase Section */}
               {hasOutingStationTicketing && (
                 <div id="ticket-purchase-section" className="mb-6">
                   <TicketPurchaseSection 

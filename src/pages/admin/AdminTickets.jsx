@@ -56,8 +56,8 @@ export default function AdminTickets() {
       const eventsRef = collection(db, 'events');
       const q = query(
         eventsRef, 
-        where('hasOutingStationTicketing', '==', true),
-        orderBy('startDate', 'desc')
+        where('hasOutingStationTicketing', '==', true)
+        // ✅ REMOVED orderBy - will sort manually after fetching
       );
       const eventsSnapshot = await getDocs(q);
 
@@ -108,6 +108,17 @@ export default function AdminTickets() {
       );
 
       setEvents(eventsData);
+
+      // ✅ Sort events manually by date (most recent first)
+      eventsData.sort((a, b) => {
+        const getDate = (event) => {
+          if (event.date?.seconds) return event.date.seconds;
+          if (event.startDate?.seconds) return event.startDate.seconds;
+          if (event.endDate?.seconds) return event.endDate.seconds;
+          return 0;
+        };
+        return getDate(b) - getDate(a); // Descending order
+      });
 
       // Calculate overall stats
       const overallStats = eventsData.reduce((acc, event) => ({
@@ -175,11 +186,12 @@ export default function AdminTickets() {
   };
 
   const exportEventCSV = (event) => {
-    const headers = ['Ticket ID', 'Buyer Name', 'Email', 'Quantity', 'Ticket Price', 'Service Fee', 'Paystack Fee', 'Total Paid', 'Purchase Date', 'Checked In'];
+    const headers = ['Ticket ID', 'Buyer Name', 'Email', 'Phone', 'Quantity', 'Ticket Price', 'Service Fee', 'Paystack Fee', 'Total Paid', 'Purchase Date', 'Checked In'];
     const rows = event.ticketsData.map(ticket => [
       ticket.ticketId,
       ticket.buyerName,
       ticket.buyerEmail,
+      ticket.buyerPhone || 'N/A', // ✅ ADDED: Phone number column
       ticket.quantity || 1,
       `₦${((ticket.ticketPrice || 0) * (ticket.quantity || 1)).toLocaleString()}`,
       `₦${((ticket.serviceFee || 0) * (ticket.quantity || 1)).toLocaleString()}`,

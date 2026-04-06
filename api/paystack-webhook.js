@@ -200,7 +200,7 @@ export default async function handler(req, res) {
       eventTitle: eventData.title,
       buyerName: metadata.buyerName,
       buyerEmail: paymentData.customer.email,
-      buyerPhone: metadata.buyerPhone,
+      buyerPhone: metadata.buyerPhone || 'N/A', // ✅ Always include (required on web & mobile)
       quantity: parseInt(metadata.quantity) || 1,
       ticketPrice: parseInt(metadata.ticketPrice) || 0,
       serviceFee: parseInt(metadata.serviceFee) || 0,
