@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Search, Users, Calendar, TrendingUp, Eye, Download, RefreshCw, Menu } from 'lucide-react';
+import { Search, Users, Calendar, TrendingUp, Eye, Download, RefreshCw, Menu, Mail, ChevronDown, ChevronUp, Phone } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
+import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
 export default function AdminSavedEventsAnalytics() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [allSavedEvents, setAllSavedEvents] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterBy, setFilterBy] = useState('all');
+  const [filterBy, setFilterBy] = useState('upcoming'); // upcoming, archived, all
   const [loading, setLoading] = useState(true);
+  const [expandedEvent, setExpandedEvent] = useState(null);
 
   useEffect(() => {
     loadAllSavedEvents();
@@ -51,11 +54,14 @@ export default function AdminSavedEventsAnalytics() {
                 userId: user.id,
                 userName: user.name || 'Unknown User',
                 userEmail: user.email || 'N/A',
+                userPhone: user.phone || 'N/A',
                 eventId: event.id,
                 eventTitle: event.title,
                 eventImage: event.imageUrl,
                 eventCategory: event.category,
-                savedAt: user.createdAt || new Date() // Approximation
+                eventDate: event.date || event.startDate,
+                eventLocation: event.location,
+                savedAt: user.createdAt || new Date()
               });
             }
           });
@@ -66,11 +72,23 @@ export default function AdminSavedEventsAnalytics() {
       console.log('📊 Loaded', savedEventsData.length, 'saved events from Firestore');
     } catch (err) {
       console.error('Error loading saved events:', err);
+      toast.error('Failed to load saved events');
     }
     setLoading(false);
   };
 
-  // Get event statistics
+  // Check if event is archived (1 day after event date)
+  const isEventArchived = (eventDate) => {
+    if (!eventDate) return false;
+    
+    const date = eventDate.seconds ? new Date(eventDate.seconds * 1000) : new Date(eventDate);
+    const oneDayAfter = new Date(date);
+    oneDayAfter.setDate(oneDayAfter.getDate() + 1);
+    
+    return new Date() > oneDayAfter;
+  };
+
+  // Get event statistics with phone numbers
   const getEventStats = () => {
     const eventSaveCount = {};
     
@@ -81,44 +99,29 @@ export default function AdminSavedEventsAnalytics() {
           eventId,
           eventTitle: saved.eventTitle,
           eventImage: saved.eventImage,
+          eventDate: saved.eventDate,
+          eventLocation: saved.eventLocation,
+          eventCategory: saved.eventCategory,
           count: 0,
-          users: []
+          users: [],
+          isArchived: isEventArchived(saved.eventDate)
         };
       }
       eventSaveCount[eventId].count++;
       eventSaveCount[eventId].users.push({
         userId: saved.userId,
         userName: saved.userName,
-        userEmail: saved.userEmail
+        userEmail: saved.userEmail,
+        userPhone: saved.userPhone
       });
     });
 
-    return Object.values(eventSaveCount).sort((a, b) => b.count - a.count);
-  };
-
-  // Get user statistics
-  const getUserStats = () => {
-    const userSaveCount = {};
-    
-    allSavedEvents.forEach(saved => {
-      const userId = saved.userId;
-      if (!userSaveCount[userId]) {
-        userSaveCount[userId] = {
-          userId,
-          userName: saved.userName,
-          userEmail: saved.userEmail,
-          count: 0,
-          events: []
-        };
-      }
-      userSaveCount[userId].count++;
-      userSaveCount[userId].events.push({
-        eventId: saved.eventId,
-        eventTitle: saved.eventTitle
-      });
+    // Sort by event date (closest first)
+    return Object.values(eventSaveCount).sort((a, b) => {
+      const dateA = a.eventDate?.seconds ? new Date(a.eventDate.seconds * 1000) : new Date(a.eventDate || 0);
+      const dateB = b.eventDate?.seconds ? new Date(b.eventDate.seconds * 1000) : new Date(b.eventDate || 0);
+      return dateA - dateB; // Ascending (closest first)
     });
-
-    return Object.values(userSaveCount).sort((a, b) => b.count - a.count);
   };
 
   // Get overall statistics
@@ -135,11 +138,20 @@ export default function AdminSavedEventsAnalytics() {
   };
 
   const eventStats = getEventStats();
-  const userStats = getUserStats();
   const totalStats = getTotalStats();
 
-  // Filter data based on search
-  const filteredEventStats = eventStats.filter(event =>
+  // Filter events by status
+  const getFilteredEvents = () => {
+    if (filterBy === 'upcoming') {
+      return eventStats.filter(e => !e.isArchived);
+    } else if (filterBy === 'archived') {
+      return eventStats.filter(e => e.isArchived);
+    }
+    return eventStats;
+  };
+
+  // Filter by search term
+  const filteredEventStats = getFilteredEvents().filter(event =>
     event.eventTitle.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -160,21 +172,100 @@ export default function AdminSavedEventsAnalytics() {
     return date.toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric', 
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      year: 'numeric'
     });
   };
 
-  // Export to CSV
-  const exportToCSV = () => {
-    const headers = ['Event Title', 'Event ID', 'User Name', 'User Email', 'Category'];
+  // Send email reminder to all users who saved this event
+  const sendEmailReminder = async (event) => {
+    if (!confirm(`Send email reminder to ${event.users.length} users who saved "${event.eventTitle}"?`)) {
+      return;
+    }
+
+    try {
+      const loadingToast = toast.loading(`📧 Sending emails to ${event.users.length} users...`);
+
+      const response = await fetch('/api/send-bulk-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: event.eventId,
+          eventTitle: event.eventTitle,
+          eventDate: formatDate(event.eventDate),
+          eventLocation: event.eventLocation,
+          users: event.users
+        })
+      });
+
+      const result = await response.json();
+      toast.dismiss(loadingToast);
+
+      if (result.success) {
+        toast.success(`✅ Emails sent to ${result.sent} users!`, { duration: 5000 });
+        if (result.failed > 0) {
+          toast(`⚠️ ${result.failed} emails failed`, { icon: '⚠️' });
+        }
+      } else {
+        toast.error('Failed to send emails');
+      }
+    } catch (err) {
+      console.error('Error sending emails:', err);
+      toast.error('Failed to send email reminders');
+    }
+  };
+
+  // Export event users to CSV
+  const exportEventToCSV = (event) => {
+    const headers = ['Name', 'Email', 'Phone'];
+    const rows = event.users.map(user => [
+      user.userName,
+      user.userEmail,
+      user.userPhone
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${event.eventTitle}-saved-users-${Date.now()}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+
+    toast.success('✅ CSV exported!');
+  };
+
+  // Export event users to Excel
+  const exportEventToExcel = (event) => {
+    const data = event.users.map(user => ({
+      'Name': user.userName,
+      'Email': user.userEmail,
+      'Phone': user.userPhone
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Users');
+
+    XLSX.writeFile(workbook, `${event.eventTitle}-saved-users-${Date.now()}.xlsx`);
+    toast.success('✅ Excel exported!');
+  };
+
+  // Export all to CSV
+  const exportAllToCSV = () => {
+    const headers = ['Event Title', 'Event ID', 'User Name', 'User Email', 'User Phone', 'Category', 'Event Date'];
     const rows = allSavedEvents.map(saved => [
       `"${saved.eventTitle}"`,
       saved.eventId,
       saved.userName,
       saved.userEmail,
-      saved.eventCategory || 'N/A'
+      saved.userPhone,
+      saved.eventCategory || 'N/A',
+      formatDate(saved.eventDate)
     ]);
 
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
@@ -182,10 +273,11 @@ export default function AdminSavedEventsAnalytics() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `saved-events-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `all-saved-events-${Date.now()}.csv`;
     a.click();
-    
-    console.log('📥 Exported', allSavedEvents.length, 'saved events to CSV');
+    window.URL.revokeObjectURL(url);
+
+    toast.success('✅ All data exported to CSV!');
   };
 
   return (
@@ -201,7 +293,7 @@ export default function AdminSavedEventsAnalytics() {
             
             <div className="flex-1">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Saved Events Analytics</h2>
-              <p className="text-gray-600 text-sm mt-1">Monitor user engagement and event popularity from Firestore</p>
+              <p className="text-gray-600 text-sm mt-1">Monitor user engagement and send reminders</p>
             </div>
             
             <button onClick={loadAllSavedEvents}
@@ -278,23 +370,23 @@ export default function AdminSavedEventsAnalytics() {
               <div className="bg-white rounded-xl p-6 shadow-sm mb-8">
                 <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
                   <div className="flex gap-4">
+                    <button onClick={() => setFilterBy('upcoming')}
+                      className={`px-4 py-2 rounded-lg font-medium transition ${
+                        filterBy === 'upcoming' ? 'bg-cyan-400 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}>
+                      📅 Upcoming ({eventStats.filter(e => !e.isArchived).length})
+                    </button>
+                    <button onClick={() => setFilterBy('archived')}
+                      className={`px-4 py-2 rounded-lg font-medium transition ${
+                        filterBy === 'archived' ? 'bg-cyan-400 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}>
+                      📦 Archived ({eventStats.filter(e => e.isArchived).length})
+                    </button>
                     <button onClick={() => setFilterBy('all')}
                       className={`px-4 py-2 rounded-lg font-medium transition ${
                         filterBy === 'all' ? 'bg-cyan-400 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}>
-                      All Events ({allSavedEvents.length})
-                    </button>
-                    <button onClick={() => setFilterBy('event')}
-                      className={`px-4 py-2 rounded-lg font-medium transition ${
-                        filterBy === 'event' ? 'bg-cyan-400 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}>
-                      By Popularity ({eventStats.length})
-                    </button>
-                    <button onClick={() => setFilterBy('user')}
-                      className={`px-4 py-2 rounded-lg font-medium transition ${
-                        filterBy === 'user' ? 'bg-cyan-400 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}>
-                      By User ({userStats.length})
+                      📊 All ({eventStats.length})
                     </button>
                   </div>
 
@@ -305,10 +397,10 @@ export default function AdminSavedEventsAnalytics() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none" />
                     </div>
-                    <button onClick={exportToCSV} disabled={allSavedEvents.length === 0}
+                    <button onClick={exportAllToCSV} disabled={allSavedEvents.length === 0}
                       className="flex items-center gap-2 px-4 py-2 bg-cyan-400 text-white rounded-lg hover:bg-cyan-500 transition disabled:opacity-50">
                       <Download size={20} />
-                      <span className="hidden sm:inline">Export</span>
+                      <span className="hidden sm:inline">Export All</span>
                     </button>
                   </div>
                 </div>
@@ -325,161 +417,113 @@ export default function AdminSavedEventsAnalytics() {
                 </div>
               )}
 
-              {/* Events by Popularity */}
-              {allSavedEvents.length > 0 && filterBy === 'event' && (
-                <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                  <div className="p-6 border-b border-gray-200">
-                    <h2 className="text-xl font-bold text-gray-900">Events by Popularity</h2>
-                    <p className="text-sm text-gray-500 mt-1">Most saved events first</p>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Event</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Saves</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Users</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {filteredEventStats.map((event, index) => (
-                          <tr key={event.eventId} className="hover:bg-gray-50">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-100 text-cyan-600 font-bold">
-                                #{index + 1}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                {event.eventImage && (
-                                  <img src={event.eventImage} alt={event.eventTitle}
-                                    className="w-16 h-16 rounded-lg object-cover"
-                                    onError={e => e.target.style.display='none'} />
-                                )}
-                                <p className="font-medium text-gray-900">{event.eventTitle}</p>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="px-4 py-2 bg-cyan-100 text-cyan-700 rounded-full text-sm font-bold">
+              {/* Events List */}
+              {filteredEventStats.length > 0 && (
+                <div className="space-y-4">
+                  {filteredEventStats.map((event) => (
+                    <div key={event.eventId} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                      {/* Event Header */}
+                      <div className="p-6 flex items-center justify-between hover:bg-gray-50 cursor-pointer"
+                        onClick={() => setExpandedEvent(expandedEvent === event.eventId ? null : event.eventId)}>
+                        <div className="flex items-center gap-4 flex-1">
+                          {event.eventImage && (
+                            <img src={event.eventImage} alt={event.eventTitle}
+                              className="w-20 h-20 rounded-lg object-cover"
+                              onError={e => e.target.style.display='none'} />
+                          )}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-lg font-bold text-gray-900">{event.eventTitle}</h3>
+                              {event.isArchived && (
+                                <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium">
+                                  ARCHIVED
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                              <span>📅 {formatDate(event.eventDate)}</span>
+                              <span>📍 {event.eventLocation}</span>
+                              <span className="px-2 py-0.5 bg-cyan-100 text-cyan-700 rounded text-xs font-semibold">
                                 {event.count} {event.count === 1 ? 'save' : 'saves'}
                               </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="text-sm text-gray-600">
-                                {event.users.slice(0, 3).map((u, i) => (
-                                  <div key={i}>{u.userName}</div>
-                                ))}
-                                {event.users.length > 3 && (
-                                  <div className="text-gray-400">+{event.users.length - 3} more</div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            </div>
+                          </div>
+                        </div>
+                        <button className="p-2">
+                          {expandedEvent === event.eventId ? (
+                            <ChevronUp size={20} className="text-gray-600" />
+                          ) : (
+                            <ChevronDown size={20} className="text-gray-600" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Expanded Content */}
+                      {expandedEvent === event.eventId && (
+                        <div className="border-t border-gray-200 p-6 bg-gray-50">
+                          {/* Actions */}
+                          <div className="flex flex-wrap gap-3 mb-6">
+                            <button
+                              onClick={() => sendEmailReminder(event)}
+                              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+                            >
+                              <Mail size={18} />
+                              Send Email Reminder
+                            </button>
+                            <button
+                              onClick={() => exportEventToCSV(event)}
+                              className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition"
+                            >
+                              <Download size={18} />
+                              Export CSV
+                            </button>
+                            <button
+                              onClick={() => exportEventToExcel(event)}
+                              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                            >
+                              <Download size={18} />
+                              Export Excel
+                            </button>
+                          </div>
+
+                          {/* Users Table */}
+                          <div className="bg-white rounded-lg overflow-hidden">
+                            <div className="p-4 border-b border-gray-200">
+                              <h4 className="font-semibold text-gray-900">Users who saved this event ({event.users.length})</h4>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full">
+                                <thead className="bg-gray-50">
+                                  <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                  {event.users.map((user, index) => (
+                                    <tr key={index} className="hover:bg-gray-50">
+                                      <td className="px-6 py-4 text-sm text-gray-900">{index + 1}</td>
+                                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{user.userName}</td>
+                                      <td className="px-6 py-4 text-sm text-gray-600">{user.userEmail}</td>
+                                      <td className="px-6 py-4 text-sm text-gray-600">{user.userPhone}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 
-              {/* Users by Activity */}
-              {allSavedEvents.length > 0 && filterBy === 'user' && (
-                <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                  <div className="p-6 border-b border-gray-200">
-                    <h2 className="text-xl font-bold text-gray-900">Users by Activity</h2>
-                    <p className="text-sm text-gray-500 mt-1">Most active users first</p>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Saves</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Events</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {userStats.map((user, index) => (
-                          <tr key={user.userId} className="hover:bg-gray-50">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-purple-100 text-purple-600 font-bold">
-                                #{index + 1}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div>
-                                <p className="font-medium text-gray-900">{user.userName}</p>
-                                <p className="text-sm text-gray-500">{user.userEmail}</p>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="px-4 py-2 bg-purple-100 text-purple-700 rounded-full text-sm font-bold">
-                                {user.count} {user.count === 1 ? 'save' : 'saves'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="text-sm text-gray-600">
-                                {user.events.slice(0, 2).map((e, i) => (
-                                  <div key={i}>{e.eventTitle}</div>
-                                ))}
-                                {user.events.length > 2 && (
-                                  <div className="text-gray-400">+{user.events.length - 2} more</div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* All Saved Events */}
-              {allSavedEvents.length > 0 && filterBy === 'all' && (
-                <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                  <div className="p-6 border-b border-gray-200">
-                    <h2 className="text-xl font-bold text-gray-900">All Saved Events</h2>
-                    <p className="text-sm text-gray-500 mt-1">Complete list from Firestore</p>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Event</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {allSavedEvents.map((saved, index) => (
-                          <tr key={index} className="hover:bg-gray-50">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                {saved.eventImage && (
-                                  <img src={saved.eventImage} alt={saved.eventTitle}
-                                    className="w-12 h-12 rounded-lg object-cover"
-                                    onError={e => e.target.style.display='none'} />
-                                )}
-                                <p className="font-medium text-gray-900">{saved.eventTitle}</p>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="text-sm text-gray-600">{saved.eventCategory || 'N/A'}</span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div>
-                                <p className="font-medium text-gray-900">{saved.userName}</p>
-                                <p className="text-sm text-gray-500">{saved.userEmail}</p>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+              {filteredEventStats.length === 0 && allSavedEvents.length > 0 && (
+                <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+                  <p className="text-gray-600">No events match your search</p>
                 </div>
               )}
             </>
