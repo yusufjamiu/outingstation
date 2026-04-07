@@ -94,6 +94,10 @@ export default function AdminSavedEventsAnalytics() {
     
     allSavedEvents.forEach(saved => {
       const eventId = saved.eventId;
+      
+      // Skip if no event date (it's a place, not an event)
+      if (!saved.eventDate) return;
+      
       if (!eventSaveCount[eventId]) {
         eventSaveCount[eventId] = {
           eventId,
@@ -176,15 +180,46 @@ export default function AdminSavedEventsAnalytics() {
     });
   };
 
+  // Calculate countdown to event
+  const getCountdown = (eventDate) => {
+    if (!eventDate) return null;
+    
+    const date = eventDate.seconds ? new Date(eventDate.seconds * 1000) : new Date(eventDate);
+    const now = new Date();
+    const diffMs = date - now;
+    
+    // If event has passed
+    if (diffMs <= 0) return null;
+    
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffHours / 24);
+    
+    // If more than 48 hours, show days
+    if (diffHours > 48) {
+      return {
+        value: diffDays,
+        unit: diffDays === 1 ? 'day' : 'days',
+        isUrgent: false
+      };
+    }
+    
+    // If 48 hours or less, show hours
+    return {
+      value: diffHours,
+      unit: diffHours === 1 ? 'hour' : 'hours',
+      isUrgent: true
+    };
+  };
+
   // Send email reminder to all users who saved this event
   const sendEmailReminder = async (event) => {
     if (!confirm(`Send email reminder to ${event.users.length} users who saved "${event.eventTitle}"?`)) {
       return;
     }
 
-    try {
-      const loadingToast = toast.loading(`📧 Sending emails to ${event.users.length} users...`);
+    const loadingToast = toast.loading(`📧 Sending emails to ${event.users.length} users...`);
 
+    try {
       const response = await fetch('/api/send-bulk-reminder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -197,6 +232,12 @@ export default function AdminSavedEventsAnalytics() {
         })
       });
 
+      // Check if response is valid JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('API returned invalid response. Make sure /api/send-bulk-reminder.js is deployed.');
+      }
+
       const result = await response.json();
       toast.dismiss(loadingToast);
 
@@ -206,11 +247,12 @@ export default function AdminSavedEventsAnalytics() {
           toast(`⚠️ ${result.failed} emails failed`, { icon: '⚠️' });
         }
       } else {
-        toast.error('Failed to send emails');
+        toast.error(result.error || 'Failed to send emails');
       }
     } catch (err) {
+      toast.dismiss(loadingToast);
       console.error('Error sending emails:', err);
-      toast.error('Failed to send email reminders');
+      toast.error(err.message || 'Failed to send email reminders. Check if API is deployed.');
     }
   };
 
@@ -439,6 +481,21 @@ export default function AdminSavedEventsAnalytics() {
                                   ARCHIVED
                                 </span>
                               )}
+                              {!event.isArchived && (() => {
+                                const countdown = getCountdown(event.eventDate);
+                                if (countdown) {
+                                  return (
+                                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                      countdown.isUrgent 
+                                        ? 'bg-red-100 text-red-700 animate-pulse' 
+                                        : 'bg-blue-100 text-blue-700'
+                                    }`}>
+                                      ⏰ {countdown.value} {countdown.unit} left
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
                             <div className="flex flex-wrap gap-4 text-sm text-gray-600">
                               <span>📅 {formatDate(event.eventDate)}</span>
