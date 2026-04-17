@@ -243,7 +243,7 @@ useEffect(() => {
                 </p>
               </div>
 
-              <div className="flex flex-col lg:flex-row items-center justify-center gap-4 mb-16">
+              <div className="flex flex-col lg:flex-row items-center justify-center gap-4 mb-8 md:mb-16">
                 <div className="flex items-center bg-white rounded-full shadow-lg px-4 md:px-6 py-3 md:py-4 w-full lg:max-w-2xl">
                   <MapPin className="text-cyan-400 mr-2 md:mr-3 flex-shrink-0" size={20} />
                   <input
@@ -277,46 +277,49 @@ useEffect(() => {
                   Explore
                 </button>
                 <Link to="/categories">
-                  <button className="w-full lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
-                    <Grid size={20} />
-                    Browse by Category
-                  </button>
-                </Link>
+  <button className="w-auto mx-auto lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
+    <Grid size={20} />
+    Browse by Category
+  </button>
+</Link>
               </div>
 
               {/* Images Grid */}
-              <div className="flex items-start justify-center gap-4 md:gap-6">
-                <div className="relative flex-shrink-0">
-                  <div className="w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 bg-gradient-to-br from-orange-200 to-pink-200 rounded-2xl overflow-hidden shadow-xl">
-                    <img src={heroImage01} alt="Friends outdoors" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-3 sm:px-6 py-2 sm:py-3 rounded-2xl shadow-xl whitespace-nowrap">
-                    <div className="flex items-center gap-2 md:gap-4">
-                      <div>
-                        {loading ? (
-                          <div className="text-xl sm:text-2xl md:text-3xl font-bold">...</div>
-                        ) : (
-                          <div className="text-xl sm:text-2xl md:text-3xl font-bold">{formatNumber(userCount)}</div>
-                        )}
-                        <div className="text-xs opacity-90">Trusted Users</div>
-                      </div>
-                      <div className="flex -space-x-2">
-                        <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-red-400 border-2 border-white"></div>
-                        <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 border-2 border-white"></div>
-                        <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-blue-400 border-2 border-white"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-3 md:gap-6 flex-shrink-0">
-                  <div className="w-44 h-28 sm:w-56 sm:h-32 md:w-64 md:h-40 bg-gradient-to-br from-blue-200 to-purple-200 rounded-2xl overflow-hidden shadow-xl">
-                    <img src={heroImage2} alt="Conference" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="w-44 h-28 sm:w-56 sm:h-32 md:w-64 md:h-40 bg-gradient-to-br from-amber-200 to-orange-200 rounded-2xl overflow-hidden shadow-xl">
-                    <img src={heroImage3} alt="Workshop" className="w-full h-full object-cover" />
-                  </div>
-                </div>
-              </div>
+              <div className="flex items-start justify-center gap-4 md:gap-6 pb-10 md:pb-0">
+
+  <div className="relative flex-shrink-0">
+    <div className="w-44 h-52 sm:w-56 sm:h-60 md:w-64 md:h-64 bg-gradient-to-br from-orange-200 to-pink-200 rounded-2xl overflow-hidden shadow-xl">
+      <img src={heroImage01} alt="Friends outdoors" className="w-full h-full object-cover" />
+    </div>
+    <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-3 sm:px-6 py-2 sm:py-3 rounded-2xl shadow-xl whitespace-nowrap">
+      <div className="flex items-center gap-2 md:gap-4">
+        <div>
+          {loading ? (
+            <div className="text-xl sm:text-2xl md:text-3xl font-bold">...</div>
+          ) : (
+            <div className="text-xl sm:text-2xl md:text-3xl font-bold">{formatNumber(userCount)}</div>
+          )}
+          <div className="text-xs opacity-90">Trusted Users</div>
+        </div>
+        <div className="flex -space-x-2">
+          <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-red-400 border-2 border-white"></div>
+          <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 border-2 border-white"></div>
+          <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-blue-400 border-2 border-white"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div className="flex flex-col gap-3 md:gap-6 flex-shrink-0">
+    <div className="w-44 h-32 sm:w-56 sm:h-36 md:w-64 md:h-40 bg-gradient-to-br from-blue-200 to-purple-200 rounded-2xl overflow-hidden shadow-xl">
+      <img src={heroImage2} alt="Conference" className="w-full h-full object-cover" />
+    </div>
+    <div className="w-44 h-32 sm:w-56 sm:h-36 md:w-64 md:h-40 bg-gradient-to-br from-amber-200 to-orange-200 rounded-2xl overflow-hidden shadow-xl">
+      <img src={heroImage3} alt="Workshop" className="w-full h-full object-cover" />
+    </div>
+  </div>
+
+</div>
             </div>
           </div>
         </section>
