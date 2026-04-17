@@ -24,23 +24,46 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCity, setSelectedCity] = useState('Lagos');
+  const [currentText, setCurrentText] = useState(0);
+  const [fade, setFade] = useState(true);
+
+  const rotatingTexts = [
+  "From conferences in Lagos to tech meetups in Abuja, find your next unforgettable experience!",
+  "From campus parties to business summits, discover events that matter to you!",
+  "From weekend hangouts to career workshops, never miss out on what's happening!",
+  "From live concerts to food festivals, your next adventure starts here!"
+];
 
   useEffect(() => {
     loadUserCount();
   }, []);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFade(false);
+      
+      setTimeout(() => {
+        setCurrentText((prev) => (prev + 1) % rotatingTexts.length);
+        setFade(true);
+      }, 500);
+      
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const loadUserCount = async () => {
-  try {
-    const snapshot = await getDocs(collection(db, 'users'));
-    const count = snapshot.size;
-    console.log('User count:', count); // ADD THIS LINE
-    setUserCount(count);
-  } catch (err) {
-    console.error('Error loading user count:', err);
-    setUserCount(0);
-  }
-  setLoading(false);
-};
+    try {
+      const snapshot = await getDocs(collection(db, 'users'));
+      const count = snapshot.size;
+      console.log('User count:', count);
+      setUserCount(count);
+    } catch (err) {
+      console.error('Error loading user count:', err);
+      setUserCount(0);
+    }
+    setLoading(false);
+  };
 
   const handleSearch = () => {
     if (searchQuery.trim()) {
@@ -50,7 +73,6 @@ export default function LandingPage() {
     }
   };
 
-  // Format number with K/M suffix
   const formatNumber = (num) => {
     if (num >= 1000000) {
       return (num / 1000000).toFixed(1) + 'M';
@@ -80,11 +102,17 @@ export default function LandingPage() {
             {/* Heading */}
             <div className="text-center mb-8">
               <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold mb-4">
-                Discover <span className="text-cyan-400 italic">Events</span> Happening<br className="hidden sm:block" />Near You
+                Discover <span className="text-cyan-400 italic">Events</span> Happening{' '}
+                <br className="hidden sm:block" />
+                Near You
               </h1>
-              <p className="text-gray-500 text-sm md:text-base lg:text-lg px-4">
-                From your event in Lagos to Tech meetup in Riyadh, find your next<br className="hidden sm:block" />unforgettable experience today!
-              </p>
+              <p 
+  className={`text-gray-500 text-sm md:text-base lg:text-lg px-4 max-w-xl mx-auto transition-opacity duration-500 ${
+    fade ? 'opacity-100' : 'opacity-0'
+  }`}
+>
+  {rotatingTexts[currentText]}
+</p>
             </div>
 
             {/* Search Section */}
