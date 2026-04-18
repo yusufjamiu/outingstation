@@ -70,45 +70,34 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const ticketsRemaining = (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
 
   const paystackConfig = {
-    reference: `OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    email: buyerEmail,
-    amount: total * 100, // Paystack expects amount in kobo
-    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-    metadata: {
-      custom_fields: [
-        {
-          display_name: "Event",
-          variable_name: "event_id",
-          value: event.id
-        },
-        {
-          display_name: "Buyer Name",
-          variable_name: "buyer_name",
-          value: buyerName
-        },
-        {
-          display_name: "Buyer Phone", // ✅ ADDED: Phone in metadata
-          variable_name: "buyer_phone",
-          value: buyerPhone
-        },
-        {
-          display_name: "Ticket Price",
-          variable_name: "ticket_price",
-          value: ticketPrice
-        },
-        {
-          display_name: "Service Fee",
-          variable_name: "service_fee",
-          value: serviceFee
-        },
-        {
-          display_name: "Quantity",
-          variable_name: "quantity",
-          value: quantity
-        }
-      ]
-    }
-  };
+  reference: `OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+  email: buyerEmail,
+  amount: total * 100, // Paystack expects amount in kobo
+  publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+  text: `Pay ₦${(total * quantity).toLocaleString()}`,
+  
+  // ✅ FIXED: Simplified metadata (Paystack format)
+  metadata: {
+    event_id: event.id,
+    event_title: event.title,
+    buyer_name: buyerName,
+    buyer_phone: buyerPhone,
+    ticket_price: ticketPrice,
+    service_fee: serviceFee,
+    quantity: quantity,
+    total_amount: total
+  },
+  
+  onSuccess: (reference) => {
+    console.log('Payment successful!', reference);
+    toast.success('🎉 Payment successful! Check your email for tickets.', { duration: 5000 });
+    // Webhook will handle ticket generation
+  },
+  
+  onClose: () => {
+    toast.error('Payment cancelled');
+  }
+};
 
   const handleSuccess = (reference) => {
     console.log('Payment successful!', reference);
