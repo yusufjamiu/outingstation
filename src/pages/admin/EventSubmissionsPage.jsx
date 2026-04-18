@@ -506,12 +506,12 @@ export default function EventSubmissionsPage() {
         </div>
       </main>
 
-      {/* Detail Modal - Same as before, truncated for brevity */}
+      {/* ✅ COMPLETE DETAIL MODAL */}
       {selectedSubmission && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between z-10">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">{selectedSubmission.eventTitle}</h2>
                 <p className="text-gray-600">{selectedSubmission.eventCategory}</p>
@@ -530,19 +530,198 @@ export default function EventSubmissionsPage() {
               </button>
             </div>
 
-            {/* Modal Content - Add all the sections from the previous version */}
+            {/* ✅ COMPLETE Modal Content */}
             <div className="p-6 space-y-6">
+              {/* Image */}
               {selectedSubmission.imageUrl && (
-                <img 
-                  src={selectedSubmission.imageUrl} 
-                  alt={selectedSubmission.eventTitle}
-                  className="w-full max-h-96 object-cover rounded-xl"
-                />
+                <div className="relative">
+                  <img 
+                    src={selectedSubmission.imageUrl} 
+                    alt={selectedSubmission.eventTitle}
+                    className="w-full max-h-96 object-cover rounded-xl"
+                    onError={(e) => e.target.style.display = 'none'}
+                  />
+                </div>
               )}
               
-              <p className="text-gray-700">{selectedSubmission.eventDescription}</p>
-              
-              {/* Add other modal content sections here */}
+              {/* Description */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Description</h3>
+                <p className="text-gray-700 whitespace-pre-wrap">{selectedSubmission.eventDescription}</p>
+              </div>
+
+              {/* Event Details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left Column */}
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-1">Category</h4>
+                    <p className="text-gray-900">{selectedSubmission.eventCategory}</p>
+                  </div>
+
+                  {selectedSubmission.listingType === 'event' ? (
+                    <>
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-1">Event Type</h4>
+                        <p className="text-gray-900">{selectedSubmission.eventType || 'Regular'}</p>
+                      </div>
+
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-1">Date & Time</h4>
+                        <div className="flex items-center gap-2 text-gray-900">
+                          <Calendar size={16} />
+                          {selectedSubmission.startDate}
+                        </div>
+                        <div className="flex items-center gap-2 text-gray-900 mt-1">
+                          <Clock size={16} />
+                          {selectedSubmission.startTime}
+                        </div>
+                        {selectedSubmission.endDate && (
+                          <div className="text-sm text-gray-600 mt-1">
+                            Ends: {selectedSubmission.endDate}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-1">Operating Hours</h4>
+                      {selectedSubmission.alwaysOpen ? (
+                        <p className="text-green-600 font-semibold">Open 24/7</p>
+                      ) : (
+                        <p className="text-gray-900 whitespace-pre-line">{selectedSubmission.operatingHours}</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-1">Location</h4>
+                    <div className="flex items-start gap-2 text-gray-900">
+                      <MapPin size={16} className="flex-shrink-0 mt-1" />
+                      <div>
+                        <p>{selectedSubmission.venue || selectedSubmission.placeName}</p>
+                        <p className="text-sm text-gray-600">{selectedSubmission.address}</p>
+                        <p className="text-sm text-gray-600">{selectedSubmission.city}</p>
+                      </div>
+                    </div>
+                    {selectedSubmission.googleMapsLink && (
+                      <a 
+                        href={selectedSubmission.googleMapsLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-cyan-600 hover:text-cyan-700 text-sm mt-2"
+                      >
+                        <ExternalLink size={14} />
+                        View on Maps
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Column */}
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-1">Organizer</h4>
+                    <p className="text-gray-900 font-medium">{selectedSubmission.organizerName}</p>
+                    {selectedSubmission.organizationName && (
+                      <p className="text-gray-600 text-sm">{selectedSubmission.organizationName}</p>
+                    )}
+                    <div className="flex items-center gap-2 text-gray-600 text-sm mt-2">
+                      <Mail size={14} />
+                      <a href={`mailto:${selectedSubmission.organizerEmail}`} className="hover:text-cyan-600">
+                        {selectedSubmission.organizerEmail}
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-600 text-sm mt-1">
+                      <Phone size={14} />
+                      <a href={`tel:${selectedSubmission.organizerPhone}`} className="hover:text-cyan-600">
+                        {selectedSubmission.organizerPhone}
+                      </a>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-1">Pricing</h4>
+                    <div className="flex items-center gap-2">
+                      <DollarSign size={16} />
+                      {selectedSubmission.isFree ? (
+                        <span className="text-green-600 font-semibold">FREE</span>
+                      ) : (
+                        <span className="text-gray-900">₦{selectedSubmission.ticketPrice?.toLocaleString() || 'N/A'}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {selectedSubmission.expectedAttendance && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-1">Expected Attendance</h4>
+                      <div className="flex items-center gap-2 text-gray-900">
+                        <Users size={16} />
+                        {selectedSubmission.expectedAttendance} people
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedSubmission.isUniversityEvent && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-1">University Event</h4>
+                      <div className="flex items-center gap-2 text-blue-600 font-semibold">
+                        <GraduationCap size={16} />
+                        {selectedSubmission.universityName}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedSubmission.website && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-1">Website</h4>
+                      <a 
+                        href={selectedSubmission.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-cyan-600 hover:text-cyan-700 text-sm"
+                      >
+                        <ExternalLink size={14} />
+                        {selectedSubmission.website}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Additional Info */}
+              {selectedSubmission.additionalInfo && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Additional Information</h3>
+                  <p className="text-gray-700 whitespace-pre-wrap">{selectedSubmission.additionalInfo}</p>
+                </div>
+              )}
+
+              {/* Status Info */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-1">Status</h4>
+                    {getStatusBadge(selectedSubmission.status)}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-1">Submitted</h4>
+                    <p className="text-gray-900 text-sm">{formatDate(selectedSubmission.submittedAt)}</p>
+                  </div>
+                  {selectedSubmission.reviewedAt && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-1">Reviewed</h4>
+                      <p className="text-gray-900 text-sm">{formatDate(selectedSubmission.reviewedAt)}</p>
+                    </div>
+                  )}
+                  {selectedSubmission.rejectionReason && (
+                    <div className="col-span-2">
+                      <h4 className="text-sm font-semibold text-red-700 mb-1">Rejection Reason</h4>
+                      <p className="text-red-600 text-sm">{selectedSubmission.rejectionReason}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Modal Actions */}
