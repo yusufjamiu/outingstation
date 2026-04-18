@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Calendar } from 'lucide-react';
 import EventCard from './EventCard';
@@ -6,7 +6,6 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { filterUpcomingEvents } from '../utils/eventFilters';
 
-// Skeleton Card
 const SkeletonCard = () => (
   <div className="bg-white rounded-2xl overflow-hidden shadow-sm animate-pulse">
     <div className="w-full h-40 bg-gray-200" />
@@ -22,7 +21,6 @@ const SkeletonCard = () => (
   </div>
 );
 
-// Empty State
 const EmptyState = () => (
   <div className="flex flex-col items-center justify-center py-20 px-4">
     <div className="w-20 h-20 bg-cyan-50 rounded-full flex items-center justify-center mb-6">
@@ -45,6 +43,50 @@ const EmptyState = () => (
 const FeaturedEvents = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [headerVisible, setHeaderVisible] = useState(false);
+  const [visibleCards, setVisibleCards] = useState([]);
+  const headerRef = useRef(null);
+  const cardRefs = useRef([]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setHeaderVisible(true);
+        } else {
+          setHeaderVisible(false);
+        }
+      },
+      { threshold: 0.3 }
+    );
+    if (headerRef.current) observer.observe(headerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (events.length === 0) return;
+    const observers = cardRefs.current.map((el, i) => {
+      if (!el) return null;
+      const obs = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setTimeout(() => {
+              setVisibleCards(prev => {
+                if (prev.includes(i)) return prev;
+                return [...prev, i];
+              });
+            }, i * 80);
+          } else {
+            setVisibleCards(prev => prev.filter(v => v !== i));
+          }
+        },
+        { threshold: 0.1 }
+      );
+      obs.observe(el);
+      return obs;
+    });
+    return () => observers.forEach(o => o && o.disconnect());
+  }, [events]);
 
   useEffect(() => {
     loadFeaturedEvents();
@@ -75,7 +117,10 @@ const FeaturedEvents = () => {
       <div className="max-w-7xl mx-auto">
 
         {/* Header */}
-        <div className="text-center mb-12">
+        <div
+          ref={headerRef}
+          className={'text-center mb-12 transition-all duration-700 ' + (headerVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6')}
+        >
           <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-3">
             Featured & Trending Events
           </h2>
@@ -99,8 +144,14 @@ const FeaturedEvents = () => {
             {events.length > 0 ? (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-                  {events.map((event) => (
-                    <EventCard key={event.id} event={event} />
+                  {events.map((event, i) => (
+                    <div
+                      key={event.id}
+                      ref={el => cardRefs.current[i] = el}
+                      className={'transition-all duration-500 ' + (visibleCards.includes(i) ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-8')}
+                    >
+                      <EventCard event={event} />
+                    </div>
                   ))}
                 </div>
                 <div className="text-center">

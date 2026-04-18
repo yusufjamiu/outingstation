@@ -104,7 +104,7 @@ export default function SignupPage() {
     const trimmedPhone = phone.trim();
     
     if (!trimmedPhone) {
-      return null; // Phone is optional
+      return 'Phone number is required'; // ✅ CHANGED: Now required
     }
     
     // Remove spaces, dashes, parentheses
@@ -177,12 +177,10 @@ export default function SignupPage() {
       return setError(nameError);
     }
     
-    // Validate phone (if provided)
-    if (trimmedData.phone) {
-      const phoneError = validatePhone(trimmedData.phone);
-      if (phoneError) {
-        return setError(phoneError);
-      }
+    // Validate phone (REQUIRED) ✅ CHANGED
+    const phoneError = validatePhone(trimmedData.phone);
+    if (phoneError) {
+      return setError(phoneError);
     }
     
     // Validate city (if provided)
@@ -340,19 +338,26 @@ export default function SignupPage() {
               />
             </div>
 
-            {/* ✅ ADDED: Phone number field */}
-            <div className="relative">
-              <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input 
-                type="tel" 
-                name="phone" 
-                value={formData.phone} 
-                onChange={handleChange}
-                maxLength={20}
-                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Phone number (Optional)" 
-              />
-            </div>
+            {/* ✅ UPDATED: Phone number field - NOW REQUIRED + NUMBERS ONLY */}
+<div className="relative">
+  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+  <input 
+    type="tel" 
+    name="phone" 
+    required
+    value={formData.phone} 
+    onChange={handleChange}
+    onInput={(e) => {
+      // Only allow numbers, spaces, dashes, parentheses, and +
+      e.target.value = e.target.value.replace(/[^0-9+\s\-()]/g, '');
+    }}
+    pattern="[\+]?[0-9\s\-()]+"
+    maxLength={20}
+    className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+    placeholder="Phone number (e.g. +234 801 234 5678)" 
+  />
+  <p className="text-xs text-gray-500 mt-1 ml-1">For event updates via WhatsApp</p>
+</div>
 
             <div className="relative">
               <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />

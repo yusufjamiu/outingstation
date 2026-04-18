@@ -29,9 +29,13 @@ export default function LandingPage() {
   const [tickerEvents, setTickerEvents] = useState([]);
   const [aboutVisible, setAboutVisible] = useState(false);
   const [featuresVisible, setFeaturesVisible] = useState([false, false, false]);
+  const [uniImgVisible, setUniImgVisible] = useState(false);
+  const [uniTextVisible, setUniTextVisible] = useState(false);
 
   const aboutRef = useRef(null);
   const featuresRef = useRef([]);
+  const uniImgRef = useRef(null);
+  const uniTextRef = useRef(null);
 
   const rotatingTexts = [
     "From conferences in Lagos to tech meetups in Abuja, find your next unforgettable experience!",
@@ -55,51 +59,83 @@ export default function LandingPage() {
     { name: 'Career Fair 2026', city: 'Lagos', date: 'Wed, Apr 23', status: 'amber' },
   ];
 
-  // Intersection Observer for about section
-useEffect(() => {
-  const observer = new IntersectionObserver(
-    ([entry]) => {
-      if (entry.isIntersecting) {
-        setAboutVisible(true);
-      } else {
-        setAboutVisible(false);
-      }
-    },
-    { threshold: 0.2 }
-  );
-  if (aboutRef.current) observer.observe(aboutRef.current);
-  return () => observer.disconnect();
-}, []);
-
-// Intersection Observer for each feature bullet
-useEffect(() => {
-  const observers = featuresRef.current.map((el, i) => {
-    if (!el) return null;
-    const obs = new IntersectionObserver(
+  // About section observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setTimeout(() => {
-            setFeaturesVisible(prev => {
-              const updated = [...prev];
-              updated[i] = true;
-              return updated;
-            });
-          }, i * 150);
+          setAboutVisible(true);
         } else {
-          setFeaturesVisible(prev => {
-            const updated = [...prev];
-            updated[i] = false;
-            return updated;
-          });
+          setAboutVisible(false);
         }
       },
-      { threshold: 0.5 }
+      { threshold: 0.2 }
     );
-    obs.observe(el);
-    return obs;
-  });
-  return () => observers.forEach(o => o && o.disconnect());
-}, []);
+    if (aboutRef.current) observer.observe(aboutRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // Feature bullets observer
+  useEffect(() => {
+    const observers = featuresRef.current.map((el, i) => {
+      if (!el) return null;
+      const obs = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setTimeout(() => {
+              setFeaturesVisible(prev => {
+                const updated = [...prev];
+                updated[i] = true;
+                return updated;
+              });
+            }, i * 150);
+          } else {
+            setFeaturesVisible(prev => {
+              const updated = [...prev];
+              updated[i] = false;
+              return updated;
+            });
+          }
+        },
+        { threshold: 0.5 }
+      );
+      obs.observe(el);
+      return obs;
+    });
+    return () => observers.forEach(o => o && o.disconnect());
+  }, []);
+
+  // University image observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setUniImgVisible(true);
+        } else {
+          setUniImgVisible(false);
+        }
+      },
+      { threshold: 0.2 }
+    );
+    if (uniImgRef.current) observer.observe(uniImgRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // University text observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setUniTextVisible(true);
+        } else {
+          setUniTextVisible(false);
+        }
+      },
+      { threshold: 0.2 }
+    );
+    if (uniTextRef.current) observer.observe(uniTextRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   // Load ticker events from Firestore
   useEffect(() => {
@@ -193,9 +229,9 @@ useEffect(() => {
 
   const handleSearch = () => {
     if (searchQuery.trim()) {
-      navigate(`/events?search=${searchQuery}&city=${selectedCity}`);
+      navigate('/events?search=' + searchQuery + '&city=' + selectedCity);
     } else {
-      navigate(`/events?city=${selectedCity}`);
+      navigate('/events?city=' + selectedCity);
     }
   };
 
@@ -277,49 +313,46 @@ useEffect(() => {
                   Explore
                 </button>
                 <Link to="/categories">
-  <button className="w-auto mx-auto lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
-    <Grid size={20} />
-    Browse by Category
-  </button>
-</Link>
+                  <button className="w-auto mx-auto lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
+                    <Grid size={20} />
+                    Browse by Category
+                  </button>
+                </Link>
               </div>
 
               {/* Images Grid */}
               <div className="flex items-start justify-center gap-4 md:gap-6 pb-10 md:pb-0">
-
-  <div className="relative flex-shrink-0">
-    <div className="w-44 h-52 sm:w-56 sm:h-60 md:w-64 md:h-64 bg-gradient-to-br from-orange-200 to-pink-200 rounded-2xl overflow-hidden shadow-xl">
-      <img src={heroImage01} alt="Friends outdoors" className="w-full h-full object-cover" />
-    </div>
-    <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-3 sm:px-6 py-2 sm:py-3 rounded-2xl shadow-xl whitespace-nowrap">
-      <div className="flex items-center gap-2 md:gap-4">
-        <div>
-          {loading ? (
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold">...</div>
-          ) : (
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold">{formatNumber(userCount)}</div>
-          )}
-          <div className="text-xs opacity-90">Trusted Users</div>
-        </div>
-        <div className="flex -space-x-2">
-          <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-red-400 border-2 border-white"></div>
-          <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 border-2 border-white"></div>
-          <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-blue-400 border-2 border-white"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div className="flex flex-col gap-3 md:gap-6 flex-shrink-0">
-    <div className="w-44 h-32 sm:w-56 sm:h-36 md:w-64 md:h-40 bg-gradient-to-br from-blue-200 to-purple-200 rounded-2xl overflow-hidden shadow-xl">
-      <img src={heroImage2} alt="Conference" className="w-full h-full object-cover" />
-    </div>
-    <div className="w-44 h-32 sm:w-56 sm:h-36 md:w-64 md:h-40 bg-gradient-to-br from-amber-200 to-orange-200 rounded-2xl overflow-hidden shadow-xl">
-      <img src={heroImage3} alt="Workshop" className="w-full h-full object-cover" />
-    </div>
-  </div>
-
-</div>
+                <div className="relative flex-shrink-0">
+                  <div className="w-44 h-52 sm:w-56 sm:h-60 md:w-64 md:h-64 bg-gradient-to-br from-orange-200 to-pink-200 rounded-2xl overflow-hidden shadow-xl">
+                    <img src={heroImage01} alt="Friends outdoors" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-3 sm:px-6 py-2 sm:py-3 rounded-2xl shadow-xl whitespace-nowrap">
+                    <div className="flex items-center gap-2 md:gap-4">
+                      <div>
+                        {loading ? (
+                          <div className="text-xl sm:text-2xl md:text-3xl font-bold">...</div>
+                        ) : (
+                          <div className="text-xl sm:text-2xl md:text-3xl font-bold">{formatNumber(userCount)}</div>
+                        )}
+                        <div className="text-xs opacity-90">Trusted Users</div>
+                      </div>
+                      <div className="flex -space-x-2">
+                        <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-red-400 border-2 border-white"></div>
+                        <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 border-2 border-white"></div>
+                        <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-blue-400 border-2 border-white"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-3 md:gap-6 flex-shrink-0">
+                  <div className="w-44 h-32 sm:w-56 sm:h-36 md:w-64 md:h-40 bg-gradient-to-br from-blue-200 to-purple-200 rounded-2xl overflow-hidden shadow-xl">
+                    <img src={heroImage2} alt="Conference" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="w-44 h-32 sm:w-56 sm:h-36 md:w-64 md:h-40 bg-gradient-to-br from-amber-200 to-orange-200 rounded-2xl overflow-hidden shadow-xl">
+                    <img src={heroImage3} alt="Workshop" className="w-full h-full object-cover" />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -329,7 +362,6 @@ useEffect(() => {
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
 
-              {/* Left Side - Image */}
               <div className="relative">
                 <svg className="absolute -top-16 right-0 w-48 h-32 text-cyan-400 hidden lg:block" viewBox="0 0 200 150" fill="none">
                   <path d="M10 80 Q 60 20, 100 60 T 180 40" stroke="currentColor" strokeWidth="2" strokeDasharray="8,8" fill="none" />
@@ -343,31 +375,24 @@ useEffect(() => {
                 </div>
               </div>
 
-              {/* Right Side - Content with animations */}
               <div ref={aboutRef} className="overflow-hidden">
-
                 <p className={'text-gray-500 text-sm md:text-base mb-3 transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4')}>
                   We bring you the events happening near you
                 </p>
-
                 <h2 className={'text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-8 transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5')} style={{ transitionDelay: '100ms' }}>
                   Discover Local Happenings
                 </h2>
-
                 <h3 className={'text-xl md:text-2xl font-semibold text-cyan-400 mb-4 transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-5')} style={{ transitionDelay: '200ms' }}>
                   What Outing Station Does.
                 </h3>
-
                 <p className={'text-gray-600 text-base md:text-lg mb-6 leading-relaxed transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3')} style={{ transitionDelay: '300ms' }}>
                   Outing Station is a platform for discovering, browsing, and managing diverse events, from local gatherings to virtual webinars, with features like city-based search, category filters, and detailed event information.
                 </p>
 
-                {/* Ticker Label */}
                 <p className={'text-xs text-gray-400 tracking-widest mb-2 transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2')} style={{ transitionDelay: '400ms' }}>
                   HAPPENING NOW & SOON
                 </p>
 
-                {/* Ticker */}
                 <div className={'border-t border-b border-gray-100 py-3 mb-8 overflow-hidden transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4')} style={{ transitionDelay: '500ms' }}>
                   {tickerEvents.length > 0 && (
                     <div className="flex animate-ticker w-max">
@@ -388,7 +413,6 @@ useEffect(() => {
                   )}
                 </div>
 
-                {/* Feature Bullets with growing cyan bar */}
                 <div className="space-y-6 mb-10">
                   {features.map((feature, i) => (
                     <div
@@ -399,7 +423,7 @@ useEffect(() => {
                       <div className="relative w-1 bg-gray-100 flex-shrink-0 rounded-full overflow-hidden" style={{ minHeight: '100%' }}>
                         <div
                           className={'absolute top-0 left-0 w-full bg-cyan-400 rounded-full transition-all duration-700 ' + (featuresVisible[i] ? 'h-full' : 'h-0')}
-                          style={{ transitionDelay: featuresVisible[i] ? `${i * 150}ms` : '0ms' }}
+                          style={{ transitionDelay: featuresVisible[i] ? i * 150 + 'ms' : '0ms' }}
                         />
                       </div>
                       <p className="text-gray-700 text-sm md:text-base">{feature}</p>
@@ -407,7 +431,6 @@ useEffect(() => {
                   ))}
                 </div>
 
-                {/* Button */}
                 <div className={'transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3')} style={{ transitionDelay: '1000ms' }}>
                   <Link to="/events">
                     <button className="bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-10 py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow mx-auto lg:mx-0 block">
@@ -415,7 +438,6 @@ useEffect(() => {
                     </button>
                   </Link>
                 </div>
-
               </div>
             </div>
           </div>
@@ -432,25 +454,33 @@ useEffect(() => {
         <section className="bg-gradient-to-br from-gray-100 to-gray-50 py-16 md:py-24 px-4 md:px-6">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-              <div className="relative order-1 lg:order-1">
-                <div className="rounded-3xl overflow-hidden shadow-2xl">
+
+              <div className="relative order-1 lg:order-1 pb-12 md:pb-0">
+                <div
+                  ref={uniImgRef}
+                  className={'rounded-3xl overflow-hidden shadow-2xl transition-all duration-700 ' + (uniImgVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-8')}
+                >
                   <img src={campusImage} alt="University campus" className="w-full h-64 md:h-80 lg:h-96 object-cover" />
                 </div>
-                <div className="absolute bottom-0 right-0 lg:right-12 transform translate-y-8 w-64 md:w-80 rounded-3xl overflow-hidden shadow-2xl border-4 border-white">
-                  <img src={studentsImage} alt="Students hanging out" className="w-full h-48 md:h-56 object-cover" />
+                <div className={'absolute bottom-0 right-0 lg:right-12 transform translate-y-8 w-56 md:w-80 rounded-3xl overflow-hidden shadow-2xl border-4 border-white transition-all duration-700 delay-300 ' + (uniImgVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-8')}>
+                  <img src={studentsImage} alt="Students hanging out" className="w-full h-40 md:h-56 object-cover" />
                 </div>
               </div>
-              <div className="order-2 lg:order-2">
-                <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-6 leading-tight">
+
+              <div ref={uniTextRef} className="order-2 lg:order-2">
+                <h2 className={'text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-6 leading-tight transition-all duration-700 ' + (uniTextVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6')}>
                   Discover University Events
                 </h2>
-                <p className="text-gray-600 text-base md:text-lg mb-8 leading-relaxed">
+                <p className={'text-gray-600 text-base md:text-lg mb-8 leading-relaxed transition-all duration-700 ' + (uniTextVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4')} style={{ transitionDelay: '150ms' }}>
                   From guest lectures to campus parties, find out what's happening at your school. Connect with your community and never miss a beat.
                 </p>
-                <Link to="/campus-events" className="inline-block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-10 py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow text-base md:text-lg">
-                  Select University
-                </Link>
+                <div className={'transition-all duration-700 ' + (uniTextVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4')} style={{ transitionDelay: '300ms' }}>
+                  <Link to="/campus-events" className="inline-block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-10 py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow text-base md:text-lg">
+                    Select University
+                  </Link>
+                </div>
               </div>
+
             </div>
           </div>
         </section>
