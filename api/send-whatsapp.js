@@ -60,6 +60,7 @@ export default async function handler(req, res) {
       phone: formattedPhone,
       variables
     });
+    console.log('🔗 Full URL:', url.replace(WHATSCHIMP_API_TOKEN, 'HIDDEN'));
 
     const response = await fetch(url, {
       method: 'POST'
