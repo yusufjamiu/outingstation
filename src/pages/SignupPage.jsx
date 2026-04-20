@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, User, Eye, EyeOff, ArrowLeft, MapPin, Phone } from 'lucide-react';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { sendWelcomeMessage } from '../services/whatsappService';
 import Create from './../assets/Create.jpg'
 import Image2 from './../assets/SignUp2.JPG'
 import Connected from './../assets/Connected.JPG'
@@ -15,12 +16,17 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [savingPhone, setSavingPhone] = useState(false);
+
   const { signup, loginWithGoogle, currentUser } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (currentUser) navigate('/dashboard');
-  }, [currentUser, navigate]);
+    if (currentUser && !showPhoneModal) navigate('/dashboard');
+  }, [currentUser, navigate, showPhoneModal]);
 
   const carouselImages = [
     { image: Create, title: 'Join OutingStation', description: 'Create an account and start discovering amazing events near you.' },
@@ -33,7 +39,6 @@ export default function SignupPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // ✅ Create welcome notification for new users
   const createWelcomeNotification = async (userId) => {
     try {
       await addDoc(collection(db, 'notifications'), {
@@ -44,124 +49,66 @@ export default function SignupPage() {
         read: false,
         createdAt: serverTimestamp()
       });
-      console.log('✅ Welcome notification created for user:', userId);
     } catch (error) {
       console.error('❌ Error creating welcome notification:', error);
     }
   };
 
-  // ✅ VALIDATION FUNCTIONS
   const validateName = (name) => {
     const trimmedName = name.trim();
-    
-    if (!trimmedName) {
-      return 'Name is required';
-    }
-    
-    if (trimmedName.length < 2) {
-      return 'Name must be at least 2 characters';
-    }
-    if (trimmedName.length > 50) {
-      return 'Name must be less than 50 characters';
-    }
-    
+    if (!trimmedName) return 'Name is required';
+    if (trimmedName.length < 2) return 'Name must be at least 2 characters';
+    if (trimmedName.length > 50) return 'Name must be less than 50 characters';
     const nameRegex = /^[a-zA-Z\s'-]+$/;
-    if (!nameRegex.test(trimmedName)) {
-      return 'Name can only contain letters, spaces, hyphens, and apostrophes';
-    }
-    
+    if (!nameRegex.test(trimmedName)) return 'Name can only contain letters, spaces, hyphens, and apostrophes';
     const alphaCount = trimmedName.replace(/[^a-zA-Z]/g, '').length;
-    if (alphaCount < 2) {
-      return 'Name must contain at least 2 letters';
-    }
-    
+    if (alphaCount < 2) return 'Name must contain at least 2 letters';
     return null;
   };
 
   const validateCity = (city) => {
     const trimmedCity = city.trim();
-    
-    if (!trimmedCity) {
-      return null; // City is optional
-    }
-    
-    if (trimmedCity.length < 2) {
-      return 'City must be at least 2 characters';
-    }
-    if (trimmedCity.length > 100) {
-      return 'City must be less than 100 characters';
-    }
-    
+    if (!trimmedCity) return null;
+    if (trimmedCity.length < 2) return 'City must be at least 2 characters';
+    if (trimmedCity.length > 100) return 'City must be less than 100 characters';
     const cityRegex = /^[a-zA-Z\s,'-]+$/;
-    if (!cityRegex.test(trimmedCity)) {
-      return 'City can only contain letters, spaces, commas, and hyphens';
-    }
-    
+    if (!cityRegex.test(trimmedCity)) return 'City can only contain letters, spaces, commas, and hyphens';
     return null;
   };
 
   const validatePhone = (phone) => {
     const trimmedPhone = phone.trim();
-    
-    if (!trimmedPhone) {
-      return 'Phone number is required'; // ✅ CHANGED: Now required
-    }
-    
-    // Remove spaces, dashes, parentheses
+    if (!trimmedPhone) return 'Phone number is required';
     const cleanPhone = trimmedPhone.replace(/[\s\-()]/g, '');
-    
-    // Allow + at start for international format
-    const phoneRegex = /^\+?[0-9]{10,15}$/;
-    if (!phoneRegex.test(cleanPhone)) {
-      return 'Please enter a valid phone number (10-15 digits)';
+    if (cleanPhone.startsWith('+234')) {
+      if (cleanPhone.length !== 14) return 'Phone number must be 10 digits after +234';
+    } else if (cleanPhone.startsWith('234')) {
+      if (cleanPhone.length !== 13) return 'Phone number must be 10 digits after 234';
+    } else {
+      if (cleanPhone.length < 10 || cleanPhone.length > 11) return 'Phone number must be 10-11 digits';
     }
-    
     return null;
   };
 
   const validatePassword = (password) => {
-    if (password.length < 8) {
-      return 'Password must be at least 8 characters';
-    }
-    if (password.length > 128) {
-      return 'Password must be less than 128 characters';
-    }
-    
-    if (!/[A-Z]/.test(password)) {
-      return 'Password must contain at least one uppercase letter';
-    }
-    
-    if (!/[a-z]/.test(password)) {
-      return 'Password must contain at least one lowercase letter';
-    }
-    
-    if (!/[0-9]/.test(password)) {
-      return 'Password must contain at least one number';
-    }
-    
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-      return 'Password must contain at least one special character (!@#$%^&*...)';
-    }
-    
+    if (password.length < 8) return 'Password must be at least 8 characters';
+    if (password.length > 128) return 'Password must be less than 128 characters';
+    if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter';
+    if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter';
+    if (!/[0-9]/.test(password)) return 'Password must contain at least one number';
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) return 'Password must contain at least one special character (!@#$%^&*...)';
     return null;
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    
-    if ((name === 'name' || name === 'city') && value.startsWith(' ')) {
-      return;
-    }
-    
+    if ((name === 'name' || name === 'city') && value.startsWith(' ')) return;
     setFormData({ ...formData, [name]: value });
-    
     if (error) setError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Trim all fields
     const trimmedData = {
       name: formData.name.trim(),
       email: formData.email.trim(),
@@ -170,65 +117,50 @@ export default function SignupPage() {
       password: formData.password,
       confirmPassword: formData.confirmPassword
     };
-    
-    // Validate name
+
     const nameError = validateName(trimmedData.name);
-    if (nameError) {
-      return setError(nameError);
-    }
-    
-    // Validate phone (REQUIRED) ✅ CHANGED
+    if (nameError) return setError(nameError);
+
     const phoneError = validatePhone(trimmedData.phone);
-    if (phoneError) {
-      return setError(phoneError);
-    }
-    
-    // Validate city (if provided)
+    if (phoneError) return setError(phoneError);
+
     if (trimmedData.city) {
       const cityError = validateCity(trimmedData.city);
-      if (cityError) {
-        return setError(cityError);
-      }
+      if (cityError) return setError(cityError);
     }
-    
-    // Validate email
-    if (!trimmedData.email) {
-      return setError('Email is required');
-    }
+
+    if (!trimmedData.email) return setError('Email is required');
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedData.email)) {
-      return setError('Please enter a valid email address');
-    }
-    
-    // Validate password
+    if (!emailRegex.test(trimmedData.email)) return setError('Please enter a valid email address');
+
     const passwordError = validatePassword(trimmedData.password);
-    if (passwordError) {
-      return setError(passwordError);
-    }
-    
-    // Check password match
-    if (trimmedData.password !== trimmedData.confirmPassword) {
-      return setError('Passwords do not match');
-    }
-    
+    if (passwordError) return setError(passwordError);
+
+    if (trimmedData.password !== trimmedData.confirmPassword) return setError('Passwords do not match');
+
     try {
       setError('');
       setLoading(true);
-      
-      // ✅ UPDATED: Pass phone number to signup
-      const userCredential = await signup(
-        trimmedData.email, 
-        trimmedData.password, 
-        trimmedData.name, 
-        trimmedData.city, 
-        trimmedData.phone
-      );
-      
-      // ✅ Create welcome notification
+
+      let formattedPhone = trimmedData.phone;
+      if (!formattedPhone.startsWith('+234') && !formattedPhone.startsWith('234')) {
+        formattedPhone = formattedPhone.replace(/^0/, '');
+        formattedPhone = '+234' + formattedPhone;
+      }
+
+      const userCredential = await signup(trimmedData.email, trimmedData.password, trimmedData.name, trimmedData.city, formattedPhone);
+
       if (userCredential && userCredential.user) {
         await createWelcomeNotification(userCredential.user.uid);
+        if (formattedPhone) {
+          try {
+            await sendWelcomeMessage({ phone: formattedPhone, name: trimmedData.name });
+          } catch (whatsappError) {
+            console.error('⚠️ WhatsApp send failed (non-blocking):', whatsappError);
+          }
+        }
       }
-      
+
       navigate('/dashboard');
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
@@ -244,30 +176,57 @@ export default function SignupPage() {
     setLoading(false);
   };
 
+  const savePhoneNumber = async (userId) => {
+    const phoneValidationError = validatePhone(phoneNumber);
+    if (phoneValidationError) {
+      setPhoneError(phoneValidationError);
+      return false;
+    }
+    try {
+      setSavingPhone(true);
+      setPhoneError('');
+      let formattedPhone = phoneNumber.trim();
+      if (!formattedPhone.startsWith('+234') && !formattedPhone.startsWith('234')) {
+        formattedPhone = formattedPhone.replace(/^0/, '');
+        formattedPhone = '+234' + formattedPhone;
+      }
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, { phone: formattedPhone });
+      await sendWelcomeMessage({ phone: formattedPhone, name: currentUser?.displayName || 'there' });
+      setSavingPhone(false);
+      setShowPhoneModal(false);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving phone:', error);
+      setPhoneError('Failed to save phone number. Please try again.');
+      setSavingPhone(false);
+      return false;
+    }
+  };
+
   const handleGoogleSignup = async () => {
     try {
       setError('');
       setLoading(true);
-      
       const userCredential = await loginWithGoogle();
-      
-      // ✅ Create welcome notification for Google signup
       if (userCredential && userCredential.user) {
         await createWelcomeNotification(userCredential.user.uid);
+        setLoading(false);
+        setShowPhoneModal(true);
       }
-      
-      navigate('/dashboard');
     } catch (err) {
       setError('Failed to sign up with Google. Please try again.');
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
     <div className="min-h-screen flex">
+
       {/* Left Side - Form */}
       <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-8 overflow-y-auto">
         <div className="max-w-md w-full py-4">
+
           <Link to="/" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-8 transition-colors">
             <ArrowLeft size={20} /><span>Back to Website</span>
           </Link>
@@ -279,8 +238,11 @@ export default function SignupPage() {
 
           {/* Social Buttons */}
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <button onClick={handleGoogleSignup} disabled={loading}
-              className="flex items-center justify-center gap-2 bg-white border-2 border-gray-200 rounded-xl py-3 hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-50">
+            <button
+              onClick={handleGoogleSignup}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 bg-white border-2 border-gray-200 rounded-xl py-3 hover:border-gray-300 hover:bg-gray-50 transition-all disabled:opacity-50"
+            >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -289,7 +251,10 @@ export default function SignupPage() {
               </svg>
               <span className="font-medium text-gray-700">Google</span>
             </button>
-            <button disabled className="flex items-center justify-center gap-2 bg-white border-2 border-gray-200 rounded-xl py-3 opacity-40 cursor-not-allowed">
+            <button
+              disabled
+              className="flex items-center justify-center gap-2 bg-white border-2 border-gray-200 rounded-xl py-3 opacity-40 cursor-not-allowed"
+            >
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
               </svg>
@@ -298,7 +263,9 @@ export default function SignupPage() {
           </div>
 
           <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200"></div>
+            </div>
             <div className="relative flex justify-center text-sm">
               <span className="px-4 bg-white text-gray-500">Or sign up with email</span>
             </div>
@@ -309,106 +276,138 @@ export default function SignupPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input 
-                type="text" 
-                name="name" 
-                required 
-                value={formData.name} 
-                onChange={handleChange}
-                minLength={2}
-                maxLength={50}
-                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Full Name (letters only)" 
-              />
+
+            {/* Name */}
+            <div>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <User className="text-gray-400" size={20} />
+                </div>
+                <input
+                  type="text"
+                  name="name"
+                  required
+                  value={formData.name}
+                  onChange={handleChange}
+                  minLength={2}
+                  maxLength={50}
+                  className="w-full pl-11 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                  placeholder="Full Name"
+                />
+              </div>
               <p className="text-xs text-gray-500 mt-1 ml-1">2-50 characters, letters only</p>
             </div>
 
+            {/* Email */}
             <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input 
-                type="email" 
-                name="email" 
-                required 
-                value={formData.email} 
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                <Mail className="text-gray-400" size={20} />
+              </div>
+              <input
+                type="email"
+                name="email"
+                required
+                value={formData.email}
                 onChange={handleChange}
-                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Email address" 
+                className="w-full pl-11 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                placeholder="Email address"
               />
             </div>
 
-            {/* ✅ UPDATED: Phone number field - NOW REQUIRED + NUMBERS ONLY */}
-<div className="relative">
-  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-  <input 
-    type="tel" 
-    name="phone" 
-    required
-    value={formData.phone} 
-    onChange={handleChange}
-    onInput={(e) => {
-      // Only allow numbers, spaces, dashes, parentheses, and +
-      e.target.value = e.target.value.replace(/[^0-9+\s\-()]/g, '');
-    }}
-    pattern="[\+]?[0-9\s\-()]+"
-    maxLength={20}
-    className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-    placeholder="Phone number (e.g. +234 801 234 5678)" 
-  />
-  <p className="text-xs text-gray-500 mt-1 ml-1">For event updates via WhatsApp</p>
-</div>
+            {/* Phone */}
+            <div>
+              <div className="flex items-center border border-gray-200 rounded-xl bg-gray-50 focus-within:ring-2 focus-within:ring-cyan-400">
+                <div className="pl-4 pr-3 flex items-center gap-2 border-r border-gray-200 py-4 flex-shrink-0">
+                  <Phone className="text-gray-400" size={20} />
+                  <span className="text-gray-600 font-medium">+234</span>
+                </div>
+                <input
+                  type="tel"
+                  name="phone"
+                  required
+                  value={formData.phone}
+                  onChange={handleChange}
+                  onInput={(e) => {
+                    let value = e.target.value.replace(/^0/, '');
+                    value = value.replace(/[^0-9]/g, '');
+                    e.target.value = value;
+                  }}
+                  pattern="[0-9]{10,11}"
+                  maxLength={11}
+                  className="flex-1 px-4 py-4 outline-none bg-transparent rounded-r-xl"
+                  placeholder="801 234 5678"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1 ml-1">For event updates via WhatsApp</p>
+            </div>
 
+            {/* City */}
             <div className="relative">
-              <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input 
-                type="text" 
-                name="city" 
-                value={formData.city} 
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                <MapPin className="text-gray-400" size={20} />
+              </div>
+              <input
+                type="text"
+                name="city"
+                value={formData.city}
                 onChange={handleChange}
                 maxLength={100}
-                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Your city (e.g. Lagos, Nigeria) - Optional" 
+                className="w-full pl-11 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                placeholder="Your city (e.g. Lagos, Nigeria) - Optional"
               />
             </div>
 
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input 
-                type={showPassword ? 'text' : 'password'} 
-                name="password" 
-                required 
-                value={formData.password} 
-                onChange={handleChange}
-                minLength={8}
-                maxLength={128}
-                className="w-full pl-12 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Password" 
-              />
-              <button type="button" onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
+            {/* Password */}
+            <div>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <Lock className="text-gray-400" size={20} />
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  required
+                  value={formData.password}
+                  onChange={handleChange}
+                  minLength={8}
+                  maxLength={128}
+                  className="w-full pl-11 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                  placeholder="Password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
               <p className="text-xs text-gray-500 mt-1 ml-1">
                 Min 8 chars: uppercase, lowercase, number, special char
               </p>
             </div>
 
+            {/* Confirm Password */}
             <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-              <input 
-                type={showConfirmPassword ? 'text' : 'password'} 
-                name="confirmPassword" 
-                required 
-                value={formData.confirmPassword} 
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                <Lock className="text-gray-400" size={20} />
+              </div>
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                name="confirmPassword"
+                required
+                value={formData.confirmPassword}
                 onChange={handleChange}
                 minLength={8}
                 maxLength={128}
-                className="w-full pl-12 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Confirm password" 
+                className="w-full pl-11 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                placeholder="Confirm password"
               />
-              <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
                 {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
@@ -419,8 +418,11 @@ export default function SignupPage() {
               <Link to="/privacy" className="text-cyan-500 hover:underline">Privacy Policy</Link>.
             </p>
 
-            <button type="submit" disabled={loading}
-              className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-4 rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-4 rounded-xl font-semibold hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -434,13 +436,17 @@ export default function SignupPage() {
             Already have an account?{' '}
             <Link to="/login" className="text-cyan-500 font-semibold hover:text-cyan-600">Log in</Link>
           </p>
+
         </div>
       </div>
 
       {/* Right Side - Carousel */}
       <div className="hidden lg:block lg:w-1/2 relative bg-gray-900 overflow-hidden">
         {carouselImages.map((slide, index) => (
-          <div key={index} className={`absolute inset-0 transition-opacity duration-1000 ${index === currentSlide ? 'opacity-100' : 'opacity-0'}`}>
+          <div
+            key={index}
+            className={'absolute inset-0 transition-opacity duration-1000 ' + (index === currentSlide ? 'opacity-100' : 'opacity-0')}
+          >
             <img src={slide.image} alt={slide.title} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
             <div className="absolute bottom-20 left-0 right-0 text-center text-white px-12">
@@ -451,11 +457,89 @@ export default function SignupPage() {
         ))}
         <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-2 z-10">
           {carouselImages.map((_, index) => (
-            <button key={index} onClick={() => setCurrentSlide(index)}
-              className={`h-2 rounded-full transition-all duration-300 ${index === currentSlide ? 'bg-white w-8' : 'bg-white/50 w-2'}`} />
+            <button
+              key={index}
+              onClick={() => setCurrentSlide(index)}
+              className={'h-2 rounded-full transition-all duration-300 ' + (index === currentSlide ? 'bg-white w-8' : 'bg-white/50 w-2')}
+            />
           ))}
         </div>
       </div>
+
+      {/* Phone Number Modal */}
+      {showPhoneModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">One More Step! 📱</h2>
+            <p className="text-gray-600 mb-6">
+              Enter your phone number to receive event updates and tickets via WhatsApp.
+            </p>
+
+            {phoneError && (
+              <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg mb-4 text-sm">
+                {phoneError}
+              </div>
+            )}
+
+            {/* Phone modal input */}
+            <div className="mb-6">
+              <div className="flex items-center border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-cyan-400">
+                <div className="pl-4 pr-3 flex items-center gap-2 border-r border-gray-200 py-4 flex-shrink-0">
+                  <Phone className="text-gray-400" size={20} />
+                  <span className="text-gray-600 font-medium">+234</span>
+                </div>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => {
+                    setPhoneNumber(e.target.value);
+                    if (phoneError) setPhoneError('');
+                  }}
+                  onInput={(e) => {
+                    let value = e.target.value.replace(/^0/, '');
+                    value = value.replace(/[^0-9]/g, '');
+                    e.target.value = value;
+                  }}
+                  pattern="[0-9]{10,11}"
+                  maxLength={11}
+                  placeholder="801 234 5678"
+                  className="flex-1 px-4 py-4 outline-none bg-transparent rounded-r-xl"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  const success = await savePhoneNumber(currentUser?.uid);
+                  if (success) navigate('/dashboard');
+                }}
+                disabled={savingPhone || !phoneNumber}
+                className="flex-1 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50"
+              >
+                {savingPhone ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Saving...
+                  </span>
+                ) : 'Continue'}
+              </button>
+              <button
+                onClick={() => { setShowPhoneModal(false); navigate('/dashboard'); }}
+                disabled={savingPhone}
+                className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition disabled:opacity-50"
+              >
+                Skip
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 text-center mt-4">
+              💡 You can add your phone number later in Settings
+            </p>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
