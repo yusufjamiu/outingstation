@@ -55,8 +55,14 @@ export default async function handler(req, res) {
     });
 
     const response = await fetch(url, {
-      method: 'POST'
-    });
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    variables: variables || {}
+  })
+});
 
     const responseText = await response.text();
     console.log('📄 Raw response:', responseText);
