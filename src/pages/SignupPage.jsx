@@ -25,7 +25,10 @@ export default function SignupPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (currentUser && !showPhoneModal) navigate('/dashboard');
+    if (currentUser && !showPhoneModal) {
+      console.log('✅ User already logged in, redirecting to dashboard');
+      navigate('/dashboard');
+    }
   }, [currentUser, navigate, showPhoneModal]);
 
   const carouselImages = [
@@ -49,6 +52,7 @@ export default function SignupPage() {
         read: false,
         createdAt: serverTimestamp()
       });
+      console.log('✅ Welcome notification created');
     } catch (error) {
       console.error('❌ Error creating welcome notification:', error);
     }
@@ -109,6 +113,9 @@ export default function SignupPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    console.log('📝 Form submitted');
+    
     const trimmedData = {
       name: formData.name.trim(),
       email: formData.email.trim(),
@@ -148,21 +155,37 @@ export default function SignupPage() {
         formattedPhone = '+234' + formattedPhone;
       }
 
+      console.log('📞 Formatted phone:', formattedPhone);
+      console.log('🔐 Creating account...');
+
       const userCredential = await signup(trimmedData.email, trimmedData.password, trimmedData.name, trimmedData.city, formattedPhone);
+
+      console.log('✅ Account created successfully');
 
       if (userCredential && userCredential.user) {
         await createWelcomeNotification(userCredential.user.uid);
+        
         if (formattedPhone) {
           try {
-            await sendWelcomeMessage({ phone: formattedPhone, name: trimmedData.name });
+            console.log('📱 Sending WhatsApp welcome message to:', formattedPhone);
+            const result = await sendWelcomeMessage({ phone: formattedPhone, name: trimmedData.name });
+            console.log('📱 WhatsApp result:', result);
+            
+            if (result.success) {
+              console.log('✅ WhatsApp sent successfully!');
+            } else {
+              console.warn('⚠️ WhatsApp send failed:', result.error);
+            }
           } catch (whatsappError) {
-            console.error('⚠️ WhatsApp send failed (non-blocking):', whatsappError);
+            console.error('❌ WhatsApp exception:', whatsappError);
           }
         }
       }
 
+      console.log('🎉 Signup complete, redirecting to dashboard');
       navigate('/dashboard');
     } catch (err) {
+      console.error('❌ Signup error:', err);
       if (err.code === 'auth/email-already-in-use') {
         setError('An account with this email already exists.');
       } else if (err.code === 'auth/weak-password') {
@@ -177,22 +200,47 @@ export default function SignupPage() {
   };
 
   const savePhoneNumber = async (userId) => {
+    console.log('💾 Saving phone number for user:', userId);
+    
     const phoneValidationError = validatePhone(phoneNumber);
     if (phoneValidationError) {
+      console.error('❌ Phone validation failed:', phoneValidationError);
       setPhoneError(phoneValidationError);
       return false;
     }
+    
     try {
       setSavingPhone(true);
       setPhoneError('');
+      
       let formattedPhone = phoneNumber.trim();
       if (!formattedPhone.startsWith('+234') && !formattedPhone.startsWith('234')) {
         formattedPhone = formattedPhone.replace(/^0/, '');
         formattedPhone = '+234' + formattedPhone;
       }
+      
+      console.log('📞 Formatted phone:', formattedPhone);
+      console.log('💾 Updating user document...');
+      
       const userRef = doc(db, 'users', userId);
       await updateDoc(userRef, { phone: formattedPhone });
-      await sendWelcomeMessage({ phone: formattedPhone, name: currentUser?.displayName || 'there' });
+      
+      console.log('✅ Phone saved to Firebase');
+      console.log('📱 Sending WhatsApp welcome message...');
+      
+      const result = await sendWelcomeMessage({ 
+        phone: formattedPhone, 
+        name: currentUser?.displayName || 'there' 
+      });
+      
+      console.log('📱 WhatsApp result:', result);
+      
+      if (result.success) {
+        console.log('✅ WhatsApp sent successfully!');
+      } else {
+        console.warn('⚠️ WhatsApp send failed:', result.error);
+      }
+      
       setSavingPhone(false);
       setShowPhoneModal(false);
       return true;
@@ -206,15 +254,23 @@ export default function SignupPage() {
 
   const handleGoogleSignup = async () => {
     try {
+      console.log('🔵 Google signup initiated');
       setError('');
       setLoading(true);
+      
       const userCredential = await loginWithGoogle();
+      console.log('✅ Google auth successful');
+      
       if (userCredential && userCredential.user) {
+        console.log('👤 User:', userCredential.user.displayName);
         await createWelcomeNotification(userCredential.user.uid);
+        
         setLoading(false);
+        console.log('📱 Showing phone modal');
         setShowPhoneModal(true);
       }
     } catch (err) {
+      console.error('❌ Google signup error:', err);
       setError('Failed to sign up with Google. Please try again.');
       setLoading(false);
     }
@@ -525,7 +581,11 @@ export default function SignupPage() {
                 ) : 'Continue'}
               </button>
               <button
-                onClick={() => { setShowPhoneModal(false); navigate('/dashboard'); }}
+                onClick={() => { 
+                  console.log('⏭️ User clicked Skip');
+                  setShowPhoneModal(false); 
+                  navigate('/dashboard'); 
+                }}
                 disabled={savingPhone}
                 className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition disabled:opacity-50"
               >
