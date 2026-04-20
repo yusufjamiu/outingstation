@@ -1,7 +1,6 @@
 const WHATSCHIMP_API_TOKEN = process.env.WHATSCHIMP_API_KEY;
 const WHATSCHIMP_PHONE_NUMBER_ID = process.env.WHATSCHIMP_PHONE_NUMBER_ID;
 
-// Template IDs from WhatSchimp dashboard
 const TEMPLATE_IDS = {
   welcome_new_user: '356582',
   resending_ticket: '356578',
@@ -41,28 +40,30 @@ export default async function handler(req, res) {
       ? phone.replace(/\s/g, '')
       : '+234' + phone.replace(/^0/, '');
 
-    // Build URL with query params as shown in WhatSchimp docs
-    const url = 'https://app.whatchimp.com/api/v1/whatsapp/send/template' +
+    // Build URL with query params
+    let url = 'https://app.whatchimp.com/api/v1/whatsapp/send/template' +
       '?apiToken=' + WHATSCHIMP_API_TOKEN +
       '&phone_number_id=' + WHATSCHIMP_PHONE_NUMBER_ID +
       '&template_id=' + templateId +
       '&phone_number=' + encodeURIComponent(formattedPhone);
 
+    // Add variables as individual query params
+    if (variables && typeof variables === 'object') {
+      Object.keys(variables).forEach(key => {
+        url += '&' + key + '=' + encodeURIComponent(variables[key]);
+      });
+    }
+
     console.log('📤 Sending template to WhatSchimp:', {
       template,
       templateId,
-      phone: formattedPhone
+      phone: formattedPhone,
+      variables
     });
 
     const response = await fetch(url, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify({
-    variables: variables || {}
-  })
-});
+      method: 'POST'
+    });
 
     const responseText = await response.text();
     console.log('📄 Raw response:', responseText);

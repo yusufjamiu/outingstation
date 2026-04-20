@@ -1,9 +1,6 @@
 // src/services/whatsappService.js
 // Frontend WhatsApp service - Calls our backend API
 
-/**
- * Send WhatsApp via our backend API
- */
 async function sendWhatsAppViaAPI(phone, template, variables) {
   try {
     const response = await fetch('/api/send-whatsapp', {
@@ -32,9 +29,7 @@ async function sendWhatsAppViaAPI(phone, template, variables) {
   }
 }
 
-/**
- * Send welcome message to new user
- */
+// {{1}} = FirstName
 export async function sendWelcomeMessage(userData) {
   const { phone, name } = userData;
   
@@ -46,13 +41,12 @@ export async function sendWelcomeMessage(userData) {
   const firstName = name?.split(' ')[0] || 'there';
 
   return await sendWhatsAppViaAPI(phone, 'welcome_new_user', {
-    FirstName: firstName
+    '1': firstName
   });
 }
 
-/**
- * Send ticket confirmation message
- */
+// {{1}} = BuyerName, {{2}} = EventTitle, {{3}} = TicketID
+// {{4}} = EventDate, {{5}} = EventLocation, {{6}} = Quantity, {{7}} = TotalAmount
 export async function sendTicketConfirmation(ticketData) {
   const {
     buyerPhone,
@@ -71,19 +65,18 @@ export async function sendTicketConfirmation(ticketData) {
   }
 
   return await sendWhatsAppViaAPI(buyerPhone, 'ticket_confimation', {
-    BuyerName: buyerName,
-    EventTitle: eventTitle,
-    TicketID: ticketId,
-    EventDate: eventDate,
-    EventLocation: eventLocation,
-    Quantity: quantity.toString(),
-    TotalAmount: totalAmount.toLocaleString()
+    '1': buyerName,
+    '2': eventTitle,
+    '3': ticketId,
+    '4': eventDate,
+    '5': eventLocation,
+    '6': quantity.toString(),
+    '7': totalAmount.toLocaleString()
   });
 }
 
-/**
- * Send event reminder
- */
+// {{1}} = UserName, {{2}} = EventTitle, {{3}} = EventDate
+// {{4}} = EventTime, {{5}} = EventLocation, {{6}} = MapsLink
 export async function sendEventReminder(reminderData) {
   const {
     userPhone,
@@ -103,18 +96,17 @@ export async function sendEventReminder(reminderData) {
   const firstName = userName?.split(' ')[0] || 'there';
 
   return await sendWhatsAppViaAPI(userPhone, 'event_reminder', {
-    UserName: firstName,
-    EventTitle: eventTitle,
-    EventDate: eventDate,
-    EventTime: eventTime,
-    EventLocation: eventLocation,
-    MapsLink: mapsLink || 'N/A'
+    '1': firstName,
+    '2': eventTitle,
+    '3': eventDate,
+    '4': eventTime,
+    '5': eventLocation,
+    '6': mapsLink || 'N/A'
   });
 }
 
-/**
- * Resend ticket
- */
+// {{1}} = BuyerName, {{2}} = EventTitle, {{3}} = TicketID
+// {{4}} = EventDate, {{5}} = EventLocation
 export async function resendTicket(ticketData) {
   const {
     buyerPhone,
@@ -131,11 +123,11 @@ export async function resendTicket(ticketData) {
   }
 
   return await sendWhatsAppViaAPI(buyerPhone, 'resending_ticket', {
-    BuyerName: buyerName,
-    EventTitle: eventTitle,
-    TicketID: ticketId,
-    EventDate: eventDate,
-    EventLocation: eventLocation
+    '1': buyerName,
+    '2': eventTitle,
+    '3': ticketId,
+    '4': eventDate,
+    '5': eventLocation
   });
 }
 
