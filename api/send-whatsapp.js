@@ -35,22 +35,19 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Unknown template: ' + template });
     }
 
-    // Format phone number
     const formattedPhone = phone.replace(/\s/g, '').startsWith('+')
       ? phone.replace(/\s/g, '')
       : '+234' + phone.replace(/^0/, '');
 
-    // Build URL with query params
     let url = 'https://app.whatchimp.com/api/v1/whatsapp/send/template' +
       '?apiToken=' + WHATSCHIMP_API_TOKEN +
       '&phone_number_id=' + WHATSCHIMP_PHONE_NUMBER_ID +
       '&template_id=' + templateId +
       '&phone_number=' + encodeURIComponent(formattedPhone);
 
-    // Add variables as individual query params
     if (variables && typeof variables === 'object') {
       Object.keys(variables).forEach(key => {
-        url += '&' + key + '=' + encodeURIComponent(variables[key]);
+        url += '&variable' + key + '=' + encodeURIComponent(variables[key]);
       });
     }
 
@@ -79,8 +76,8 @@ export default async function handler(req, res) {
       });
     }
 
-    if (!response.ok) {
-      return res.status(response.status).json({
+    if (!response.ok || data.status === '0') {
+      return res.status(400).json({
         error: data.message || 'Failed to send WhatsApp message',
         details: data
       });

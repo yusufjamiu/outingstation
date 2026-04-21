@@ -32,7 +32,7 @@ async function sendWhatsAppViaAPI(phone, template, variables) {
 // {{1}} = FirstName
 export async function sendWelcomeMessage(userData) {
   const { phone, name } = userData;
-  
+
   if (!phone) {
     console.warn('⚠️ No phone number provided');
     return { success: false, error: 'No phone number' };
