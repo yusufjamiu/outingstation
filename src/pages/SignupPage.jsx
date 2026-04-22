@@ -25,10 +25,7 @@ export default function SignupPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (currentUser && !showPhoneModal) {
-      console.log('✅ User already logged in, redirecting to dashboard');
-      navigate('/dashboard');
-    }
+    if (currentUser && !showPhoneModal) navigate('/dashboard');
   }, [currentUser, navigate, showPhoneModal]);
 
   const carouselImages = [
@@ -52,9 +49,21 @@ export default function SignupPage() {
         read: false,
         createdAt: serverTimestamp()
       });
-      console.log('✅ Welcome notification created');
     } catch (error) {
       console.error('❌ Error creating welcome notification:', error);
+    }
+  };
+
+  const sendWelcomeEmail = async (name, email) => {
+    try {
+      await fetch('/api/send-welcome-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email })
+      });
+      console.log('✅ Welcome email sent');
+    } catch (emailError) {
+      console.error('⚠️ Welcome email failed (non-blocking):', emailError);
     }
   };
 
@@ -113,9 +122,6 @@ export default function SignupPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    console.log('📝 Form submitted');
-    
     const trimmedData = {
       name: formData.name.trim(),
       email: formData.email.trim(),
@@ -155,37 +161,26 @@ export default function SignupPage() {
         formattedPhone = '+234' + formattedPhone;
       }
 
-      console.log('📞 Formatted phone:', formattedPhone);
-      console.log('🔐 Creating account...');
-
       const userCredential = await signup(trimmedData.email, trimmedData.password, trimmedData.name, trimmedData.city, formattedPhone);
-
-      console.log('✅ Account created successfully');
 
       if (userCredential && userCredential.user) {
         await createWelcomeNotification(userCredential.user.uid);
-        
+
+        // Send welcome email
+        await sendWelcomeEmail(trimmedData.name, trimmedData.email);
+
+        // Send welcome WhatsApp
         if (formattedPhone) {
           try {
-            console.log('📱 Sending WhatsApp welcome message to:', formattedPhone);
-            const result = await sendWelcomeMessage({ phone: formattedPhone, name: trimmedData.name });
-            console.log('📱 WhatsApp result:', result);
-            
-            if (result.success) {
-              console.log('✅ WhatsApp sent successfully!');
-            } else {
-              console.warn('⚠️ WhatsApp send failed:', result.error);
-            }
+            await sendWelcomeMessage({ phone: formattedPhone, name: trimmedData.name });
           } catch (whatsappError) {
-            console.error('❌ WhatsApp exception:', whatsappError);
+            console.error('⚠️ WhatsApp send failed (non-blocking):', whatsappError);
           }
         }
       }
 
-      console.log('🎉 Signup complete, redirecting to dashboard');
       navigate('/dashboard');
     } catch (err) {
-      console.error('❌ Signup error:', err);
       if (err.code === 'auth/email-already-in-use') {
         setError('An account with this email already exists.');
       } else if (err.code === 'auth/weak-password') {
@@ -200,47 +195,22 @@ export default function SignupPage() {
   };
 
   const savePhoneNumber = async (userId) => {
-    console.log('💾 Saving phone number for user:', userId);
-    
     const phoneValidationError = validatePhone(phoneNumber);
     if (phoneValidationError) {
-      console.error('❌ Phone validation failed:', phoneValidationError);
       setPhoneError(phoneValidationError);
       return false;
     }
-    
     try {
       setSavingPhone(true);
       setPhoneError('');
-      
       let formattedPhone = phoneNumber.trim();
       if (!formattedPhone.startsWith('+234') && !formattedPhone.startsWith('234')) {
         formattedPhone = formattedPhone.replace(/^0/, '');
         formattedPhone = '+234' + formattedPhone;
       }
-      
-      console.log('📞 Formatted phone:', formattedPhone);
-      console.log('💾 Updating user document...');
-      
       const userRef = doc(db, 'users', userId);
       await updateDoc(userRef, { phone: formattedPhone });
-      
-      console.log('✅ Phone saved to Firebase');
-      console.log('📱 Sending WhatsApp welcome message...');
-      
-      const result = await sendWelcomeMessage({ 
-        phone: formattedPhone, 
-        name: currentUser?.displayName || 'there' 
-      });
-      
-      console.log('📱 WhatsApp result:', result);
-      
-      if (result.success) {
-        console.log('✅ WhatsApp sent successfully!');
-      } else {
-        console.warn('⚠️ WhatsApp send failed:', result.error);
-      }
-      
+      await sendWelcomeMessage({ phone: formattedPhone, name: currentUser?.displayName || 'there' });
       setSavingPhone(false);
       setShowPhoneModal(false);
       return true;
@@ -254,23 +224,22 @@ export default function SignupPage() {
 
   const handleGoogleSignup = async () => {
     try {
-      console.log('🔵 Google signup initiated');
       setError('');
       setLoading(true);
-      
       const userCredential = await loginWithGoogle();
-      console.log('✅ Google auth successful');
-      
       if (userCredential && userCredential.user) {
-        console.log('👤 User:', userCredential.user.displayName);
         await createWelcomeNotification(userCredential.user.uid);
-        
+
+        // Send welcome email for Google signup
+        await sendWelcomeEmail(
+          userCredential.user.displayName || 'there',
+          userCredential.user.email
+        );
+
         setLoading(false);
-        console.log('📱 Showing phone modal');
         setShowPhoneModal(true);
       }
     } catch (err) {
-      console.error('❌ Google signup error:', err);
       setError('Failed to sign up with Google. Please try again.');
       setLoading(false);
     }
@@ -537,7 +506,6 @@ export default function SignupPage() {
               </div>
             )}
 
-            {/* Phone modal input */}
             <div className="mb-6">
               <div className="flex items-center border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-cyan-400">
                 <div className="pl-4 pr-3 flex items-center gap-2 border-r border-gray-200 py-4 flex-shrink-0">
@@ -581,11 +549,7 @@ export default function SignupPage() {
                 ) : 'Continue'}
               </button>
               <button
-                onClick={() => { 
-                  console.log('⏭️ User clicked Skip');
-                  setShowPhoneModal(false); 
-                  navigate('/dashboard'); 
-                }}
+                onClick={() => { setShowPhoneModal(false); navigate('/dashboard'); }}
                 disabled={savingPhone}
                 className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition disabled:opacity-50"
               >
