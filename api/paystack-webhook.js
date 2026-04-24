@@ -1,5 +1,6 @@
 // api/paystack-webhook.js
 // Vercel Serverless Function - Using Firebase Web SDK (like frontend!)
+// ✅ ADDED: Credit deduction after successful payment
 
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
@@ -48,8 +49,100 @@ function formatEventTime(event) {
   return 'TBD';
 }
 
-// Helper: Generate email HTML
+// ✅ NEW: Apply credits to transaction (FIFO - oldest first)
+function applyCreditsToTransaction(creditsHistory, amountToUse) {
+  const activeCredits = creditsHistory
+    .filter(credit => credit.status === 'active' && credit.amount > 0)
+    .sort((a, b) => new Date(a.earnedAt) - new Date(b.earnedAt)); // FIFO - oldest first
+
+  const creditsToDeduct = [];
+  let remainingToUse = amountToUse;
+
+  for (const credit of activeCredits) {
+    if (remainingToUse <= 0) break;
+
+    const availableAmount = credit.amount - (credit.usedAmount || 0);
+    const amountUsed = Math.min(availableAmount, remainingToUse);
+
+    if (amountUsed > 0) {
+      creditsToDeduct.push({
+        id: credit.id,
+        amountUsed,
+        newUsedAmount: (credit.usedAmount || 0) + amountUsed,
+        newRemainingAmount: availableAmount - amountUsed
+      });
+
+      remainingToUse -= amountUsed;
+    }
+  }
+
+  return creditsToDeduct;
+}
+
+// ✅ NEW: Deduct credits from user account
+async function deductCreditsFromUser(userId, creditsApplied) {
+  if (!userId || !creditsApplied || creditsApplied <= 0) {
+    console.log('No credits to deduct');
+    return;
+  }
+
+  try {
+    console.log(`💳 Deducting ₦${creditsApplied} credits from user ${userId}`);
+
+    // Get user document
+    const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
+
+    if (!userDoc.exists()) {
+      console.error('User not found:', userId);
+      return;
+    }
+
+    const userData = userDoc.data();
+    const creditsHistory = userData.creditsHistory || [];
+
+    // Calculate which credits to deduct (FIFO)
+    const creditsToDeduct = applyCreditsToTransaction(creditsHistory, creditsApplied);
+
+    if (creditsToDeduct.length === 0) {
+      console.warn('No active credits found to deduct');
+      return;
+    }
+
+    // Update credits history
+    const updatedCreditsHistory = creditsHistory.map(credit => {
+      const deduction = creditsToDeduct.find(c => c.id === credit.id);
+      
+      if (deduction) {
+        return {
+          ...credit,
+          usedAmount: deduction.newUsedAmount,
+          amount: deduction.newRemainingAmount,
+          status: deduction.newRemainingAmount === 0 ? 'used' : 'active'
+        };
+      }
+      
+      return credit;
+    });
+
+    // Update user document
+    await updateDoc(userRef, {
+      creditsHistory: updatedCreditsHistory,
+      totalCredits: increment(-creditsApplied),
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ Successfully deducted ₦${creditsApplied} credits`);
+    console.log(`📊 Deducted from ${creditsToDeduct.length} credit(s)`);
+  } catch (err) {
+    console.error('❌ Error deducting credits:', err);
+  }
+}
+
+// ✅ UPDATED: Generate email HTML with credits info
 function generateTicketEmail(ticketData, eventData) {
+  const showCredits = ticketData.creditsApplied && ticketData.creditsApplied > 0;
+  
   return `
 <!DOCTYPE html>
 <html>
@@ -88,11 +181,17 @@ function generateTicketEmail(ticketData, eventData) {
           </tr>
           <tr>
             <td style="padding: 30px; background-color: #f8fafc;">
-              <h3>Payment Summary</h3>
-              <p>Ticket Price (${ticketData.quantity}x): ₦${ticketData.ticketPrice.toLocaleString()}</p>
-              <p>Service Fee: ₦${ticketData.serviceFee.toLocaleString()}</p>
-              <p>Payment Processing: ₦${ticketData.paystackFee.toLocaleString()}</p>
-              <p><strong>Total Paid: ₦${ticketData.totalPaid.toLocaleString()}</strong></p>
+              <h3 style="margin-top: 0;">Payment Summary</h3>
+              <p style="margin: 5px 0;">Ticket Price (${ticketData.quantity}x): ₦${ticketData.ticketPrice.toLocaleString()}</p>
+              <p style="margin: 5px 0;">Service Fee: ₦${ticketData.serviceFee.toLocaleString()}</p>
+              <p style="margin: 5px 0;">Payment Processing: ₦${ticketData.paystackFee.toLocaleString()}</p>
+              ${showCredits ? `
+              <p style="margin: 5px 0; color: #10b981; font-weight: bold;">Credits Applied: -₦${ticketData.creditsApplied.toLocaleString()}</p>
+              ` : ''}
+              <p style="margin: 15px 0 0 0;"><strong>Total Paid: ₦${ticketData.totalPaid.toLocaleString()}</strong></p>
+              ${showCredits ? `
+              <p style="margin: 10px 0 0 0; font-size: 12px; color: #10b981;">💰 You saved ₦${ticketData.creditsApplied.toLocaleString()} with credits!</p>
+              ` : ''}
             </td>
           </tr>
           <tr>
@@ -109,7 +208,7 @@ function generateTicketEmail(ticketData, eventData) {
   `;
 }
 
-// ✅ NEW: Extract metadata (handles both web and mobile formats!)
+// ✅ UPDATED: Extract metadata (handles credits_applied field!)
 function extractMetadata(paymentData) {
   const rawMetadata = paymentData.metadata || {};
   
@@ -129,8 +228,9 @@ function extractMetadata(paymentData) {
       buyerPhone: metadata.buyer_phone || metadata.buyerPhone,
       ticketPrice: metadata.ticket_price || metadata.ticketPrice,
       serviceFee: metadata.service_fee || metadata.serviceFee,
-      paystackFee: metadata.paystack_fee || metadata.paystackFee,
-      totalPaid: metadata.total_paid || metadata.totalPaid,
+      subtotal: metadata.subtotal,
+      creditsApplied: metadata.credits_applied || 0, // ✅ NEW
+      totalAmount: metadata.total_amount || metadata.totalPaid,
     };
   }
   
@@ -143,8 +243,9 @@ function extractMetadata(paymentData) {
     buyerPhone: rawMetadata.buyerPhone || rawMetadata.buyer_phone,
     ticketPrice: rawMetadata.ticketPrice || rawMetadata.ticket_price,
     serviceFee: rawMetadata.serviceFee || rawMetadata.service_fee,
-    paystackFee: rawMetadata.paystackFee || rawMetadata.paystack_fee,
-    totalPaid: rawMetadata.totalPaid || rawMetadata.total_paid,
+    subtotal: rawMetadata.subtotal,
+    creditsApplied: rawMetadata.credits_applied || rawMetadata.creditsApplied || 0, // ✅ NEW
+    totalAmount: rawMetadata.total_amount || rawMetadata.totalAmount,
   };
 }
 
@@ -176,7 +277,7 @@ export default async function handler(req, res) {
 
     const paymentData = event.data;
     
-    // ✅ UPDATED: Extract metadata (handles both formats!)
+    // ✅ UPDATED: Extract metadata (includes credits!)
     const metadata = extractMetadata(paymentData);
     
     console.log('📦 Metadata extracted:', metadata);
@@ -192,6 +293,27 @@ export default async function handler(req, res) {
 
     const eventData = eventDoc.data();
 
+    // ✅ NEW: Find user by email to deduct credits
+    let userId = null;
+    try {
+      // Try to find user by email
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', paymentData.customer.email));
+      const userSnapshot = await getDocs(q);
+      
+      if (!userSnapshot.empty) {
+        userId = userSnapshot.docs[0].id;
+        console.log(`✅ Found user: ${userId}`);
+      }
+    } catch (err) {
+      console.warn('Could not find user:', err.message);
+    }
+
+    // ✅ NEW: Deduct credits if applicable
+    if (userId && metadata.creditsApplied && metadata.creditsApplied > 0) {
+      await deductCreditsFromUser(userId, metadata.creditsApplied);
+    }
+
     // Generate ticket
     const ticketId = generateTicketId();
     const ticketData = {
@@ -200,18 +322,21 @@ export default async function handler(req, res) {
       eventTitle: eventData.title,
       buyerName: metadata.buyerName,
       buyerEmail: paymentData.customer.email,
-      buyerPhone: metadata.buyerPhone || 'N/A', // ✅ Always include (required on web & mobile)
+      buyerPhone: metadata.buyerPhone || 'N/A',
       quantity: parseInt(metadata.quantity) || 1,
       ticketPrice: parseInt(metadata.ticketPrice) || 0,
       serviceFee: parseInt(metadata.serviceFee) || 0,
-      paystackFee: parseInt(metadata.paystackFee) || Math.round((paymentData.amount / 100) * 0.015 + 100),
-      totalPaid: parseInt(metadata.totalPaid) || (paymentData.amount / 100),
+      paystackFee: Math.round((paymentData.amount / 100) * 0.015 + 100),
+      subtotal: parseInt(metadata.subtotal) || 0, // ✅ NEW
+      creditsApplied: parseInt(metadata.creditsApplied) || 0, // ✅ NEW
+      totalPaid: parseInt(metadata.totalAmount) || (paymentData.amount / 100),
       paymentReference: paymentData.reference,
       purchasedAt: serverTimestamp(),
       checkedIn: false,
       eventDate: formatEventDate(eventData),
       eventTime: formatEventTime(eventData),
-      status: 'valid'
+      status: 'valid',
+      userId: userId || null // ✅ NEW: Store user ID if found
     };
 
     console.log('🎟️ Creating ticket:', ticketId);
@@ -246,7 +371,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ 
       success: true, 
-      ticketId 
+      ticketId,
+      creditsDeducted: metadata.creditsApplied || 0 // ✅ NEW
     });
 
   } catch (error) {

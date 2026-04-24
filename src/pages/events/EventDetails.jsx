@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import SEO from '../../components/SEO';
 import { 
   Calendar, Clock, MapPin, DollarSign, Users, Share2, Heart, 
-  ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft, CheckCircle, Navigation, Ticket
+  ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft, CheckCircle, Navigation, Ticket, CreditCard
 } from 'lucide-react';
 import { doc, getDoc, collection, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -13,6 +13,11 @@ import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import { formatEventDateFull, formatEventTime } from '../../utils/dateTimeHelpers';
 import { PaystackButton } from 'react-paystack';
+import { 
+  formatCredits, 
+  calculateAvailableCredits, 
+  calculateMaxCreditUsage 
+} from '../../utils/referralUtils'; // ✅ NEW IMPORT
 
 const openInMaps = (event) => {
   if (event.mapLocation) {
@@ -55,54 +60,99 @@ const calculateTotal = (event) => {
   return ticketPrice + serviceFee + paystackFee;
 };
 
-// ✅ Ticket Purchase Component
+// ✅ Ticket Purchase Component WITH CREDITS
 const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [buyerName, setBuyerName] = useState(currentUser?.displayName || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
-  const [buyerPhone, setBuyerPhone] = useState(''); // ✅ ADDED: Phone number state
+  const [buyerPhone, setBuyerPhone] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [showPaystackButton, setShowPaystackButton] = useState(false);
+  
+  // ✅ NEW: Credit states
+  const [userCredits, setUserCredits] = useState([]);
+  const [availableCredits, setAvailableCredits] = useState(0);
+  const [useCredits, setUseCredits] = useState(false);
+  const [creditsToApply, setCreditsToApply] = useState(0);
+
+  // ✅ NEW: Load user credits
+  useEffect(() => {
+    const loadUserCredits = async () => {
+      if (!currentUser) return;
+
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          const creditsHistory = data.creditsHistory || [];
+          setUserCredits(creditsHistory);
+          
+          const available = calculateAvailableCredits(creditsHistory);
+          setAvailableCredits(available);
+        }
+      } catch (err) {
+        console.error('Error loading credits:', err);
+      }
+    };
+
+    loadUserCredits();
+  }, [currentUser]);
 
   const ticketPrice = event.ticketPrice || 0;
   const serviceFee = calculateServiceFee(event);
   const paystackFee = calculatePaystackFee(event);
-  const total = calculateTotal(event);
+  const baseTotal = calculateTotal(event);
+  
+  // ✅ NEW: Calculate credits to apply
+  const totalBeforeCredits = baseTotal * quantity;
+  const maxCreditsAllowed = calculateMaxCreditUsage(totalBeforeCredits, availableCredits);
+  const actualCreditsApplied = useCredits ? Math.min(creditsToApply || maxCreditsAllowed, maxCreditsAllowed) : 0;
+  const finalTotal = totalBeforeCredits - actualCreditsApplied;
+
   const ticketsRemaining = (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
 
+  // ✅ NEW: Update credits when useCredits toggles
+  useEffect(() => {
+    if (useCredits) {
+      setCreditsToApply(maxCreditsAllowed);
+    } else {
+      setCreditsToApply(0);
+    }
+  }, [useCredits, maxCreditsAllowed]);
+
   const paystackConfig = {
-  reference: `OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-  email: buyerEmail,
-  amount: total * 100, // Paystack expects amount in kobo
-  publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
-  text: `Pay ₦${(total * quantity).toLocaleString()}`,
-  
-  // ✅ FIXED: Simplified metadata (Paystack format)
-  metadata: {
-    event_id: event.id,
-    event_title: event.title,
-    buyer_name: buyerName,
-    buyer_phone: buyerPhone,
-    ticket_price: ticketPrice,
-    service_fee: serviceFee,
-    quantity: quantity,
-    total_amount: total
-  },
-  
-  onSuccess: (reference) => {
-    console.log('Payment successful!', reference);
-    toast.success('🎉 Payment successful! Check your email for tickets.', { duration: 5000 });
-    // Webhook will handle ticket generation
-  },
-  
-  onClose: () => {
-    toast.error('Payment cancelled');
-  }
-};
+    reference: `OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    email: buyerEmail,
+    amount: finalTotal * 100, // ✅ UPDATED: Use final total after credits
+    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+    text: `Pay ${formatCredits(finalTotal)}`,
+    
+    // ✅ UPDATED: Include credit info in metadata
+    metadata: {
+      event_id: event.id,
+      event_title: event.title,
+      buyer_name: buyerName,
+      buyer_phone: buyerPhone,
+      ticket_price: ticketPrice,
+      service_fee: serviceFee,
+      quantity: quantity,
+      subtotal: totalBeforeCredits,
+      credits_applied: actualCreditsApplied,
+      total_amount: finalTotal
+    },
+    
+    onSuccess: (reference) => {
+      console.log('Payment successful!', reference);
+      toast.success('🎉 Payment successful! Check your email for tickets.', { duration: 5000 });
+    },
+    
+    onClose: () => {
+      toast.error('Payment cancelled');
+    }
+  };
 
   const handleSuccess = (reference) => {
     console.log('Payment successful!', reference);
     toast.success('🎉 Payment successful! Check your email for tickets.', { duration: 5000 });
-    // TODO: Firebase function will handle ticket generation
   };
 
   const handleClose = () => {
@@ -116,7 +166,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       return;
     }
 
-    // ✅ UPDATED: Validate phone number too
     if (!buyerName || !buyerEmail || !buyerPhone) {
       toast.error('Please enter your name, email, and phone number');
       return;
@@ -179,7 +228,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           />
         </div>
 
-        {/* ✅ ADDED: Phone Number Field */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
           <input
@@ -204,25 +252,71 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         </div>
       </div>
 
-      {/* Price Breakdown */}
+      {/* ✅ NEW: CREDIT TOGGLE */}
+      {availableCredits > 0 && (
+        <div className="bg-purple-50 rounded-lg p-4 mb-4 border-2 border-purple-200">
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <CreditCard className="text-purple-600" size={20} />
+              <span className="font-semibold text-gray-900">Use Credits</span>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useCredits}
+                onChange={(e) => setUseCredits(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+            </label>
+          </div>
+          <div className="text-sm">
+            <p className="text-gray-700 mb-1">
+              Available: <span className="font-bold text-purple-600">{formatCredits(availableCredits)}</span>
+            </p>
+            {useCredits && (
+              <p className="text-green-600 font-medium">
+                ✓ Applying {formatCredits(actualCreditsApplied)} (Max 50%)
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ✅ UPDATED: Price Breakdown with Credits */}
       <div className="bg-gray-50 rounded-lg p-4 mb-4">
         <p className="text-sm font-semibold text-gray-900 mb-2">Price Breakdown:</p>
         <div className="space-y-1 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-600">Ticket Price ({quantity}x):</span>
-            <span className="font-medium">₦{(ticketPrice * quantity).toLocaleString()}</span>
+            <span className="font-medium">{formatCredits(ticketPrice * quantity)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Service Fee:</span>
-            <span className="font-medium">₦{(serviceFee * quantity).toLocaleString()}</span>
+            <span className="font-medium">{formatCredits(serviceFee * quantity)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Payment Processing:</span>
-            <span className="font-medium">₦{(paystackFee * quantity).toLocaleString()}</span>
+            <span className="font-medium">{formatCredits(paystackFee * quantity)}</span>
           </div>
-          <div className="border-t pt-2 mt-2 flex justify-between">
+          
+          {/* ✅ NEW: Show subtotal if credits applied */}
+          {actualCreditsApplied > 0 && (
+            <>
+              <div className="border-t pt-2 mt-2 flex justify-between">
+                <span className="text-gray-700">Subtotal:</span>
+                <span className="font-medium">{formatCredits(totalBeforeCredits)}</span>
+              </div>
+              <div className="flex justify-between text-green-600">
+                <span>Credits Applied:</span>
+                <span className="font-bold">-{formatCredits(actualCreditsApplied)}</span>
+              </div>
+            </>
+          )}
+          
+          <div className={`${actualCreditsApplied > 0 ? 'border-t pt-2 mt-2' : 'border-t pt-2 mt-2'} flex justify-between`}>
             <span className="font-bold text-gray-900">Total:</span>
-            <span className="font-bold text-cyan-600 text-lg">₦{(total * quantity).toLocaleString()}</span>
+            <span className="font-bold text-cyan-600 text-lg">{formatCredits(finalTotal)}</span>
           </div>
         </div>
       </div>
@@ -232,7 +326,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         showPaystackButton ? (
           <PaystackButton
             {...paystackConfig}
-            text={`Pay ₦${(total * quantity).toLocaleString()}`}
+            text={`Pay ${formatCredits(finalTotal)}`}
             onSuccess={handleSuccess}
             onClose={handleClose}
             className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition"
@@ -308,9 +402,7 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
   
-  // ✅ Check for OutingStation ticketing
   if (event.ticketingOption === 'outingstation' && event.ticketingEnabled) {
-    // Scroll to ticket section
     const ticketSection = document.getElementById('ticket-purchase-section');
     if (ticketSection) {
       ticketSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -319,7 +411,6 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
 
-  // ✅ Check for external ticketing
   if (event.ticketingOption === 'external' && event.externalTicketLink) {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -355,7 +446,6 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
   
-  // Free event or no ticketing
   if (event.isFree || event.ticketingOption === 'none') {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -710,7 +800,7 @@ export default function EventDetails() {
                 </p>
               </div>
 
-              {/* ✅ Ticket Purchase Section */}
+              {/* ✅ Ticket Purchase Section WITH CREDITS */}
               {hasOutingStationTicketing && (
                 <div id="ticket-purchase-section" className="mb-6">
                   <TicketPurchaseSection 

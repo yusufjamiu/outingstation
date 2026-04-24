@@ -1,9 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useOutletContext } from 'react-router-dom';
-import { X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Phone, Camera } from 'lucide-react';
+import { X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Phone, Camera, CreditCard, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import ReferralCard from '../../components/ReferralCard';
+import { 
+  formatCredits, 
+  calculateAvailableCredits, 
+  getActiveCredits, 
+  getDaysUntilExpiry 
+} from '../../utils/referralUtils';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -19,6 +26,7 @@ export default function Settings() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [userData, setUserData] = useState(null); // ✅ NEW: Full user data
 
   const displayName = userProfile?.name || currentUser?.displayName || 'User';
   const joinedDate = userProfile?.createdAt?.toDate?.()?.toLocaleDateString('en-US', { 
@@ -43,6 +51,7 @@ export default function Settings() {
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (userDoc.exists()) {
         const data = userDoc.data();
+        setUserData(data); // ✅ NEW: Store full user data
         setSavedCount((data.savedEvents || []).length);
         
         const avatar = data.avatar || data.photoURL || currentUser.photoURL ||
@@ -79,7 +88,6 @@ export default function Settings() {
     }
   };
 
-  // ✅ CLOUDINARY UPLOAD FUNCTION
   const uploadToCloudinary = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -110,7 +118,6 @@ export default function Settings() {
     }
   };
 
-  // ✅ UPDATED IMAGE UPLOAD WITH CLOUDINARY
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
@@ -212,6 +219,10 @@ export default function Settings() {
     }
   };
 
+  // ✅ CALCULATE CREDITS
+  const availableCredits = calculateAvailableCredits(userData?.creditsHistory || []);
+  const activeCredits = getActiveCredits(userData?.creditsHistory || []);
+
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
       {showSavedNotification && (
@@ -238,6 +249,94 @@ export default function Settings() {
 
       {!isEditing ? (
         <>
+          {/* ✅ REFERRAL & CREDITS SECTION */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
+            {/* Referral Card */}
+            {userData?.referralCode ? (
+              <ReferralCard 
+                referralCode={userData.referralCode} 
+                totalReferrals={userData.totalReferrals || 0}
+              />
+            ) : (
+              <div className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">
+                <h3 className="text-lg sm:text-xl font-bold mb-2">🎁 Get Your Referral Code</h3>
+                <p className="text-sm text-cyan-50 mb-4">
+                  Loading your referral link...
+                </p>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+              </div>
+            )}
+
+            {/* Credits Card */}
+            <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-200">
+              <div className="flex items-center gap-2 mb-4">
+                <CreditCard className="text-purple-600" size={24} />
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900">Your Credits</h3>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-50 to-cyan-50 rounded-xl p-4 mb-4">
+                <p className="text-xs sm:text-sm text-gray-600 mb-1">Available Balance</p>
+                <p className="text-2xl sm:text-3xl font-bold text-purple-600">
+                  {formatCredits(availableCredits)}
+                </p>
+              </div>
+
+              {/* Credit Breakdown */}
+              {activeCredits.length > 0 ? (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  <p className="text-xs font-semibold text-gray-500 mb-2">ACTIVE CREDITS</p>
+                  {activeCredits.slice(0, 3).map((credit) => {
+                    const daysLeft = getDaysUntilExpiry(credit.expiresAt);
+                    return (
+                      <div key={credit.id} className="flex items-center justify-between text-sm bg-gray-50 p-3 rounded-lg">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">{formatCredits(credit.amount)}</p>
+                          <p className="text-xs text-gray-500 truncate">{credit.reason}</p>
+                        </div>
+                        <div className="text-right ml-2">
+                          <div className="flex items-center gap-1 text-xs text-gray-500">
+                            <Clock size={12} />
+                            <span className="whitespace-nowrap">{daysLeft}d left</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {activeCredits.length > 3 && (
+                    <p className="text-xs text-center text-gray-500 mt-2">
+                      +{activeCredits.length - 3} more credit{activeCredits.length - 3 !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-sm text-gray-500 mb-2">No active credits</p>
+                  <p className="text-xs text-gray-400">Refer friends to earn ₦300!</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ✅ ADD PHONE BANNER */}
+          {!userData?.phone && (
+            <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl p-4 mb-4 sm:mb-6 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Phone size={24} />
+                <div>
+                  <p className="font-semibold text-sm sm:text-base">Add your phone number</p>
+                  <p className="text-xs sm:text-sm text-cyan-50">Get WhatsApp notifications for your tickets</p>
+                </div>
+              </div>
+              <button
+                onClick={handleEditClick}
+                className="bg-white text-cyan-600 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-cyan-50 transition whitespace-nowrap"
+              >
+                Add Now
+              </button>
+            </div>
+          )}
+
+          {/* Profile Card */}
           <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-gray-200 mb-4 sm:mb-6">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
@@ -276,6 +375,7 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* Saved Events & Collection */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
             <div className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-200">
               <div className="flex items-center gap-4 mb-4">

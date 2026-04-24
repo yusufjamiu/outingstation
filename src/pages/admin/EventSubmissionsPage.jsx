@@ -1,9 +1,9 @@
 // src/pages/admin/EventSubmissionsPage.jsx
 // Admin page to review event submissions from organizers
-// ✅ FIXED: Proper error handling and loading states
+// ✅ ADDED: Award ₦100 referral credits on event approval
 
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, where, increment } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { 
@@ -22,7 +22,8 @@ import {
   GraduationCap,
   Menu,
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  Gift // ✅ NEW ICON
 } from 'lucide-react';
 
 export default function EventSubmissionsPage() {
@@ -44,7 +45,6 @@ export default function EventSubmissionsPage() {
     setError(null);
     
     try {
-      // ✅ FETCH WITHOUT INDEX - Sort client-side
       const snapshot = await getDocs(collection(db, 'event_submissions'));
       
       const data = snapshot.docs
@@ -52,11 +52,10 @@ export default function EventSubmissionsPage() {
           id: doc.id,
           ...doc.data()
         }))
-        // Sort client-side to avoid index requirement
         .sort((a, b) => {
           const aTime = a.submittedAt?.seconds || 0;
           const bTime = b.submittedAt?.seconds || 0;
-          return bTime - aTime;  // Descending order (newest first)
+          return bTime - aTime;
         });
 
       setSubmissions(data);
@@ -65,7 +64,6 @@ export default function EventSubmissionsPage() {
     } catch (err) {
       console.error('Error fetching submissions:', err);
       
-      // Handle specific error cases
       if (err.code === 'permission-denied') {
         setError('Permission denied. Please make sure you are logged in as an admin user.');
       } else if (err.code === 'failed-precondition') {
@@ -80,7 +78,6 @@ export default function EventSubmissionsPage() {
     }
   };
 
-  // ✅ REFRESH HANDLER
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -92,16 +89,96 @@ export default function EventSubmissionsPage() {
     }
   };
 
+  // ✅ NEW: Award ₦100 credit to user with referral code
+  const awardEventCredit = async (referralCode) => {
+    if (!referralCode) {
+      console.log('No referral code provided, skipping credit award');
+      return null;
+    }
+
+    try {
+      console.log(`🎁 Looking for user with referral code: ${referralCode}`);
+      
+      // Find user by referral code
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('referralCode', '==', referralCode.toUpperCase()));
+      const userSnapshot = await getDocs(q);
+
+      if (userSnapshot.empty) {
+        console.warn(`⚠️ No user found with referral code: ${referralCode}`);
+        return null;
+      }
+
+      const userDoc = userSnapshot.docs[0];
+      const userId = userDoc.id;
+      const userName = userDoc.data().name || 'User';
+
+      console.log(`✅ Found user: ${userName} (${userId})`);
+
+      // Create credit object
+      const creditId = `credit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const now = new Date();
+      const expiryDate = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000); // 90 days
+
+      const newCredit = {
+        id: creditId,
+        amount: 100,
+        originalAmount: 100,
+        reason: 'Event listing reward',
+        earnedAt: now.toISOString(),
+        expiresAt: expiryDate.toISOString(),
+        status: 'active',
+        usedAmount: 0
+      };
+
+      // Get current credits history
+      const currentCredits = userDoc.data().creditsHistory || [];
+      const updatedCredits = [...currentCredits, newCredit];
+
+      // Update user document
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        creditsHistory: updatedCredits,
+        totalCredits: increment(100),
+        eventsListed: increment(1),
+        updatedAt: now
+      });
+
+      console.log(`✅ Awarded ₦100 credit to ${userName}`);
+      return userName;
+    } catch (err) {
+      console.error('❌ Error awarding event credit:', err);
+      return null;
+    }
+  };
+
+  // ✅ UPDATED: Award credit on approval
   const handleApprove = async (submissionId) => {
+    const submission = submissions.find(s => s.id === submissionId);
+    
     if (!confirm('Approve this submission? You will need to manually add it to the events collection.')) return;
 
     try {
+      // Update submission status
       await updateDoc(doc(db, 'event_submissions', submissionId), {
         status: 'approved',
         reviewedAt: new Date()
       });
 
-      alert('Submission approved! Please manually add it to the events collection.');
+      // ✅ NEW: Award credit if referral code exists
+      let creditMessage = '';
+      if (submission?.referralCode) {
+        console.log(`🎁 Attempting to award credit for referral code: ${submission.referralCode}`);
+        const awardedTo = await awardEventCredit(submission.referralCode);
+        
+        if (awardedTo) {
+          creditMessage = `\n\n✅ Awarded ₦100 credit to ${awardedTo}!`;
+        } else {
+          creditMessage = `\n\n⚠️ Could not award credit - referral code "${submission.referralCode}" not found.`;
+        }
+      }
+
+      alert(`Submission approved! Please manually add it to the events collection.${creditMessage}`);
       fetchSubmissions();
       setSelectedSubmission(null);
     } catch (error) {
@@ -180,7 +257,6 @@ export default function EventSubmissionsPage() {
     return true;
   });
 
-  // ✅ ERROR STATE
   if (error) {
     return (
       <div className="flex h-screen bg-gray-50">
@@ -240,7 +316,6 @@ export default function EventSubmissionsPage() {
     );
   }
 
-  // ✅ LOADING STATE
   if (loading) {
     return (
       <div className="flex h-screen bg-gray-50">
@@ -257,12 +332,9 @@ export default function EventSubmissionsPage() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* ✅ ADMIN SIDEBAR */}
       <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* ✅ MAIN CONTENT */}
       <main className="flex-1 overflow-auto">
-        {/* ✅ HEADER WITH MENU BUTTON */}
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -278,7 +350,6 @@ export default function EventSubmissionsPage() {
               </div>
             </div>
 
-            {/* ✅ REFRESH BUTTON */}
             <button
               onClick={handleRefresh}
               disabled={refreshing || loading}
@@ -295,7 +366,6 @@ export default function EventSubmissionsPage() {
           </div>
         </header>
 
-        {/* ✅ PAGE CONTENT */}
         <div className="p-4 sm:p-6">
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -413,7 +483,13 @@ export default function EventSubmissionsPage() {
                                 <MapPin size={14} />
                                 {submission.city}
                               </div>
-                              {/* ✅ University Badge */}
+                              {/* ✅ NEW: Referral Code Badge */}
+                              {submission.referralCode && (
+                                <div className="text-xs text-purple-600 font-semibold mt-1 flex items-center gap-1 bg-purple-50 px-2 py-0.5 rounded">
+                                  <Gift size={12} />
+                                  {submission.referralCode}
+                                </div>
+                              )}
                               {submission.isUniversityEvent && submission.universityName && (
                                 <div className="text-xs text-blue-600 font-semibold mt-1 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded">
                                   🎓 {submission.universityName}
@@ -449,7 +525,6 @@ export default function EventSubmissionsPage() {
                               {submission.eventType}
                             </div>
                           )}
-                          {/* ✅ SubCategory badge */}
                           {submission.subCategory === 'campus' && (
                             <div className="text-xs text-blue-600 font-semibold mt-1">
                               Campus Event
@@ -506,17 +581,23 @@ export default function EventSubmissionsPage() {
         </div>
       </main>
 
-      {/* ✅ COMPLETE DETAIL MODAL */}
+      {/* Detail Modal */}
       {selectedSubmission && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
             <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between z-10">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">{selectedSubmission.eventTitle}</h2>
                 <p className="text-gray-600">{selectedSubmission.eventCategory}</p>
+                {/* ✅ NEW: Show referral code in modal header */}
+                {selectedSubmission.referralCode && (
+                  <div className="mt-2 inline-flex items-center gap-1 bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-semibold">
+                    <Gift size={16} />
+                    Referral Code: {selectedSubmission.referralCode}
+                  </div>
+                )}
                 {selectedSubmission.isUniversityEvent && selectedSubmission.universityName && (
-                  <div className="mt-2 inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
+                  <div className="mt-2 inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold ml-2">
                     <GraduationCap size={16} />
                     {selectedSubmission.universityName}
                   </div>
@@ -530,9 +611,7 @@ export default function EventSubmissionsPage() {
               </button>
             </div>
 
-            {/* ✅ COMPLETE Modal Content */}
             <div className="p-6 space-y-6">
-              {/* Image */}
               {selectedSubmission.imageUrl && (
                 <div className="relative">
                   <img 
@@ -544,15 +623,12 @@ export default function EventSubmissionsPage() {
                 </div>
               )}
               
-              {/* Description */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Description</h3>
                 <p className="text-gray-700 whitespace-pre-wrap">{selectedSubmission.eventDescription}</p>
               </div>
 
-              {/* Event Details */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left Column */}
                 <div className="space-y-4">
                   <div>
                     <h4 className="text-sm font-semibold text-gray-700 mb-1">Category</h4>
@@ -599,14 +675,14 @@ export default function EventSubmissionsPage() {
                     <div className="flex items-start gap-2 text-gray-900">
                       <MapPin size={16} className="flex-shrink-0 mt-1" />
                       <div>
-                        <p>{selectedSubmission.venue || selectedSubmission.placeName}</p>
+                        <p>{selectedSubmission.venueName}</p>
                         <p className="text-sm text-gray-600">{selectedSubmission.address}</p>
                         <p className="text-sm text-gray-600">{selectedSubmission.city}</p>
                       </div>
                     </div>
-                    {selectedSubmission.googleMapsLink && (
+                    {selectedSubmission.mapsLink && (
                       <a 
-                        href={selectedSubmission.googleMapsLink}
+                        href={selectedSubmission.mapsLink}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 text-cyan-600 hover:text-cyan-700 text-sm mt-2"
@@ -618,7 +694,6 @@ export default function EventSubmissionsPage() {
                   </div>
                 </div>
 
-                {/* Right Column */}
                 <div className="space-y-4">
                   <div>
                     <h4 className="text-sm font-semibold text-gray-700 mb-1">Organizer</h4>
@@ -652,12 +727,14 @@ export default function EventSubmissionsPage() {
                     </div>
                   </div>
 
-                  {selectedSubmission.expectedAttendance && (
+                  {/* ✅ NEW: Show referral code in details */}
+                  {selectedSubmission.referralCode && (
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-700 mb-1">Expected Attendance</h4>
-                      <div className="flex items-center gap-2 text-gray-900">
-                        <Users size={16} />
-                        {selectedSubmission.expectedAttendance} people
+                      <h4 className="text-sm font-semibold text-gray-700 mb-1">Referral Code</h4>
+                      <div className="flex items-center gap-2 text-purple-600 font-semibold bg-purple-50 px-3 py-2 rounded-lg">
+                        <Gift size={16} />
+                        {selectedSubmission.referralCode}
+                        <span className="text-xs text-purple-600 ml-auto">₦100 on approval</span>
                       </div>
                     </div>
                   )}
@@ -671,25 +748,9 @@ export default function EventSubmissionsPage() {
                       </div>
                     </div>
                   )}
-
-                  {selectedSubmission.website && (
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-700 mb-1">Website</h4>
-                      <a 
-                        href={selectedSubmission.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-cyan-600 hover:text-cyan-700 text-sm"
-                      >
-                        <ExternalLink size={14} />
-                        {selectedSubmission.website}
-                      </a>
-                    </div>
-                  )}
                 </div>
               </div>
 
-              {/* Additional Info */}
               {selectedSubmission.additionalInfo && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">Additional Information</h3>
@@ -697,7 +758,6 @@ export default function EventSubmissionsPage() {
                 </div>
               )}
 
-              {/* Status Info */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -724,7 +784,6 @@ export default function EventSubmissionsPage() {
               </div>
             </div>
 
-            {/* Modal Actions */}
             <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 flex gap-3 justify-end flex-wrap">
               {selectedSubmission.status !== 'approved' && (
                 <button
@@ -732,7 +791,7 @@ export default function EventSubmissionsPage() {
                   className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
                 >
                   <Check size={20} />
-                  Approve
+                  Approve {selectedSubmission.referralCode && '(+₦100 credit)'}
                 </button>
               )}
               {selectedSubmission.status !== 'rejected' && (

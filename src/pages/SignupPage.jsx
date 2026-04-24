@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, User, Eye, EyeOff, ArrowLeft, MapPin, Phone } from 'lucide-react';
-import { addDoc, collection, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { Mail, Lock, User, Eye, EyeOff, ArrowLeft, MapPin, Phone, Gift } from 'lucide-react';
+import { doc, getDoc, updateDoc, setDoc, serverTimestamp, query, collection, where, getDocs, increment, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase';
 import { sendWelcomeMessage } from '../services/whatsappService';
+import { generateReferralCode } from '../utils/referralUtils';
 import Create from './../assets/Create.jpg'
 import Image2 from './../assets/SignUp2.JPG'
 import Connected from './../assets/Connected.JPG'
 
 export default function SignupPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const referralCodeFromURL = searchParams.get('ref'); // ✅ Get referral code from URL
+
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', city: '', password: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,7 +27,6 @@ export default function SignupPage() {
   const [savingPhone, setSavingPhone] = useState(false);
 
   const { signup, loginWithGoogle, currentUser } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (currentUser && !showPhoneModal) navigate('/dashboard');
@@ -39,18 +43,89 @@ export default function SignupPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // ✅ REFERRAL CREDIT AWARDING FUNCTION
+  const awardReferralCredits = async (newUserId, newUserName, referrerCode) => {
+    try {
+      console.log('🎁 Awarding referral credits...');
+      
+      // Find referrer by referral code
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('referralCode', '==', referrerCode.toUpperCase()));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        console.warn('⚠️ Referral code not found:', referrerCode);
+        return;
+      }
+
+      const referrerDoc = querySnapshot.docs[0];
+      const referrerId = referrerDoc.id;
+      const referrerData = referrerDoc.data();
+      const referrerName = referrerData.name || 'User';
+
+      console.log('✅ Found referrer:', referrerName);
+
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000); // 90 days
+
+      // Credit for referrer
+      const referrerCredit = {
+        id: `credit_${referrerId}_${Date.now()}_1`,
+        amount: 300,
+        originalAmount: 300,
+        reason: `Referral bonus - ${newUserName} joined`,
+        earnedAt: now.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        status: 'active',
+        usedAmount: 0
+      };
+
+      // Credit for new user
+      const newUserCredit = {
+        id: `credit_${newUserId}_${Date.now()}_2`,
+        amount: 300,
+        originalAmount: 300,
+        reason: `Sign-up bonus - Referred by ${referrerName}`,
+        earnedAt: now.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        status: 'active',
+        usedAmount: 0
+      };
+
+      // Update referrer
+      const referrerRef = doc(db, 'users', referrerId);
+      await updateDoc(referrerRef, {
+        totalCredits: increment(300),
+        totalReferrals: increment(1),
+        creditsHistory: arrayUnion(referrerCredit)
+      });
+
+      // Update new user
+      const newUserRef = doc(db, 'users', newUserId);
+      await updateDoc(newUserRef, {
+        referredBy: referrerId,
+        totalCredits: increment(300),
+        creditsHistory: arrayUnion(newUserCredit)
+      });
+
+      console.log('✅ Referral credits awarded successfully!');
+    } catch (err) {
+      console.error('❌ Error awarding referral credits:', err);
+    }
+  };
+
   const createWelcomeNotification = async (userId) => {
     try {
-      await addDoc(collection(db, 'notifications'), {
+      await setDoc(doc(db, 'notifications', `welcome_${userId}`), {
         userId: userId,
-        title: "🎉 Welcome to OutingStation!",
-        message: "Discover amazing events happening around Lagos. Tap the bell icon anytime to stay updated!",
-        type: "welcome",
+        type: 'welcome',
+        title: 'Welcome to OutingStation! 🎉',
+        message: 'Start discovering amazing events and places in your city.',
         read: false,
         createdAt: serverTimestamp()
       });
-    } catch (error) {
-      console.error('❌ Error creating welcome notification:', error);
+    } catch (err) {
+      console.error('Error creating welcome notification:', err);
     }
   };
 
@@ -164,12 +239,33 @@ export default function SignupPage() {
       const userCredential = await signup(trimmedData.email, trimmedData.password, trimmedData.name, trimmedData.city, formattedPhone);
 
       if (userCredential && userCredential.user) {
-        await createWelcomeNotification(userCredential.user.uid);
+        const userId = userCredential.user.uid;
+        console.log('✅ User created:', userId);
 
-        // Send welcome email
+        // ✅ GENERATE AND SAVE REFERRAL CODE
+        const referralCode = generateReferralCode(trimmedData.name, userId);
+        console.log('🔗 Generated referral code:', referralCode);
+
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, {
+          referralCode: referralCode,
+          referredBy: null,
+          totalCredits: 0,
+          totalReferrals: 0,
+          eventsListed: 0,
+          creditsHistory: []
+        });
+        console.log('✅ Referral code saved to user document');
+
+        // ✅ AWARD REFERRAL CREDITS IF REFERRED
+        if (referralCodeFromURL) {
+          console.log('🎁 User was referred with code:', referralCodeFromURL);
+          await awardReferralCredits(userId, trimmedData.name, referralCodeFromURL);
+        }
+
+        await createWelcomeNotification(userId);
         await sendWelcomeEmail(trimmedData.name, trimmedData.email);
 
-        // Send welcome WhatsApp
         if (formattedPhone) {
           try {
             await sendWelcomeMessage({ phone: formattedPhone, name: trimmedData.name });
@@ -210,6 +306,17 @@ export default function SignupPage() {
       }
       const userRef = doc(db, 'users', userId);
       await updateDoc(userRef, { phone: formattedPhone });
+
+      // ✅ AWARD REFERRAL CREDITS IF REFERRED
+      if (referralCodeFromURL) {
+        const userDoc = await getDoc(userRef);
+        if (userDoc.exists()) {
+          const userName = userDoc.data().name || 'User';
+          console.log('🎁 User was referred with code:', referralCodeFromURL);
+          await awardReferralCredits(userId, userName, referralCodeFromURL);
+        }
+      }
+
       await sendWelcomeMessage({ phone: formattedPhone, name: currentUser?.displayName || 'there' });
       setSavingPhone(false);
       setShowPhoneModal(false);
@@ -227,14 +334,42 @@ export default function SignupPage() {
       setError('');
       setLoading(true);
       const userCredential = await loginWithGoogle();
+      
       if (userCredential && userCredential.user) {
-        await createWelcomeNotification(userCredential.user.uid);
+        const userId = userCredential.user.uid;
+        console.log('✅ Google auth successful:', userId);
 
-        // Send welcome email for Google signup
-        await sendWelcomeEmail(
-          userCredential.user.displayName || 'there',
-          userCredential.user.email
-        );
+        const userDoc = await getDoc(doc(db, 'users', userId));
+
+        if (userDoc.exists()) {
+          console.log('✅ Existing user, redirecting...');
+          navigate('/dashboard');
+          setLoading(false);
+          return;
+        }
+
+        console.log('🆕 New Google user, creating profile...');
+
+        const referralCode = generateReferralCode(userCredential.user.displayName || 'User', userId);
+        console.log('🔗 Generated referral code:', referralCode);
+
+        await setDoc(doc(db, 'users', userId), {
+          name: userCredential.user.displayName || '',
+          email: userCredential.user.email || '',
+          phone: '',
+          city: '',
+          createdAt: serverTimestamp(),
+          referralCode: referralCode,
+          referredBy: null,
+          totalCredits: 0,
+          totalReferrals: 0,
+          eventsListed: 0,
+          creditsHistory: []
+        });
+        console.log('✅ User document created with referral code');
+
+        await createWelcomeNotification(userId);
+        await sendWelcomeEmail(userCredential.user.displayName || 'there', userCredential.user.email);
 
         setLoading(false);
         setShowPhoneModal(true);
@@ -260,6 +395,33 @@ export default function SignupPage() {
             <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">Create Account</h1>
             <p className="text-gray-600">Join thousands discovering amazing events</p>
           </div>
+
+          {/* ✅ REFERRAL BONUS BANNER */}
+          {referralCodeFromURL && (
+            <div className="mb-6 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-4 shadow-lg">
+              <div className="flex items-center gap-3 text-white mb-3">
+                <Gift size={28} />
+                <div>
+                  <p className="font-bold text-lg">Get ₦300 free credits!</p>
+                  <p className="text-sm text-green-100">Sign up now to claim your welcome bonus</p>
+                </div>
+              </div>
+              <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-white">Using referral code:</span>
+                  <span className="text-lg font-black text-white tracking-wider">
+                    {referralCodeFromURL.toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-white font-semibold bg-green-600 px-2 py-1 rounded">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span>Valid</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Social Buttons */}
           <div className="grid grid-cols-2 gap-4 mb-6">
@@ -382,6 +544,30 @@ export default function SignupPage() {
               />
             </div>
 
+            {/* ✅ NEW: REFERRAL CODE FIELD (if code exists in URL) */}
+            {referralCodeFromURL && (
+              <div>
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <Gift className="text-green-500" size={20} />
+                  </div>
+                  <input
+                    type="text"
+                    value={referralCodeFromURL.toUpperCase()}
+                    disabled
+                    className="w-full pl-11 pr-12 py-4 border-2 border-green-300 bg-green-50 rounded-xl font-bold text-green-700 cursor-not-allowed"
+                    placeholder="Referral Code"
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-green-600 font-bold text-xl">
+                    ✓
+                  </div>
+                </div>
+                <p className="text-xs text-green-600 mt-1 ml-1 font-medium">
+                  🎁 You'll receive ₦300 credits after signup!
+                </p>
+              </div>
+            )}
+
             {/* Password */}
             <div>
               <div className="relative">
@@ -465,7 +651,7 @@ export default function SignupPage() {
         </div>
       </div>
 
-      {/* Right Side - Carousel */}
+      {/* Right Side - Carousel (unchanged) */}
       <div className="hidden lg:block lg:w-1/2 relative bg-gray-900 overflow-hidden">
         {carouselImages.map((slide, index) => (
           <div
@@ -491,7 +677,7 @@ export default function SignupPage() {
         </div>
       </div>
 
-      {/* Phone Number Modal */}
+      {/* Phone Number Modal (unchanged) */}
       {showPhoneModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-8 max-w-md w-full">

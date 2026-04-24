@@ -1,7 +1,8 @@
-// COMPLETE SubmitEventPage.jsx - WITH CLOUDINARY UPLOAD
+// COMPLETE SubmitEventPage.jsx - WITH CLOUDINARY UPLOAD + REFERRAL CODE
 import React, { useState } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { Gift } from 'lucide-react'; // ✅ NEW IMPORT
 
 const SubmitEventPage = () => {
   const [formData, setFormData] = useState({
@@ -9,6 +10,7 @@ const SubmitEventPage = () => {
     organizerEmail: '',
     organizerPhone: '',
     organizationName: '',
+    referralCode: '', // ✅ NEW FIELD
     listingType: 'event',
     eventTitle: '',
     eventCategory: '',
@@ -229,6 +231,7 @@ const SubmitEventPage = () => {
         organizerEmail: formData.organizerEmail,
         organizerPhone: formData.organizerPhone,
         organizationName: formData.organizationName || null,
+        referralCode: formData.referralCode.trim().toUpperCase() || null, // ✅ NEW: Save referral code
         listingType: formData.listingType,
         subCategory: formData.listingType === 'place' ? 'places' : (formData.isUniversityEvent ? 'campus' : 'events'),
         eventTitle: formData.eventTitle,
@@ -309,6 +312,13 @@ const SubmitEventPage = () => {
                 <div className="flex items-start">
                   <span className="text-cyan-600 font-bold mr-3">•</span>
                   <span className="text-gray-700"><strong className="text-cyan-600">We'll contact you</strong> about {formData.listingType === 'place' ? 'payment' : 'ticketing'} setup</span>
+                </div>
+              )}
+              {/* ✅ NEW: Show credit reward if referral code provided */}
+              {formData.referralCode && (
+                <div className="flex items-start">
+                  <span className="text-cyan-600 font-bold mr-3">•</span>
+                  <span className="text-gray-700"><strong className="text-green-600">Get ₦100 credits</strong> when approved!</span>
                 </div>
               )}
               <div className="flex items-start">
@@ -406,6 +416,29 @@ const SubmitEventPage = () => {
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Organization Name</label>
                 <input type="text" name="organizationName" value={formData.organizationName} onChange={handleChange} className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-cyan-500 focus:outline-none transition" placeholder="Company Ltd (optional)" />
+              </div>
+
+              {/* ✅ NEW: REFERRAL CODE INPUT FIELD */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Your Referral Code <span className="text-gray-400 text-xs">(Optional)</span>
+                </label>
+                <div className="relative">
+                  <Gift className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-500" size={20} />
+                  <input 
+                    type="text" 
+                    name="referralCode" 
+                    value={formData.referralCode} 
+                    onChange={handleChange}
+                    maxLength={12}
+                    className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition uppercase" 
+                    placeholder="JOHN2024"
+                  />
+                </div>
+                <p className="text-xs text-green-600 mt-2 font-medium flex items-center gap-1">
+                  <span>💰</span>
+                  <span>Earn ₦100 credits when your event is approved!</span>
+                </p>
               </div>
             </div>
           </div>
