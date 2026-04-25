@@ -1,3 +1,4 @@
+// ✅ IMPORTS - ONLY AT THE TOP (Lines 1-50)
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -10,6 +11,7 @@ import UserLayout from './layouts/UserLayout';
 // Components
 import ScrollToTop from './components/ScrollToTop';
 import ProtectedAdminRoute from './components/ProtectedAdminRoute';
+import AdminRoute from './components/AdminRoute';
 
 // Public Pages
 import LandingPage from './pages/LandingPage';
@@ -33,7 +35,7 @@ import HowItWorks from './pages/HowItWorks';
 import SubmitEventPage from './pages/SubmitEventPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 
-// User Dashboard Pages (NOW CLEAN - No navbar/sidebar!)
+// User Dashboard Pages
 import UserDashboard from './pages/dashboard/UserDashboard';
 import SavedEvents from './pages/dashboard/SavedEvents';
 import Settings from './pages/dashboard/Settings';
@@ -42,7 +44,7 @@ import WebinarEvents from './pages/dashboard/WebinarEvents';
 import CategoryBrowse from './pages/dashboard/CategoryBrowse';
 import CampusEvents from './pages/dashboard/CampusEvents';
 
-// Event Management (NEW - for organizers with secret link)
+// Event Management
 import ManageEvent from './pages/EventManage/ManageEvent';
 
 // Admin Pages
@@ -58,6 +60,7 @@ import AdminSavedEventsAnalytics from './pages/admin/AdminSavedEventsAnalytics';
 import EventSubmissionsPage from './pages/admin/EventSubmissionsPage';
 import AdminNotifications from './pages/admin/AdminNotifications';
 
+// ✅ FUNCTION STARTS HERE (NOT IMPORTS!)
 function App() {
   return (
     <AuthProvider>
@@ -67,7 +70,7 @@ function App() {
           <div className="App">
             <ToastContainer />
             <Routes>
-              {/* Public Routes (No Layout) */}
+              {/* PUBLIC ROUTES */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
@@ -87,12 +90,9 @@ function App() {
               <Route path="/about" element={<AboutUs />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/submit-event" element={<SubmitEventPage />} />
-
-              {/* ✅ NEW: Event Management Route (Public - uses secret link) */}
               <Route path="/manage/:manageKey" element={<ManageEvent />} />
 
-              {/* ✅ USER DASHBOARD ROUTES - ALL WRAPPED IN UserLayout */}
-              {/* UserLayout provides: Navbar + Sidebar + Notifications for all child routes */}
+              {/* USER DASHBOARD ROUTES */}
               <Route element={<UserLayout />}>
                 <Route path="/dashboard" element={<UserDashboard />} />
                 <Route path="/dashboard/categories" element={<CategoryBrowse />} />
@@ -104,19 +104,74 @@ function App() {
                 <Route path="/notifications" element={<NotificationsPage />} />
               </Route>
 
-              {/* Admin Routes (Protected) */}
+              {/* ADMIN ROUTES - PROTECTED */}
               <Route path="/admin/login" element={<AdminLogin />} />
-              <Route path="/admin" element={<ProtectedAdminRoute><AdminDashboard /></ProtectedAdminRoute>} />
-              <Route path="/admin/events" element={<ProtectedAdminRoute><AdminEvents /></ProtectedAdminRoute>} />
-              <Route path="/admin/events/create" element={<ProtectedAdminRoute><AdminEventForm /></ProtectedAdminRoute>} />
-              <Route path="/admin/events/edit/:id" element={<ProtectedAdminRoute><AdminEventForm /></ProtectedAdminRoute>} />
-              <Route path="/admin/users" element={<ProtectedAdminRoute><AdminUsers /></ProtectedAdminRoute>} />
-              <Route path="/admin/event-submissions" element={<EventSubmissionsPage />} />
-              <Route path="/admin/categories" element={<ProtectedAdminRoute><AdminCategories /></ProtectedAdminRoute>} />
-              <Route path="/admin/tickets" element={<ProtectedAdminRoute><AdminTickets /></ProtectedAdminRoute>} />
-              <Route path="/admin/universities" element={<ProtectedAdminRoute><AdminUniversities /></ProtectedAdminRoute>} />
-              <Route path="/admin/notifications" element={<ProtectedAdminRoute><AdminNotifications /></ProtectedAdminRoute>} />
-              <Route path="/admin/saved-events-analytics" element={<ProtectedAdminRoute><AdminSavedEventsAnalytics /></ProtectedAdminRoute>} />
+              
+              <Route path="/admin" element={
+                <AdminRoute>
+                  <AdminDashboard />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/events" element={
+                <AdminRoute>
+                  <AdminEvents />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/events/create" element={
+                <AdminRoute>
+                  <AdminEventForm />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/events/edit/:id" element={
+                <AdminRoute>
+                  <AdminEventForm />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/users" element={
+                <AdminRoute>
+                  <AdminUsers />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/event-submissions" element={
+                <AdminRoute>
+                  <EventSubmissionsPage />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/categories" element={
+                <AdminRoute>
+                  <AdminCategories />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/tickets" element={
+                <AdminRoute>
+                  <AdminTickets />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/universities" element={
+                <AdminRoute>
+                  <AdminUniversities />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/notifications" element={
+                <AdminRoute>
+                  <AdminNotifications />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/saved-events-analytics" element={
+                <AdminRoute>
+                  <AdminSavedEventsAnalytics />
+                </AdminRoute>
+              } />
             </Routes>
           </div>
         </Router>
