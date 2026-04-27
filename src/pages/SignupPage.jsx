@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, User, Eye, EyeOff, ArrowLeft, MapPin, Phone, Gift } from 'lucide-react';
-import { doc, getDoc, updateDoc, setDoc, serverTimestamp, query, collection, where, getDocs, increment, arrayUnion } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { sendWelcomeMessage } from '../services/whatsappService';
-import { generateReferralCode } from '../utils/referralUtils';
 import Create from './../assets/Create.jpg'
 import Image2 from './../assets/SignUp2.JPG'
 import Connected from './../assets/Connected.JPG'
@@ -15,7 +14,14 @@ export default function SignupPage() {
   const [searchParams] = useSearchParams();
   const referralCodeFromURL = searchParams.get('ref'); // ✅ Get referral code from URL
 
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '', city: '', password: '', confirmPassword: '' });
+  const [formData, setFormData] = useState({ 
+    name: '', 
+    email: '', 
+    phone: '', 
+    city: '', 
+    password: '', 
+    confirmPassword: '' 
+  });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -43,84 +49,16 @@ export default function SignupPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // ✅ REFERRAL CREDIT AWARDING FUNCTION
-  const awardReferralCredits = async (newUserId, newUserName, referrerCode) => {
-    try {
-      console.log('🎁 Awarding referral credits...');
-      
-      // Find referrer by referral code
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('referralCode', '==', referrerCode.toUpperCase()));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        console.warn('⚠️ Referral code not found:', referrerCode);
-        return;
-      }
-
-      const referrerDoc = querySnapshot.docs[0];
-      const referrerId = referrerDoc.id;
-      const referrerData = referrerDoc.data();
-      const referrerName = referrerData.name || 'User';
-
-      console.log('✅ Found referrer:', referrerName);
-
-      const now = new Date();
-      const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000); // 90 days
-
-      // Credit for referrer
-      const referrerCredit = {
-        id: `credit_${referrerId}_${Date.now()}_1`,
-        amount: 300,
-        originalAmount: 300,
-        reason: `Referral bonus - ${newUserName} joined`,
-        earnedAt: now.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-        status: 'active',
-        usedAmount: 0
-      };
-
-      // Credit for new user
-      const newUserCredit = {
-        id: `credit_${newUserId}_${Date.now()}_2`,
-        amount: 300,
-        originalAmount: 300,
-        reason: `Sign-up bonus - Referred by ${referrerName}`,
-        earnedAt: now.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-        status: 'active',
-        usedAmount: 0
-      };
-
-      // Update referrer
-      const referrerRef = doc(db, 'users', referrerId);
-      await updateDoc(referrerRef, {
-        totalCredits: increment(300),
-        totalReferrals: increment(1),
-        creditsHistory: arrayUnion(referrerCredit)
-      });
-
-      // Update new user
-      const newUserRef = doc(db, 'users', newUserId);
-      await updateDoc(newUserRef, {
-        referredBy: referrerId,
-        totalCredits: increment(300),
-        creditsHistory: arrayUnion(newUserCredit)
-      });
-
-      console.log('✅ Referral credits awarded successfully!');
-    } catch (err) {
-      console.error('❌ Error awarding referral credits:', err);
-    }
-  };
-
+  // ✅ Create welcome notification
   const createWelcomeNotification = async (userId) => {
     try {
       await setDoc(doc(db, 'notifications', `welcome_${userId}`), {
         userId: userId,
         type: 'welcome',
         title: 'Welcome to OutingStation! 🎉',
-        message: 'Start discovering amazing events and places in your city.',
+        message: referralCodeFromURL 
+          ? 'Thanks for joining! You\'ve earned ₦300 credits to get started! 🎁'
+          : 'Start discovering amazing events and places in your city.',
         read: false,
         createdAt: serverTimestamp()
       });
@@ -129,6 +67,7 @@ export default function SignupPage() {
     }
   };
 
+  // ✅ Send welcome email
   const sendWelcomeEmail = async (name, email) => {
     try {
       await fetch('/api/send-welcome-email', {
@@ -142,6 +81,7 @@ export default function SignupPage() {
     }
   };
 
+  // ✅ Validation functions
   const validateName = (name) => {
     const trimmedName = name.trim();
     if (!trimmedName) return 'Name is required';
@@ -195,8 +135,10 @@ export default function SignupPage() {
     if (error) setError('');
   };
 
+  // ✅ FIXED: Email signup handler
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
     const trimmedData = {
       name: formData.name.trim(),
       email: formData.email.trim(),
@@ -206,6 +148,7 @@ export default function SignupPage() {
       confirmPassword: formData.confirmPassword
     };
 
+    // Validations
     const nameError = validateName(trimmedData.name);
     if (nameError) return setError(nameError);
 
@@ -230,42 +173,34 @@ export default function SignupPage() {
       setError('');
       setLoading(true);
 
+      // Format phone number
       let formattedPhone = trimmedData.phone;
       if (!formattedPhone.startsWith('+234') && !formattedPhone.startsWith('234')) {
         formattedPhone = formattedPhone.replace(/^0/, '');
         formattedPhone = '+234' + formattedPhone;
       }
 
-      const userCredential = await signup(trimmedData.email, trimmedData.password, trimmedData.name, trimmedData.city, formattedPhone);
+      // ✅ FIXED: Let AuthContext handle EVERYTHING (including referral credits!)
+      const userCredential = await signup(
+        trimmedData.email, 
+        trimmedData.password, 
+        trimmedData.name, 
+        trimmedData.city, 
+        formattedPhone,
+        referralCodeFromURL || '' // ✅ Pass referral code to AuthContext
+      );
 
       if (userCredential && userCredential.user) {
         const userId = userCredential.user.uid;
         console.log('✅ User created:', userId);
 
-        // ✅ GENERATE AND SAVE REFERRAL CODE
-        const referralCode = generateReferralCode(trimmedData.name, userId);
-        console.log('🔗 Generated referral code:', referralCode);
-
-        const userRef = doc(db, 'users', userId);
-        await updateDoc(userRef, {
-          referralCode: referralCode,
-          referredBy: null,
-          totalCredits: 0,
-          totalReferrals: 0,
-          eventsListed: 0,
-          creditsHistory: []
-        });
-        console.log('✅ Referral code saved to user document');
-
-        // ✅ AWARD REFERRAL CREDITS IF REFERRED
-        if (referralCodeFromURL) {
-          console.log('🎁 User was referred with code:', referralCodeFromURL);
-          await awardReferralCredits(userId, trimmedData.name, referralCodeFromURL);
-        }
-
+        // ✅ Create welcome notification
         await createWelcomeNotification(userId);
+        
+        // ✅ Send welcome email
         await sendWelcomeEmail(trimmedData.name, trimmedData.email);
 
+        // ✅ Send WhatsApp message (optional)
         if (formattedPhone) {
           try {
             await sendWelcomeMessage({ phone: formattedPhone, name: trimmedData.name });
@@ -273,9 +208,10 @@ export default function SignupPage() {
             console.error('⚠️ WhatsApp send failed (non-blocking):', whatsappError);
           }
         }
-      }
 
-      navigate('/dashboard');
+        // ✅ Navigate to dashboard
+        navigate('/dashboard');
+      }
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
         setError('An account with this email already exists.');
@@ -286,38 +222,69 @@ export default function SignupPage() {
       } else {
         setError('Failed to create account. Please try again.');
       }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
+  // ✅ FIXED: Google signup handler
+  const handleGoogleSignup = async () => {
+    try {
+      setError('');
+      setLoading(true);
+      
+      // ✅ Pass referral code to Google signup
+      const userCredential = await loginWithGoogle(referralCodeFromURL || '');
+      
+      if (userCredential && userCredential.user) {
+        const userId = userCredential.user.uid;
+        const isNewUser = userCredential.additionalUserInfo?.isNewUser;
+
+        console.log('✅ Google auth successful:', userId);
+        console.log('🆕 New user:', isNewUser);
+
+        // ✅ Only show phone modal for NEW users
+        if (isNewUser) {
+          await createWelcomeNotification(userId);
+          await sendWelcomeEmail(userCredential.user.displayName || 'there', userCredential.user.email);
+          
+          setLoading(false);
+          setShowPhoneModal(true);
+        } else {
+          // Existing user, go straight to dashboard
+          navigate('/dashboard');
+        }
+      }
+    } catch (err) {
+      console.error('Google signup error:', err);
+      setError('Failed to sign up with Google. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  // ✅ Save phone number from modal
   const savePhoneNumber = async (userId) => {
     const phoneValidationError = validatePhone(phoneNumber);
     if (phoneValidationError) {
       setPhoneError(phoneValidationError);
       return false;
     }
+    
     try {
       setSavingPhone(true);
       setPhoneError('');
+      
       let formattedPhone = phoneNumber.trim();
       if (!formattedPhone.startsWith('+234') && !formattedPhone.startsWith('234')) {
         formattedPhone = formattedPhone.replace(/^0/, '');
         formattedPhone = '+234' + formattedPhone;
       }
+      
       const userRef = doc(db, 'users', userId);
-      await updateDoc(userRef, { phone: formattedPhone });
-
-      // ✅ AWARD REFERRAL CREDITS IF REFERRED
-      if (referralCodeFromURL) {
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-          const userName = userDoc.data().name || 'User';
-          console.log('🎁 User was referred with code:', referralCodeFromURL);
-          await awardReferralCredits(userId, userName, referralCodeFromURL);
-        }
-      }
+      await setDoc(userRef, { phone: formattedPhone }, { merge: true });
 
       await sendWelcomeMessage({ phone: formattedPhone, name: currentUser?.displayName || 'there' });
+      
       setSavingPhone(false);
       setShowPhoneModal(false);
       return true;
@@ -326,57 +293,6 @@ export default function SignupPage() {
       setPhoneError('Failed to save phone number. Please try again.');
       setSavingPhone(false);
       return false;
-    }
-  };
-
-  const handleGoogleSignup = async () => {
-    try {
-      setError('');
-      setLoading(true);
-      const userCredential = await loginWithGoogle();
-      
-      if (userCredential && userCredential.user) {
-        const userId = userCredential.user.uid;
-        console.log('✅ Google auth successful:', userId);
-
-        const userDoc = await getDoc(doc(db, 'users', userId));
-
-        if (userDoc.exists()) {
-          console.log('✅ Existing user, redirecting...');
-          navigate('/dashboard');
-          setLoading(false);
-          return;
-        }
-
-        console.log('🆕 New Google user, creating profile...');
-
-        const referralCode = generateReferralCode(userCredential.user.displayName || 'User', userId);
-        console.log('🔗 Generated referral code:', referralCode);
-
-        await setDoc(doc(db, 'users', userId), {
-          name: userCredential.user.displayName || '',
-          email: userCredential.user.email || '',
-          phone: '',
-          city: '',
-          createdAt: serverTimestamp(),
-          referralCode: referralCode,
-          referredBy: null,
-          totalCredits: 0,
-          totalReferrals: 0,
-          eventsListed: 0,
-          creditsHistory: []
-        });
-        console.log('✅ User document created with referral code');
-
-        await createWelcomeNotification(userId);
-        await sendWelcomeEmail(userCredential.user.displayName || 'there', userCredential.user.email);
-
-        setLoading(false);
-        setShowPhoneModal(true);
-      }
-    } catch (err) {
-      setError('Failed to sign up with Google. Please try again.');
-      setLoading(false);
     }
   };
 
@@ -544,7 +460,7 @@ export default function SignupPage() {
               />
             </div>
 
-            {/* ✅ NEW: REFERRAL CODE FIELD (if code exists in URL) */}
+            {/* ✅ Referral Code Display (if exists in URL) */}
             {referralCodeFromURL && (
               <div>
                 <div className="relative">
@@ -639,7 +555,9 @@ export default function SignupPage() {
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   Creating account...
                 </span>
-              ) : 'Create Account'}
+              ) : (
+                referralCodeFromURL ? 'Create Account & Get ₦300' : 'Create Account'
+              )}
             </button>
           </form>
 
@@ -651,7 +569,7 @@ export default function SignupPage() {
         </div>
       </div>
 
-      {/* Right Side - Carousel (unchanged) */}
+      {/* Right Side - Carousel */}
       <div className="hidden lg:block lg:w-1/2 relative bg-gray-900 overflow-hidden">
         {carouselImages.map((slide, index) => (
           <div
@@ -677,7 +595,7 @@ export default function SignupPage() {
         </div>
       </div>
 
-      {/* Phone Number Modal (unchanged) */}
+      {/* Phone Number Modal */}
       {showPhoneModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-8 max-w-md w-full">

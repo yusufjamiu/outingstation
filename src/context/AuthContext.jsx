@@ -11,7 +11,7 @@ import {
   reauthenticateWithCredential,
   sendEmailVerification
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 const AuthContext = createContext();
@@ -20,12 +20,113 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
+// ✅ Generate unique referral code
+function generateReferralCode(name, uid) {
+  const namePart = (name || 'USER').replace(/\s+/g, '').toUpperCase().slice(0, 6);
+  const uidPart = uid.slice(0, 4).toUpperCase();
+  const year = new Date().getFullYear();
+  return `${namePart}${uidPart}`;
+}
+
+// ✅ Validate referral code exists
+async function validateReferralCode(code) {
+  if (!code || code.trim() === '') return false;
+  
+  try {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('referralCode', '==', code.toUpperCase()));
+    const snapshot = await getDocs(q);
+    return !snapshot.empty;
+  } catch (error) {
+    console.error('Error validating referral code:', error);
+    return false;
+  }
+}
+
+// ✅ Award referral credits
+async function awardReferralCredits(newUserId, newUserName, referrerCode) {
+  try {
+    console.log('🎁 Awarding referral credits for code:', referrerCode);
+
+    // Find referrer by code
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('referralCode', '==', referrerCode));
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      console.warn('⚠️ No user found with referral code:', referrerCode);
+      return;
+    }
+
+    const referrerDoc = snapshot.docs[0];
+    const referrerId = referrerDoc.id;
+    const referrerData = referrerDoc.data();
+    const referrerName = referrerData.name || 'User';
+
+    console.log('✅ Found referrer:', referrerName, referrerId);
+
+    // Create credit for referrer (₦300)
+    const referrerCredit = {
+      id: `credit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      amount: 300,
+      originalAmount: 300,
+      usedAmount: 0,
+      status: 'active',
+      reason: `Referral bonus - ${newUserName} joined`,
+      earnedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), // 90 days
+    };
+
+    // Create credit for new user (₦300)
+    const newUserCredit = {
+      id: `credit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      amount: 300,
+      originalAmount: 300,
+      usedAmount: 0,
+      status: 'active',
+      reason: 'Referral bonus - Signup reward',
+      earnedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+
+    // Update referrer's credits
+    const referrerRef = doc(db, 'users', referrerId);
+    const referrerSnapshot = await getDoc(referrerRef);
+    const referrerCreditsHistory = referrerSnapshot.data()?.creditsHistory || [];
+    const referrerTotalCredits = referrerSnapshot.data()?.totalCredits || 0;
+
+    await updateDoc(referrerRef, {
+      creditsHistory: [...referrerCreditsHistory, referrerCredit],
+      totalCredits: referrerTotalCredits + 300,
+      totalReferrals: (referrerSnapshot.data()?.totalReferrals || 0) + 1,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log('✅ Credit awarded to referrer:', referrerName);
+
+    // Update new user's credits
+    const newUserRef = doc(db, 'users', newUserId);
+    const newUserSnapshot = await getDoc(newUserRef);
+    const newUserCreditsHistory = newUserSnapshot.data()?.creditsHistory || [];
+
+    await updateDoc(newUserRef, {
+      creditsHistory: [...newUserCreditsHistory, newUserCredit],
+      totalCredits: 300,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log('✅ Credit awarded to new user:', newUserName);
+  } catch (error) {
+    console.error('❌ Error awarding referral credits:', error);
+  }
+}
+
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ CRITICAL FIX: Ensure user document exists with retry logic
+  // ✅ FIXED: Ensure user document exists with ALL required fields
   async function ensureUserDocument(user, additionalData = {}) {
     const userRef = doc(db, 'users', user.uid);
     
@@ -33,7 +134,12 @@ export function AuthProvider({ children }) {
     const userSnap = await getDoc(userRef);
     
     if (!userSnap.exists()) {
-      // Create new user document
+      // ✅ Generate unique referral code
+      const referralCode = generateReferralCode(
+        additionalData.name || user.displayName,
+        user.uid
+      );
+
       console.log('📝 Creating user document for:', user.uid);
       
       const userData = {
@@ -49,16 +155,37 @@ export function AuthProvider({ children }) {
         isNewUser: true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+        
+        // ✅ CREDITS FIELDS (CRITICAL!)
+        creditsHistory: [],
+        totalCredits: 0,
+        referralCode: referralCode,
+        totalReferrals: 0,
+        
+        // ✅ Add referredBy if referral code was used
+        ...(additionalData.referralCode ? { referredBy: additionalData.referralCode.toUpperCase() } : {}),
       };
 
-      // ✅ Use setDoc with merge to prevent race conditions
       await setDoc(userRef, userData, { merge: true });
-      console.log('✅ User document created successfully');
+      console.log('✅ User document created with referral code:', referralCode);
+      
+      // ✅ Award referral credits if applicable
+      if (additionalData.referralCode) {
+        const isValid = await validateReferralCode(additionalData.referralCode);
+        if (isValid) {
+          await awardReferralCredits(
+            user.uid,
+            userData.name,
+            additionalData.referralCode.toUpperCase()
+          );
+        }
+      }
       
       return userData;
     } else {
       // Update last login for existing user
-      console.log('✅ User document already exists, updating lastLoginAt');
+      console.log('✅ User document exists, updating lastLoginAt');
       await updateDoc(userRef, {
         lastLoginAt: serverTimestamp(),
         isNewUser: false,
@@ -68,14 +195,14 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // ✅ Email/Password Signup with guaranteed document creation
-  async function signup(email, password, name, city = '', phone = '') {
+  // ✅ Email/Password Signup
+  async function signup(email, password, name, city = '', phone = '', referralCode = '') {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // ✅ CRITICAL: Create user document immediately after signup
-      await ensureUserDocument(user, { name, city, phone });
+      // ✅ Create user document with referral code
+      await ensureUserDocument(user, { name, city, phone, referralCode });
 
       return userCredential;
     } catch (error) {
@@ -88,10 +215,7 @@ export function AuthProvider({ children }) {
   async function login(email, password) {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      
-      // ✅ Ensure user document exists (in case it was missing)
       await ensureUserDocument(userCredential.user);
-
       return userCredential;
     } catch (error) {
       console.error('❌ Login error:', error);
@@ -99,20 +223,17 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // ✅ Google Sign-In with GUARANTEED document creation
-  async function loginWithGoogle() {
+  // ✅ Google Sign-In
+  async function loginWithGoogle(referralCode = '') {
     try {
       const provider = new GoogleAuthProvider();
-      // ✅ Force account selection every time to prevent auto-login issues
-      provider.setCustomParameters({
-        prompt: 'select_account'
-      });
+      provider.setCustomParameters({ prompt: 'select_account' });
       
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // ✅ CRITICAL: Always ensure document exists
-      await ensureUserDocument(user);
+      // ✅ Pass referral code for new Google users
+      await ensureUserDocument(user, { referralCode });
 
       return result;
     } catch (error) {
@@ -143,7 +264,6 @@ export function AuthProvider({ children }) {
       ...data,
       updatedAt: serverTimestamp()
     });
-    // Refresh local profile
     const snap = await getDoc(docRef);
     if (snap.exists()) setUserProfile(snap.data());
   }
@@ -156,7 +276,7 @@ export function AuthProvider({ children }) {
     await updatePassword(currentUser, newPassword);
   }
 
-  // ✅ Get User Data (helper function)
+  // ✅ Get User Data
   async function getUserData(uid) {
     const docRef = doc(db, 'users', uid);
     const docSnap = await getDoc(docRef);
@@ -170,12 +290,10 @@ export function AuthProvider({ children }) {
 
       if (user) {
         try {
-          // ✅ Ensure user document exists on every auth state change
           const userData = await ensureUserDocument(user);
           setUserProfile(userData);
         } catch (error) {
           console.error('❌ Error ensuring user document:', error);
-          // Even if document creation fails, don't crash the app
           setUserProfile(null);
         }
       } else {
