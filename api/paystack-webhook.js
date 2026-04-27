@@ -1,11 +1,11 @@
 // api/paystack-webhook.js
 // Vercel Serverless Function - Using Firebase Web SDK (like frontend!)
-// ✅ ADDED: Credit deduction after successful payment
+// ✅ FIXED: Proper user lookup and credit deduction
 
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, increment, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 
 // Initialize Firebase (same as frontend)
 const firebaseConfig = {
@@ -49,7 +49,7 @@ function formatEventTime(event) {
   return 'TBD';
 }
 
-// ✅ NEW: Apply credits to transaction (FIFO - oldest first)
+// ✅ Apply credits to transaction (FIFO - oldest first)
 function applyCreditsToTransaction(creditsHistory, amountToUse) {
   const activeCredits = creditsHistory
     .filter(credit => credit.status === 'active' && credit.amount > 0)
@@ -79,10 +79,10 @@ function applyCreditsToTransaction(creditsHistory, amountToUse) {
   return creditsToDeduct;
 }
 
-// ✅ NEW: Deduct credits from user account
+// ✅ Deduct credits from user account
 async function deductCreditsFromUser(userId, creditsApplied) {
   if (!userId || !creditsApplied || creditsApplied <= 0) {
-    console.log('No credits to deduct');
+    console.log('💳 No credits to deduct');
     return;
   }
 
@@ -94,7 +94,7 @@ async function deductCreditsFromUser(userId, creditsApplied) {
     const userDoc = await getDoc(userRef);
 
     if (!userDoc.exists()) {
-      console.error('User not found:', userId);
+      console.error('❌ User not found:', userId);
       return;
     }
 
@@ -105,7 +105,7 @@ async function deductCreditsFromUser(userId, creditsApplied) {
     const creditsToDeduct = applyCreditsToTransaction(creditsHistory, creditsApplied);
 
     if (creditsToDeduct.length === 0) {
-      console.warn('No active credits found to deduct');
+      console.warn('⚠️ No active credits found to deduct');
       return;
     }
 
@@ -139,7 +139,7 @@ async function deductCreditsFromUser(userId, creditsApplied) {
   }
 }
 
-// ✅ UPDATED: Generate email HTML with credits info
+// ✅ Generate email HTML with credits info
 function generateTicketEmail(ticketData, eventData) {
   const showCredits = ticketData.creditsApplied && ticketData.creditsApplied > 0;
   
@@ -208,11 +208,11 @@ function generateTicketEmail(ticketData, eventData) {
   `;
 }
 
-// ✅ UPDATED: Extract metadata (handles credits_applied field!)
+// ✅ Extract metadata (handles credits_applied field!)
 function extractMetadata(paymentData) {
   const rawMetadata = paymentData.metadata || {};
   
-  // Try custom_fields format first (web)
+  // Try custom_fields format first (web & mobile)
   if (rawMetadata.custom_fields && Array.isArray(rawMetadata.custom_fields)) {
     const metadata = rawMetadata.custom_fields.reduce((acc, field) => {
       acc[field.variable_name] = field.value;
@@ -223,30 +223,51 @@ function extractMetadata(paymentData) {
     return {
       eventId: metadata.event_id || metadata.eventId,
       eventTitle: metadata.event_title || metadata.eventTitle,
-      quantity: metadata.quantity,
+      quantity: parseInt(metadata.quantity) || 1,
       buyerName: metadata.buyer_name || metadata.buyerName,
       buyerPhone: metadata.buyer_phone || metadata.buyerPhone,
-      ticketPrice: metadata.ticket_price || metadata.ticketPrice,
-      serviceFee: metadata.service_fee || metadata.serviceFee,
-      subtotal: metadata.subtotal,
-      creditsApplied: metadata.credits_applied || 0, // ✅ NEW
-      totalAmount: metadata.total_amount || metadata.totalPaid,
+      ticketPrice: parseInt(metadata.ticket_price || metadata.ticketPrice) || 0,
+      serviceFee: parseInt(metadata.service_fee || metadata.serviceFee) || 0,
+      subtotal: parseInt(metadata.subtotal) || 0,
+      creditsApplied: parseInt(metadata.credits_applied) || 0,
+      totalAmount: parseInt(metadata.total_amount || metadata.totalPaid) || 0,
     };
   }
   
-  // Otherwise use direct fields (mobile or fallback)
+  // Otherwise use direct fields (mobile fallback)
   return {
     eventId: rawMetadata.eventId || rawMetadata.event_id,
     eventTitle: rawMetadata.eventTitle || rawMetadata.event_title,
-    quantity: rawMetadata.quantity,
+    quantity: parseInt(rawMetadata.quantity) || 1,
     buyerName: rawMetadata.buyerName || rawMetadata.buyer_name,
     buyerPhone: rawMetadata.buyerPhone || rawMetadata.buyer_phone,
-    ticketPrice: rawMetadata.ticketPrice || rawMetadata.ticket_price,
-    serviceFee: rawMetadata.serviceFee || rawMetadata.service_fee,
-    subtotal: rawMetadata.subtotal,
-    creditsApplied: rawMetadata.credits_applied || rawMetadata.creditsApplied || 0, // ✅ NEW
-    totalAmount: rawMetadata.total_amount || rawMetadata.totalAmount,
+    ticketPrice: parseInt(rawMetadata.ticketPrice || rawMetadata.ticket_price) || 0,
+    serviceFee: parseInt(rawMetadata.serviceFee || rawMetadata.service_fee) || 0,
+    subtotal: parseInt(rawMetadata.subtotal) || 0,
+    creditsApplied: parseInt(rawMetadata.credits_applied || rawMetadata.creditsApplied) || 0,
+    totalAmount: parseInt(rawMetadata.total_amount || rawMetadata.totalAmount || rawMetadata.totalPaid) || 0,
   };
+}
+
+// ✅ Find user by email
+async function findUserByEmail(email) {
+  try {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('email', '==', email));
+    const userSnapshot = await getDocs(q);
+    
+    if (!userSnapshot.empty) {
+      const userId = userSnapshot.docs[0].id;
+      console.log(`✅ Found user by email: ${userId}`);
+      return userId;
+    }
+    
+    console.log(`⚠️ No user found with email: ${email}`);
+    return null;
+  } catch (err) {
+    console.error('❌ Error finding user:', err);
+    return null;
+  }
 }
 
 // Main webhook handler
@@ -264,7 +285,7 @@ export default async function handler(req, res) {
       .digest('hex');
 
     if (hash !== req.headers['x-paystack-signature']) {
-      console.log('Invalid signature');
+      console.log('❌ Invalid signature');
       return res.status(400).json({ error: 'Invalid signature' });
     }
 
@@ -272,47 +293,40 @@ export default async function handler(req, res) {
 
     // Only process successful payments
     if (event.event !== 'charge.success') {
+      console.log(`ℹ️ Ignoring event: ${event.event}`);
       return res.status(200).json({ message: 'Event ignored' });
     }
 
     const paymentData = event.data;
     
-    // ✅ UPDATED: Extract metadata (includes credits!)
+    console.log('📦 Processing payment from:', paymentData.customer.email);
+    
+    // ✅ Extract metadata (includes credits!)
     const metadata = extractMetadata(paymentData);
     
-    console.log('📦 Metadata extracted:', metadata);
+    console.log('📦 Metadata:', JSON.stringify(metadata, null, 2));
+
+    // ✅ Find user by email FIRST
+    const userId = await findUserByEmail(paymentData.customer.email);
+
+    // ✅ Deduct credits BEFORE creating ticket
+    if (userId && metadata.creditsApplied && metadata.creditsApplied > 0) {
+      console.log(`💳 Attempting to deduct ₦${metadata.creditsApplied} credits...`);
+      await deductCreditsFromUser(userId, metadata.creditsApplied);
+    } else if (metadata.creditsApplied > 0) {
+      console.warn(`⚠️ Credits applied (₦${metadata.creditsApplied}) but no user found!`);
+    }
 
     // Get event details from Firestore
     const eventRef = doc(db, 'events', metadata.eventId);
     const eventDoc = await getDoc(eventRef);
 
     if (!eventDoc.exists()) {
-      console.error('Event not found:', metadata.eventId);
+      console.error('❌ Event not found:', metadata.eventId);
       return res.status(404).json({ error: 'Event not found' });
     }
 
     const eventData = eventDoc.data();
-
-    // ✅ NEW: Find user by email to deduct credits
-    let userId = null;
-    try {
-      // Try to find user by email
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('email', '==', paymentData.customer.email));
-      const userSnapshot = await getDocs(q);
-      
-      if (!userSnapshot.empty) {
-        userId = userSnapshot.docs[0].id;
-        console.log(`✅ Found user: ${userId}`);
-      }
-    } catch (err) {
-      console.warn('Could not find user:', err.message);
-    }
-
-    // ✅ NEW: Deduct credits if applicable
-    if (userId && metadata.creditsApplied && metadata.creditsApplied > 0) {
-      await deductCreditsFromUser(userId, metadata.creditsApplied);
-    }
 
     // Generate ticket
     const ticketId = generateTicketId();
@@ -323,20 +337,20 @@ export default async function handler(req, res) {
       buyerName: metadata.buyerName,
       buyerEmail: paymentData.customer.email,
       buyerPhone: metadata.buyerPhone || 'N/A',
-      quantity: parseInt(metadata.quantity) || 1,
-      ticketPrice: parseInt(metadata.ticketPrice) || 0,
-      serviceFee: parseInt(metadata.serviceFee) || 0,
+      quantity: metadata.quantity,
+      ticketPrice: metadata.ticketPrice,
+      serviceFee: metadata.serviceFee,
       paystackFee: Math.round((paymentData.amount / 100) * 0.015 + 100),
-      subtotal: parseInt(metadata.subtotal) || 0, // ✅ NEW
-      creditsApplied: parseInt(metadata.creditsApplied) || 0, // ✅ NEW
-      totalPaid: parseInt(metadata.totalAmount) || (paymentData.amount / 100),
+      subtotal: metadata.subtotal,
+      creditsApplied: metadata.creditsApplied,
+      totalPaid: metadata.totalAmount,
       paymentReference: paymentData.reference,
       purchasedAt: serverTimestamp(),
       checkedIn: false,
       eventDate: formatEventDate(eventData),
       eventTime: formatEventTime(eventData),
       status: 'valid',
-      userId: userId || null // ✅ NEW: Store user ID if found
+      userId: userId || null
     };
 
     console.log('🎟️ Creating ticket:', ticketId);
@@ -368,11 +382,12 @@ export default async function handler(req, res) {
     });
 
     console.log('✅ Ticket generated and email sent:', ticketId);
+    console.log(`💰 Credits deducted: ₦${metadata.creditsApplied}`);
 
     return res.status(200).json({ 
       success: true, 
       ticketId,
-      creditsDeducted: metadata.creditsApplied || 0 // ✅ NEW
+      creditsDeducted: metadata.creditsApplied
     });
 
   } catch (error) {
