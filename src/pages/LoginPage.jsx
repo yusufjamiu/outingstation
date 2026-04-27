@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
@@ -13,11 +13,9 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [showVerificationDialog, setShowVerificationDialog] = useState(false);
-  const { login, loginWithGoogle, currentUser, resendVerificationEmail } = useAuth();
+  const { login, loginWithGoogle, currentUser } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect if already logged in
   useEffect(() => {
     if (currentUser) navigate('/dashboard');
   }, [currentUser, navigate]);
@@ -31,7 +29,7 @@ export default function LoginPage() {
     {
       image: Connectwithpeople,
       title: 'Connect with Community',
-      description: 'Join thousands of event-goers and make unforgettable memories.' 
+      description: 'Join thousands of event-goers and make unforgettable memories.'
     },
     {
       image: GetNotified,
@@ -47,44 +45,28 @@ export default function LoginPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const handleResendVerification = async () => {
-    try {
-      await resendVerificationEmail();
-      alert('Verification email sent! Please check your inbox.');
-      setShowVerificationDialog(false);
-    } catch (err) {
-      alert('Failed to send verification email. Please try again.');
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       setError('');
       setLoading(true);
-      
-      const userCredential = await login(email, password);
-      
-      // ✅ CHECK EMAIL VERIFICATION
-      if (userCredential && userCredential.user && !userCredential.user.emailVerified) {
-        // Sign out immediately
-        await userCredential.user.auth.signOut();
-        setShowVerificationDialog(true);
-        setLoading(false);
-        return;
-      }
-      
+      await login(email, password);
       navigate('/dashboard');
     } catch (err) {
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      console.error('❌ Login error:', err);
+      if (
+        err.code === 'auth/user-not-found' ||
+        err.code === 'auth/wrong-password' ||
+        err.code === 'auth/invalid-credential'
+      ) {
         setError('Invalid email or password. Please try again.');
       } else if (err.code === 'auth/too-many-requests') {
         setError('Too many failed attempts. Please try again later.');
       } else {
         setError('Failed to login. Please try again.');
       }
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleGoogleLogin = async () => {
@@ -92,46 +74,16 @@ export default function LoginPage() {
       setError('');
       setLoading(true);
       await loginWithGoogle();
-      // ✅ Google accounts are auto-verified
       navigate('/dashboard');
     } catch (err) {
+      console.error('❌ Google login error:', err);
       setError('Failed to sign in with Google. Please try again.');
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
     <div className="min-h-screen flex">
-      {/* Email Verification Dialog */}
-      {showVerificationDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-cyan-100 rounded-full flex items-center justify-center">
-                <Mail className="text-cyan-500" size={24} />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900">Verify Your Email</h2>
-            </div>
-            <p className="text-gray-600 mb-6 leading-relaxed">
-              Please verify your email address before logging in. Check your inbox for the verification link.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowVerificationDialog(false)}
-                className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl hover:bg-gray-50 font-medium transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleResendVerification}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white rounded-xl hover:shadow-lg hover:from-cyan-500 hover:to-cyan-600 font-medium transition-all"
-              >
-                Resend Email
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Left Side - Form */}
       <div className="w-full lg:w-1/2 bg-white flex items-center justify-center p-8">
@@ -191,29 +143,36 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                <Mail className="text-gray-400" size={20} />
+              </div>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                className="w-full pl-11 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
                 placeholder="Email address"
               />
             </div>
 
             <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                <Lock className="text-gray-400" size={20} />
+              </div>
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-12 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
+                className="w-full pl-11 pr-12 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
                 placeholder="Password"
               />
-              <button type="button" onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
@@ -246,14 +205,17 @@ export default function LoginPage() {
             Don't have an account?{' '}
             <Link to="/signup" className="text-cyan-500 font-semibold hover:text-cyan-600">Sign up now</Link>
           </p>
+
         </div>
       </div>
 
       {/* Right Side - Carousel */}
       <div className="hidden lg:block lg:w-1/2 relative bg-gray-900 overflow-hidden">
         {carouselImages.map((slide, index) => (
-          <div key={index}
-            className={`absolute inset-0 transition-opacity duration-1000 ${index === currentSlide ? 'opacity-100' : 'opacity-0'}`}>
+          <div
+            key={index}
+            className={'absolute inset-0 transition-opacity duration-1000 ' + (index === currentSlide ? 'opacity-100' : 'opacity-0')}
+          >
             <img src={slide.image} alt={slide.title} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent"></div>
             <div className="absolute bottom-20 left-0 right-0 text-center text-white px-12">
@@ -264,12 +226,15 @@ export default function LoginPage() {
         ))}
         <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-2 z-10">
           {carouselImages.map((_, index) => (
-            <button key={index} onClick={() => setCurrentSlide(index)}
-              className={`h-2 rounded-full transition-all duration-300 ${index === currentSlide ? 'bg-white w-8' : 'bg-white/50 w-2'}`}
+            <button
+              key={index}
+              onClick={() => setCurrentSlide(index)}
+              className={'h-2 rounded-full transition-all duration-300 ' + (index === currentSlide ? 'bg-white w-8' : 'bg-white/50 w-2')}
             />
           ))}
         </div>
       </div>
+
     </div>
   );
 }
