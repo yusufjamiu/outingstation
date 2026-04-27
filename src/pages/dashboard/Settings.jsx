@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useOutletContext } from 'react-router-dom';
 import { X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Phone, Camera, CreditCard, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import ReferralCard from '../../components/ReferralCard';
 import { 
@@ -26,7 +26,7 @@ export default function Settings() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [userData, setUserData] = useState(null); // ✅ NEW: Full user data
+  const [userData, setUserData] = useState(null);
 
   const displayName = userProfile?.name || currentUser?.displayName || 'User';
   const joinedDate = userProfile?.createdAt?.toDate?.()?.toLocaleDateString('en-US', { 
@@ -40,35 +40,45 @@ export default function Settings() {
     city: userProfile?.city || ''
   });
 
+  // ✅ REAL-TIME USER DATA LISTENER
   useEffect(() => {
-    loadUserData();
-  }, [currentUser, userProfile]);
-
-  const loadUserData = async () => {
     if (!currentUser) return;
 
-    try {
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      if (userDoc.exists()) {
-        const data = userDoc.data();
-        setUserData(data); // ✅ NEW: Store full user data
-        setSavedCount((data.savedEvents || []).length);
-        
-        const avatar = data.avatar || data.photoURL || currentUser.photoURL ||
-          `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=22D3EE&color=fff&size=128`;
-        setAvatarUrl(avatar);
+    console.log('📡 Setting up real-time user data listener...');
 
-        setFormData({
-          name: data.name || displayName,
-          email: currentUser.email || '',
-          phone: data.phone || '',
-          city: data.city || ''
-        });
+    // ✅ Listen for real-time updates
+    const unsubscribe = onSnapshot(
+      doc(db, 'users', currentUser.uid),
+      (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const data = docSnapshot.data();
+          console.log('✅ User data updated:', data);
+          
+          setUserData(data);
+          setSavedCount((data.savedEvents || []).length);
+          
+          const avatar = data.avatar || data.photoURL || currentUser.photoURL ||
+            `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=22D3EE&color=fff&size=128`;
+          setAvatarUrl(avatar);
+
+          setFormData({
+            name: data.name || displayName,
+            email: currentUser.email || '',
+            phone: data.phone || '',
+            city: data.city || ''
+          });
+        }
+      },
+      (error) => {
+        console.error('❌ Error listening to user data:', error);
       }
-    } catch (err) {
-      console.error('Error loading user data:', err);
-    }
-  };
+    );
+
+    return () => {
+      console.log('🔌 Cleaning up user data listener');
+      unsubscribe();
+    };
+  }, [currentUser]);
 
   const handleEditClick = () => {
     setFormData({
@@ -201,8 +211,6 @@ export default function Settings() {
       setShowSavedNotification(true);
       setTimeout(() => setShowSavedNotification(false), 3000);
 
-      await loadUserData();
-
     } catch (err) {
       console.error('❌ Error saving:', err);
       alert('Error saving changes: ' + err.message);
@@ -219,7 +227,7 @@ export default function Settings() {
     }
   };
 
-  // ✅ CALCULATE CREDITS
+  // ✅ CALCULATE CREDITS (will auto-update via real-time listener)
   const availableCredits = calculateAvailableCredits(userData?.creditsHistory || []);
   const activeCredits = getActiveCredits(userData?.creditsHistory || []);
 
@@ -278,6 +286,9 @@ export default function Settings() {
                 <p className="text-xs sm:text-sm text-gray-600 mb-1">Available Balance</p>
                 <p className="text-2xl sm:text-3xl font-bold text-purple-600">
                   {formatCredits(availableCredits)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Total Earned: {formatCredits(userData?.totalCredits || 0)}
                 </p>
               </div>
 
