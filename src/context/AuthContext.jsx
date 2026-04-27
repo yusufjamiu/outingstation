@@ -24,7 +24,6 @@ export function useAuth() {
 function generateReferralCode(name, uid) {
   const namePart = (name || 'USER').replace(/\s+/g, '').toUpperCase().slice(0, 6);
   const uidPart = uid.slice(0, 4).toUpperCase();
-  const year = new Date().getFullYear();
   return `${namePart}${uidPart}`;
 }
 
@@ -74,7 +73,7 @@ async function awardReferralCredits(newUserId, newUserName, referrerCode) {
       status: 'active',
       reason: `Referral bonus - ${newUserName} joined`,
       earnedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), // 90 days
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
     // Create credit for new user (₦300)
@@ -126,82 +125,156 @@ export function AuthProvider({ children }) {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ FIXED: Ensure user document exists with ALL required fields
+  // ✅ COMPLETELY REWRITTEN: Ensure user document exists with ALL fields
   async function ensureUserDocument(user, additionalData = {}) {
+    console.log('🔍 ensureUserDocument called for:', user.uid);
+    console.log('📦 Additional data:', additionalData);
+
     const userRef = doc(db, 'users', user.uid);
     
-    // Check if document already exists
-    const userSnap = await getDoc(userRef);
-    
-    if (!userSnap.exists()) {
-      // ✅ Generate unique referral code
-      const referralCode = generateReferralCode(
-        additionalData.name || user.displayName,
-        user.uid
-      );
-
-      console.log('📝 Creating user document for:', user.uid);
+    try {
+      const userSnap = await getDoc(userRef);
       
-      const userData = {
-        uid: user.uid,
-        name: additionalData.name || user.displayName || '',
-        email: user.email || '',
-        phone: additionalData.phone || user.phoneNumber || '',
-        city: additionalData.city || '',
-        avatar: user.photoURL || '',
-        savedEvents: [],
-        role: 'user',
-        status: 'active',
-        isNewUser: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        lastLoginAt: serverTimestamp(),
+      if (!userSnap.exists()) {
+        // ✅ NEW USER - Create complete document
+        console.log('🆕 Creating NEW user document');
         
-        // ✅ CREDITS FIELDS (CRITICAL!)
-        creditsHistory: [],
-        totalCredits: 0,
-        referralCode: referralCode,
-        totalReferrals: 0,
+        const userName = additionalData.name || 
+                        user.displayName || 
+                        user.email?.split('@')[0] || 
+                        'User';
         
-        // ✅ Add referredBy if referral code was used
-        ...(additionalData.referralCode ? { referredBy: additionalData.referralCode.toUpperCase() } : {}),
-      };
+        const referralCode = generateReferralCode(userName, user.uid);
 
-      await setDoc(userRef, userData, { merge: true });
-      console.log('✅ User document created with referral code:', referralCode);
-      
-      // ✅ Award referral credits if applicable
-      if (additionalData.referralCode) {
-        const isValid = await validateReferralCode(additionalData.referralCode);
-        if (isValid) {
-          await awardReferralCredits(
-            user.uid,
-            userData.name,
-            additionalData.referralCode.toUpperCase()
-          );
+        console.log('👤 User name:', userName);
+        console.log('🎟️ Referral code:', referralCode);
+
+        const userData = {
+          uid: user.uid,
+          name: userName,
+          email: user.email || '',
+          phone: additionalData.phone || user.phoneNumber || '',
+          city: additionalData.city || '',
+          avatar: user.photoURL || '',
+          savedEvents: [],
+          role: 'user',
+          status: 'active',
+          isNewUser: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          lastLoginAt: serverTimestamp(),
+          
+          // ✅ CREDITS FIELDS (REQUIRED!)
+          creditsHistory: [],
+          totalCredits: 0,
+          referralCode: referralCode,
+          totalReferrals: 0,
+          eventsListed: 0,
+          
+          // ✅ Add referredBy only if referral code was provided
+          ...(additionalData.referralCode ? { referredBy: additionalData.referralCode.toUpperCase() } : {}),
+        };
+
+        await setDoc(userRef, userData, { merge: true });
+        console.log('✅ User document created successfully!');
+        
+        // Award referral credits if applicable
+        if (additionalData.referralCode) {
+          console.log('🎁 Awarding referral credits...');
+          const isValid = await validateReferralCode(additionalData.referralCode);
+          if (isValid) {
+            await awardReferralCredits(user.uid, userName, additionalData.referralCode.toUpperCase());
+          }
         }
+        
+        return userData;
+      } else {
+        // ✅ EXISTING USER - Fix missing fields!
+        console.log('👤 User document exists, checking fields...');
+        
+        const existingData = userSnap.data();
+        const updates = {
+          lastLoginAt: serverTimestamp(),
+          isNewUser: false,
+        };
+
+        // ✅ FIX MISSING NAME
+        if (!existingData.name || existingData.name === 'User') {
+          const newName = additionalData.name || 
+                         user.displayName || 
+                         user.email?.split('@')[0] || 
+                         'User';
+          updates.name = newName;
+          console.log('🔧 Fixing missing name:', newName);
+        }
+
+        // ✅ FIX MISSING REFERRAL CODE
+        if (!existingData.referralCode) {
+          const userName = existingData.name || updates.name || 'User';
+          const newReferralCode = generateReferralCode(userName, user.uid);
+          updates.referralCode = newReferralCode;
+          console.log('🔧 Adding missing referral code:', newReferralCode);
+        }
+
+        // ✅ FIX MISSING CREDIT FIELDS
+        if (!existingData.hasOwnProperty('totalCredits')) {
+          updates.totalCredits = 0;
+          console.log('🔧 Adding totalCredits field');
+        }
+        if (!existingData.hasOwnProperty('totalReferrals')) {
+          updates.totalReferrals = 0;
+          console.log('🔧 Adding totalReferrals field');
+        }
+        if (!existingData.hasOwnProperty('eventsListed')) {
+          updates.eventsListed = 0;
+          console.log('🔧 Adding eventsListed field');
+        }
+        if (!existingData.hasOwnProperty('creditsHistory')) {
+          updates.creditsHistory = [];
+          console.log('🔧 Adding creditsHistory field');
+        }
+
+        // ✅ FIX MISSING EMAIL
+        if (!existingData.email && user.email) {
+          updates.email = user.email;
+          console.log('🔧 Adding missing email');
+        }
+
+        // ✅ FIX MISSING AVATAR
+        if (!existingData.avatar && user.photoURL) {
+          updates.avatar = user.photoURL;
+          console.log('🔧 Adding missing avatar');
+        }
+
+        // Apply updates if any
+        if (Object.keys(updates).length > 2) { // More than just lastLoginAt and isNewUser
+          console.log('🔧 Applying fixes:', Object.keys(updates));
+          await updateDoc(userRef, updates);
+          console.log('✅ User document fixed!');
+        } else {
+          await updateDoc(userRef, updates);
+        }
+        
+        // Return updated data
+        const updatedSnap = await getDoc(userRef);
+        return updatedSnap.data();
       }
-      
-      return userData;
-    } else {
-      // Update last login for existing user
-      console.log('✅ User document exists, updating lastLoginAt');
-      await updateDoc(userRef, {
-        lastLoginAt: serverTimestamp(),
-        isNewUser: false,
-      });
-      
-      return userSnap.data();
+    } catch (error) {
+      console.error('❌ Error in ensureUserDocument:', error);
+      throw error;
     }
   }
 
   // ✅ Email/Password Signup
   async function signup(email, password, name, city = '', phone = '', referralCode = '') {
     try {
+      console.log('📧 Email signup starting...');
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // ✅ Create user document with referral code
+      console.log('✅ Firebase Auth user created:', user.uid);
+
+      // ✅ Create user document with all data
       await ensureUserDocument(user, { name, city, phone, referralCode });
 
       return userCredential;
@@ -214,8 +287,14 @@ export function AuthProvider({ children }) {
   // ✅ Email/Password Login
   async function login(email, password) {
     try {
+      console.log('🔐 Email login starting...');
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      console.log('✅ Firebase Auth login successful:', userCredential.user.uid);
+      
+      // ✅ Ensure document exists and fix any missing fields
       await ensureUserDocument(userCredential.user);
+
       return userCredential;
     } catch (error) {
       console.error('❌ Login error:', error);
@@ -226,13 +305,16 @@ export function AuthProvider({ children }) {
   // ✅ Google Sign-In
   async function loginWithGoogle(referralCode = '') {
     try {
+      console.log('🔵 Google login starting...');
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // ✅ Pass referral code for new Google users
+      console.log('✅ Google Auth successful:', user.uid);
+
+      // ✅ Ensure document exists (pass referral code for new users)
       await ensureUserDocument(user, { referralCode });
 
       return result;
@@ -285,15 +367,21 @@ export function AuthProvider({ children }) {
 
   // ✅ Listen for auth state changes
   useEffect(() => {
+    console.log('🎧 Setting up auth listener...');
+    
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('🔔 Auth state changed:', user ? user.uid : 'No user');
+      
       setCurrentUser(user);
 
       if (user) {
         try {
+          console.log('📥 Fetching user data...');
           const userData = await ensureUserDocument(user);
+          console.log('✅ User profile loaded:', userData.name);
           setUserProfile(userData);
         } catch (error) {
-          console.error('❌ Error ensuring user document:', error);
+          console.error('❌ Error loading user profile:', error);
           setUserProfile(null);
         }
       } else {
@@ -303,7 +391,10 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      console.log('🔌 Cleaning up auth listener');
+      unsubscribe();
+    };
   }, []);
 
   const value = {
