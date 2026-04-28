@@ -19,7 +19,7 @@ export default function PrivacyPolicy() {
             Your privacy matters to us.
           </p>
           <p className="text-sm text-gray-500">
-            Last Updated: April 2025
+            Last Updated: April 2026
           </p>
         </div>
 

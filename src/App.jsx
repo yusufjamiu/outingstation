@@ -14,6 +14,7 @@ import ProtectedAdminRoute from './components/ProtectedAdminRoute';
 import AdminRoute from './components/AdminRoute';
 
 // Public Pages
+import ComingSoon from './pages/ComingSoon';
 import LandingPage from './pages/LandingPage';
 import EventsPage from './pages/EventsPage';
 import EventDetails from "./pages/events/EventDetails";
@@ -71,7 +72,8 @@ function App() {
             <ToastContainer />
             <Routes>
               {/* PUBLIC ROUTES */}
-              <Route path="/" element={<LandingPage />} />
+              <Route path="/" element={<ComingSoon />} />
+              <Route path="/preview" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/forgot-password" element={<ResetPasswordPage />} />
