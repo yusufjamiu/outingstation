@@ -64,7 +64,7 @@ export default function ComingSoon() {
           Something exciting is <span className="text-cyan-400 italic">coming</span>
         </h1>
         <p className="text-lg text-gray-500 mb-10 leading-relaxed">
-          We're putting the finishing touches on something you'll love. Be the first to know. 🚀
+          We're putting the finishing touches on something you'll love. Be the first to know.
         </p>
 
         {/* Countdown */}
@@ -113,7 +113,7 @@ export default function ComingSoon() {
 
         {/* Referral teaser */}
         <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-2xl p-5 mb-8 text-white">
-          <p className="font-bold text-lg mb-1">🎁 Launch Bonus!</p>
+          <p className="font-bold text-lg mb-1">Launch Bonus!</p>
           <p className="text-cyan-50 text-sm leading-relaxed">
             Sign up on launch day and get <strong>₦300 free credits</strong> to use on your first purchase. Invite friends and earn even more!
           </p>
