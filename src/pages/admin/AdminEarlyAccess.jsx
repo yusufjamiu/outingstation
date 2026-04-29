@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs, orderBy, query, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { Mail, Users, Send, CheckCircle, X } from 'lucide-react';
+import { Mail, Users, Send, CheckCircle, X, Download } from 'lucide-react';
 
 export default function AdminEarlyAccess() {
   const [subscribers, setSubscribers] = useState([]);
@@ -49,7 +49,6 @@ export default function AdminEarlyAccess() {
           body: JSON.stringify({ email: subscriber.email })
         });
 
-        // Mark as notified in Firestore
         await updateDoc(doc(db, 'earlyAccess', subscriber.id), {
           notified: true,
           notifiedAt: new Date()
@@ -66,7 +65,75 @@ export default function AdminEarlyAccess() {
 
     setProgress({ sent, total: subscribers.length, done: true });
     setSending(false);
-    fetchSubscribers(); // refresh to show notified status
+    fetchSubscribers();
+  };
+
+  // ✅ Download as CSV
+  const downloadCSV = () => {
+    const headers = ['#', 'Email', 'Signed Up', 'Status'];
+    const rows = subscribers.map((s, i) => [
+      i + 1,
+      s.email,
+      s.createdAt,
+      s.notified ? 'Notified' : 'Pending'
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `outingstation-early-access-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ✅ Download as Excel (using HTML table trick — works without external library)
+  const downloadExcel = () => {
+    const headers = ['#', 'Email', 'Signed Up', 'Status'];
+    const rows = subscribers.map((s, i) => [
+      i + 1,
+      s.email,
+      s.createdAt,
+      s.notified ? 'Notified' : 'Pending'
+    ]);
+
+    const tableHTML = `
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            table { border-collapse: collapse; width: 100%; }
+            th { background-color: #06b6d4; color: white; padding: 8px; border: 1px solid #ddd; }
+            td { padding: 8px; border: 1px solid #ddd; }
+            tr:nth-child(even) { background-color: #f0fdfa; }
+          </style>
+        </head>
+        <body>
+          <h2>OutingStation Early Access Subscribers</h2>
+          <p>Exported: ${new Date().toLocaleDateString()}</p>
+          <table>
+            <thead>
+              <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([tableHTML], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `outingstation-early-access-${new Date().toISOString().split('T')[0]}.xls`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const notifiedCount = subscribers.filter(s => s.notified).length;
@@ -76,19 +143,42 @@ export default function AdminEarlyAccess() {
     <div className="p-6 max-w-5xl mx-auto">
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Early Access Subscribers</h1>
           <p className="text-gray-500 mt-1">People who signed up to be notified at launch</p>
         </div>
-        <button
-          onClick={() => setShowConfirmModal(true)}
-          disabled={sending || subscribers.length === 0}
-          className="flex items-center gap-2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-5 py-3 rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Send size={18} />
-          Send Launch Announcement
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {/* Download CSV */}
+          <button
+            onClick={downloadCSV}
+            disabled={subscribers.length === 0}
+            className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-3 rounded-xl font-semibold hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            <Download size={16} />
+            CSV
+          </button>
+
+          {/* Download Excel */}
+          <button
+            onClick={downloadExcel}
+            disabled={subscribers.length === 0}
+            className="flex items-center gap-2 bg-white border border-green-200 text-green-700 px-4 py-3 rounded-xl font-semibold hover:bg-green-50 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            <Download size={16} />
+            Excel
+          </button>
+
+          {/* Send Launch Email */}
+          <button
+            onClick={() => setShowConfirmModal(true)}
+            disabled={sending || subscribers.length === 0}
+            className="flex items-center gap-2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-5 py-3 rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            <Send size={16} />
+            Send Launch Announcement
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -150,8 +240,9 @@ export default function AdminEarlyAccess() {
 
       {/* Subscribers Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="p-5 border-b border-gray-100">
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900">Subscriber List</h2>
+          <p className="text-sm text-gray-500">{subscribers.length} total</p>
         </div>
 
         {loading ? (

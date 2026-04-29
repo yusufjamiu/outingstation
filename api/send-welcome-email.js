@@ -109,7 +109,7 @@ export default async function handler(req, res) {
               <p style="margin: 0 0 8px 0; color: #64748b; font-size: 14px; font-weight: bold;">OutingStation</p>
               <p style="margin: 0 0 8px 0; color: #94a3b8; font-size: 13px;">Events & Tickets, Simplified ✨</p>
               <p style="margin: 0; color: #94a3b8; font-size: 12px;">
-                Lagos • Abuja • Riyadh • Jeddah
+                Lagos • Abuja • Ibadan • Port Harcourt • Kano • Benin City
               </p>
               <p style="margin: 8px 0 0 0; color: #cbd5e1; font-size: 11px;">
                 You're receiving this because you just created an account on OutingStation.

@@ -75,7 +75,7 @@ export default async function handler(req, res) {
             <td style="padding: 24px 30px; text-align: center; background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
               <p style="margin: 0 0 8px 0; color: #64748b; font-size: 14px; font-weight: bold;">OutingStation</p>
               <p style="margin: 0 0 8px 0; color: #94a3b8; font-size: 13px;">Events & Tickets, Simplified ✨</p>
-              <p style="margin: 0; color: #94a3b8; font-size: 12px;">Lagos • Abuja • Riyadh • Jeddah</p>
+              <p style="margin: 0; color: #94a3b8; font-size: 12px;">Lagos • Abuja • Ibadan • Port Harcourt • Kano • Benin City</p>
             </td>
           </tr>
 
