@@ -1,4 +1,4 @@
-import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, LogOut, X, FileText, Bell, Ticket } from 'lucide-react'; // ✅ Added Ticket
+import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, LogOut, X, FileText, Bell, Ticket, Mail } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export function AdminSidebar({ isOpen, onClose }) {
@@ -13,13 +13,14 @@ export function AdminSidebar({ isOpen, onClose }) {
   const menuItems = [
     { icon: Home, label: 'Dashboard', path: '/admin' },
     { icon: Calendar, label: 'Events', path: '/admin/events' },
-    { icon: Ticket, label: 'Ticketing', path: '/admin/tickets' }, // ✅ NEW
+    { icon: Ticket, label: 'Ticketing', path: '/admin/tickets' },
     { icon: FileText, label: 'Event Submissions', path: '/admin/event-submissions' },
     { icon: Users, label: 'Users', path: '/admin/users' },
     { icon: Grid, label: 'Categories', path: '/admin/categories' },
     { icon: GraduationCap, label: 'Universities', path: '/admin/universities' },
     { icon: BarChart3, label: 'Analytics', path: '/admin/saved-events-analytics' },
     { icon: Bell, label: 'Send Notification', path: '/admin/notifications' },
+    { icon: Mail, label: 'Early Access', path: '/admin/early-access' },
   ];
 
   return (

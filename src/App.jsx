@@ -59,6 +59,7 @@ import AdminUniversities from './pages/admin/Adminuniversities';
 import AdminTickets from './pages/admin/AdminTickets';
 import AdminSavedEventsAnalytics from './pages/admin/AdminSavedEventsAnalytics';
 import EventSubmissionsPage from './pages/admin/EventSubmissionsPage';
+import AdminEarlyAccess from './pages/admin/AdminEarlyAccess';
 import AdminNotifications from './pages/admin/AdminNotifications';
 
 // ✅ FUNCTION STARTS HERE (NOT IMPORTS!)
@@ -174,7 +175,14 @@ function App() {
                   <AdminSavedEventsAnalytics />
                 </AdminRoute>
               } />
+
+              <Route path="/admin/early-access" element={
+                <AdminRoute>
+                  <AdminEarlyAccess />
+                </AdminRoute>
+              } />
             </Routes>
+            
           </div>
         </Router>
       </SavedEventsProvider>
