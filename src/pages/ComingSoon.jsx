@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { Instagram, Twitter, Facebook, Linkedin, ArrowRight } from 'lucide-react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import OutingStation from '../assets/OutingStation.png';
 
 const LAUNCH_DATE = new Date('2026-05-05T00:00:00');
@@ -8,9 +9,7 @@ const LAUNCH_DATE = new Date('2026-05-05T00:00:00');
 function getTimeLeft() {
   const now = new Date();
   const diff = LAUNCH_DATE - now;
-
   if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0 };
-
   return {
     days: Math.floor(diff / (1000 * 60 * 60 * 24)),
     hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
@@ -25,20 +24,20 @@ export default function ComingSoon() {
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft(getTimeLeft());
-    }, 1000);
+    const timer = setInterval(() => setTimeLeft(getTimeLeft()), 1000);
     return () => clearInterval(timer);
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email) return;
-    // Store email in localStorage for now — connect to Firestore later
-    const existing = JSON.parse(localStorage.getItem('earlyAccessEmails') || '[]');
-    if (!existing.includes(email)) {
-      existing.push(email);
-      localStorage.setItem('earlyAccessEmails', JSON.stringify(existing));
+    try {
+      await addDoc(collection(db, 'earlyAccess'), {
+        email: email,
+        createdAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.error('Error saving email:', err);
     }
     setSubmitted(true);
   };
@@ -63,23 +62,28 @@ export default function ComingSoon() {
         <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-4 leading-tight">
           Something exciting is <span className="text-cyan-400 italic">coming</span>
         </h1>
-        <p className="text-lg text-gray-500 mb-10 leading-relaxed">
-          We're putting the finishing touches on something you'll love. Be the first to know.
+
+        {/* Subtitle — split into two lines */}
+        <p className="text-lg text-gray-500 mb-2 leading-relaxed">
+          We're putting the finishing touches on something you'll love.
+        </p>
+        <p className="text-lg font-semibold text-cyan-500 mb-10">
+          Be the first to know.
         </p>
 
         {/* Countdown */}
-        <div className="grid grid-cols-4 gap-3 sm:gap-6 mb-10">
+        <div className="grid grid-cols-4 gap-2 sm:gap-6 mb-10">
           {[
             { label: 'Days', value: timeLeft.days },
             { label: 'Hours', value: timeLeft.hours },
             { label: 'Minutes', value: timeLeft.minutes },
             { label: 'Seconds', value: timeLeft.seconds },
           ].map((item) => (
-            <div key={item.label} className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 sm:p-6">
-              <p className="text-3xl sm:text-5xl font-bold text-cyan-500 tabular-nums">
+            <div key={item.label} className="bg-white rounded-2xl shadow-md border border-gray-100 p-2 sm:p-6 flex flex-col items-center justify-center">
+              <p className="text-xl sm:text-5xl font-bold text-cyan-500 tabular-nums leading-none">
                 {pad(item.value)}
               </p>
-              <p className="text-xs sm:text-sm text-gray-500 mt-1 font-medium uppercase tracking-wide">
+              <p className="text-[9px] sm:text-sm text-gray-500 mt-1 font-medium uppercase tracking-wide text-center">
                 {item.label}
               </p>
             </div>
@@ -111,7 +115,7 @@ export default function ComingSoon() {
           </div>
         )}
 
-        {/* Referral teaser */}
+        {/* Launch Bonus */}
         <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-2xl p-5 mb-8 text-white">
           <p className="font-bold text-lg mb-1">Launch Bonus!</p>
           <p className="text-cyan-50 text-sm leading-relaxed">
@@ -139,9 +143,9 @@ export default function ComingSoon() {
           </a>
           <a href="https://www.tiktok.com/@outingstation" target="_blank" rel="noopener noreferrer"
             className="w-10 h-10 bg-white rounded-full shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-cyan-500 hover:border-cyan-300 transition-all">
-             <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
               <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.69a8.18 8.18 0 0 0 4.78 1.52V6.75a4.85 4.85 0 0 1-1.01-.06z"/>
-             </svg>
+            </svg>
           </a>
         </div>
 
