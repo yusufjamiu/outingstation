@@ -105,7 +105,7 @@ export default function ComingSoon() {
               type="submit"
               className="flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-4 rounded-full font-semibold hover:shadow-lg transition-shadow whitespace-nowrap"
             >
-              Notify Me <ArrowRight size={18} />
+              Submit <ArrowRight size={18} />
             </button>
           </form>
         ) : (
