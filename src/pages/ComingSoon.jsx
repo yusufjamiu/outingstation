@@ -4,7 +4,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import OutingStation from '../assets/OutingStation.png';
 
-const LAUNCH_DATE = new Date('2026-05-13T08:00:00');
+const LAUNCH_DATE = new Date('2026-05-13T20:00:00');
 
 function getTimeLeft() {
   const now = new Date();
