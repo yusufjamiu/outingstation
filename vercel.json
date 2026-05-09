@@ -1,23 +1,12 @@
 {
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
     },
     {
-      "src": "/event/([^/]+)",
-      "dest": "/api/og/event/$1",
-      "has": [
-        {
-          "type": "header",
-          "key": "user-agent",
-          "value": "(?!.*Chrome)(?!.*Firefox)(?!.*Safari)(.*)"
-        }
-      ]
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
