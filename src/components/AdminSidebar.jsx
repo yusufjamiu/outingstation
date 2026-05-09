@@ -1,4 +1,4 @@
-import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, LogOut, X, FileText, Bell, Ticket, Mail } from 'lucide-react';
+import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, LogOut, X, FileText, Bell, Ticket, Mail, Star } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export function AdminSidebar({ isOpen, onClose }) {
