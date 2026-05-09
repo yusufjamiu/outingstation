@@ -1,12 +1,12 @@
 {
   "rewrites": [
     {
-      "source": "/event/:id",
-      "destination": "/api/og/event/:id"
-    },
-    {
       "source": "/api/:path*",
       "destination": "/api/:path*"
+    },
+    {
+      "source": "/event/:id",
+      "destination": "/api/og/event/:id"
     },
     {
       "source": "/(.*)",
