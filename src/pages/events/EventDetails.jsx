@@ -595,8 +595,8 @@ export default function EventDetails() {
   };
 
   const handleShare = (platform) => {
-  const url = `https://www.outingstation.com/api/og/event/${event.id}`;
-  const text = `Check out this event: ${event.title}`;
+    const url = window.location.href;
+    const text = `Check out this event: ${event.title}`;
     
     const shareUrls = {
       facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
