@@ -6,7 +6,14 @@
     },
     {
       "src": "/event/([^/]+)",
-      "dest": "/api/og/event/$1"
+      "dest": "/api/og/event/$1",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "(?!.*Chrome)(?!.*Firefox)(?!.*Safari)(.*)"
+        }
+      ]
     },
     {
       "src": "/(.*)",
