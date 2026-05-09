@@ -26,7 +26,8 @@ import {
   Eye,
   UserCheck,
   UserX,
-  Filter
+  Filter,
+  Star
 } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 
@@ -36,14 +37,15 @@ export default function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [userFilter, setUserFilter] = useState('all'); // all, admins, regular, banned
+  const [userFilter, setUserFilter] = useState('all');
   const [expandedUser, setExpandedUser] = useState(null);
   const [stats, setStats] = useState({
     totalUsers: 0,
     adminUsers: 0,
     regularUsers: 0,
     bannedUsers: 0,
-    verifiedEmails: 0
+    verifiedEmails: 0,
+    ambassadors: 0
   });
 
   useEffect(() => {
@@ -57,8 +59,6 @@ export default function AdminUsers() {
   const loadUsers = async () => {
     try {
       setLoading(true);
-
-      // Get all users from Firestore
       const usersRef = collection(db, 'users');
       const usersSnapshot = await getDocs(usersRef);
 
@@ -69,13 +69,13 @@ export default function AdminUsers() {
 
       setUsers(usersData);
 
-      // Calculate stats
       const calculatedStats = {
         totalUsers: usersData.length,
         adminUsers: usersData.filter(u => u.role === 'admin').length,
         regularUsers: usersData.filter(u => u.role !== 'admin' && u.banned !== true).length,
         bannedUsers: usersData.filter(u => u.banned === true).length,
-        verifiedEmails: usersData.filter(u => u.emailVerified).length
+        verifiedEmails: usersData.filter(u => u.emailVerified).length,
+        ambassadors: usersData.filter(u => u.isAmbassador === true).length
       };
 
       setStats(calculatedStats);
@@ -90,16 +90,16 @@ export default function AdminUsers() {
   const filterUsers = () => {
     let filtered = [...users];
 
-    // Apply filter type
     if (userFilter === 'admins') {
       filtered = filtered.filter(u => u.role === 'admin');
     } else if (userFilter === 'regular') {
       filtered = filtered.filter(u => u.role !== 'admin' && u.banned !== true);
     } else if (userFilter === 'banned') {
       filtered = filtered.filter(u => u.banned === true);
+    } else if (userFilter === 'ambassadors') {
+      filtered = filtered.filter(u => u.isAmbassador === true);
     }
 
-    // Apply search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(u => 
@@ -116,9 +116,7 @@ export default function AdminUsers() {
   const toggleAdmin = async (userId, currentRole) => {
     const isAdmin = currentRole === 'admin';
     const action = isAdmin ? 'remove admin access from' : 'grant admin access to';
-    if (!confirm(`Are you sure you want to ${action} this user?`)) {
-      return;
-    }
+    if (!confirm(`Are you sure you want to ${action} this user?`)) return;
 
     try {
       const userRef = doc(db, 'users', userId);
@@ -127,7 +125,6 @@ export default function AdminUsers() {
         updatedAt: new Date()
       });
 
-      // Update local state
       setUsers(prev => prev.map(user => 
         user.id === userId 
           ? { ...user, role: isAdmin ? 'user' : 'admin' }
@@ -141,11 +138,51 @@ export default function AdminUsers() {
     }
   };
 
+  // ✅ NEW: Toggle Ambassador Status
+  const toggleAmbassador = async (userId, currentAmbassadorStatus) => {
+    const action = currentAmbassadorStatus ? 'remove ambassador status from' : 'make';
+    if (!confirm(`Are you sure you want to ${action} this user an ambassador?`)) return;
+
+    try {
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        isAmbassador: !currentAmbassadorStatus,
+        ambassadorSince: !currentAmbassadorStatus ? new Date() : null,
+        updatedAt: new Date()
+      });
+
+      setUsers(prev => prev.map(user => 
+        user.id === userId 
+          ? { 
+              ...user, 
+              isAmbassador: !currentAmbassadorStatus,
+              ambassadorSince: !currentAmbassadorStatus ? new Date() : null
+            }
+          : user
+      ));
+
+      // ✅ Update ambassador count in stats
+      setStats(prev => ({
+        ...prev,
+        ambassadors: !currentAmbassadorStatus 
+          ? prev.ambassadors + 1 
+          : prev.ambassadors - 1
+      }));
+
+      toast.success(
+        currentAmbassadorStatus 
+          ? '✅ Ambassador status removed' 
+          : '⭐ User is now an Ambassador!'
+      );
+    } catch (err) {
+      console.error('Error updating ambassador status:', err);
+      toast.error('Failed to update ambassador status');
+    }
+  };
+
   const toggleBan = async (userId, currentBanStatus) => {
     const action = currentBanStatus ? 'unban' : 'ban';
-    if (!confirm(`Are you sure you want to ${action} this user?`)) {
-      return;
-    }
+    if (!confirm(`Are you sure you want to ${action} this user?`)) return;
 
     try {
       const userRef = doc(db, 'users', userId);
@@ -155,7 +192,6 @@ export default function AdminUsers() {
         updatedAt: new Date()
       });
 
-      // Update local state
       setUsers(prev => prev.map(user => 
         user.id === userId 
           ? { ...user, banned: !currentBanStatus, bannedAt: !currentBanStatus ? new Date() : null }
@@ -170,20 +206,12 @@ export default function AdminUsers() {
   };
 
   const deleteUser = async (userId) => {
-    if (!confirm('⚠️ Are you sure you want to DELETE this user? This action cannot be undone!')) {
-      return;
-    }
-
-    if (!confirm('⚠️⚠️ FINAL WARNING: This will permanently delete all user data!')) {
-      return;
-    }
+    if (!confirm('⚠️ Are you sure you want to DELETE this user? This action cannot be undone!')) return;
+    if (!confirm('⚠️⚠️ FINAL WARNING: This will permanently delete all user data!')) return;
 
     try {
       await deleteDoc(doc(db, 'users', userId));
-
-      // Update local state
       setUsers(prev => prev.filter(user => user.id !== userId));
-
       toast.success('✅ User deleted');
     } catch (err) {
       console.error('Error deleting user:', err);
@@ -196,7 +224,7 @@ export default function AdminUsers() {
   };
 
   const exportUsersCSV = () => {
-    const headers = ['User ID', 'Name', 'Email', 'Phone', 'City', 'Role', 'Banned', 'Saved Events', 'Created At', 'Last Login'];
+    const headers = ['User ID', 'Name', 'Email', 'Phone', 'City', 'Role', 'Ambassador', 'Banned', 'Saved Events', 'Created At', 'Last Login'];
     const rows = filteredUsers.map(user => [
       user.id,
       user.name || 'N/A',
@@ -204,6 +232,7 @@ export default function AdminUsers() {
       user.phone || 'N/A',
       user.city || 'N/A',
       user.role || 'user',
+      user.isAmbassador === true ? 'Yes' : 'No',
       user.banned === true ? 'Yes' : 'No',
       user.savedEvents?.length || 0,
       user.createdAt?.seconds 
@@ -277,52 +306,60 @@ export default function AdminUsers() {
         ) : (
           <div className="p-4 sm:p-6 lg:p-8">
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <Users className="text-cyan-500" size={24} />
-                  <p className="text-sm text-gray-600">Total Users</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+              <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Users className="text-cyan-500" size={20} />
+                  <p className="text-xs text-gray-600">Total Users</p>
                 </div>
                 <p className="text-3xl font-bold text-gray-900">{stats.totalUsers}</p>
               </div>
 
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <Shield className="text-purple-500" size={24} />
-                  <p className="text-sm text-gray-600">Admins</p>
+              <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="text-purple-500" size={20} />
+                  <p className="text-xs text-gray-600">Admins</p>
                 </div>
                 <p className="text-3xl font-bold text-gray-900">{stats.adminUsers}</p>
               </div>
 
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <UserCheck className="text-green-500" size={24} />
-                  <p className="text-sm text-gray-600">Regular</p>
+              <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <UserCheck className="text-green-500" size={20} />
+                  <p className="text-xs text-gray-600">Regular</p>
                 </div>
                 <p className="text-3xl font-bold text-gray-900">{stats.regularUsers}</p>
               </div>
 
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <Ban className="text-red-500" size={24} />
-                  <p className="text-sm text-gray-600">Banned</p>
+              <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Ban className="text-red-500" size={20} />
+                  <p className="text-xs text-gray-600">Banned</p>
                 </div>
                 <p className="text-3xl font-bold text-gray-900">{stats.bannedUsers}</p>
               </div>
 
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <Mail className="text-blue-500" size={24} />
-                  <p className="text-sm text-gray-600">Verified</p>
+              <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Mail className="text-blue-500" size={20} />
+                  <p className="text-xs text-gray-600">Verified</p>
                 </div>
                 <p className="text-3xl font-bold text-gray-900">{stats.verifiedEmails}</p>
+              </div>
+
+              {/* ✅ NEW: Ambassador stat card */}
+              <div className="bg-white rounded-xl p-5 shadow-sm border border-cyan-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Star className="text-yellow-500" size={20} />
+                  <p className="text-xs text-gray-600">Ambassadors</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.ambassadors}</p>
               </div>
             </div>
 
             {/* Filters and Search */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
               <div className="flex flex-col md:flex-row gap-4">
-                {/* Search */}
                 <div className="flex-1">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
@@ -336,7 +373,6 @@ export default function AdminUsers() {
                   </div>
                 </div>
 
-                {/* Filter */}
                 <div className="flex items-center gap-2">
                   <Filter size={20} className="text-gray-400" />
                   <select
@@ -346,12 +382,12 @@ export default function AdminUsers() {
                   >
                     <option value="all">👥 All Users</option>
                     <option value="admins">🛡️ Admins Only</option>
+                    <option value="ambassadors">⭐ Ambassadors</option>
                     <option value="regular">✅ Regular Users</option>
                     <option value="banned">🚫 Banned Users</option>
                   </select>
                 </div>
 
-                {/* Export */}
                 <button
                   onClick={exportUsersCSV}
                   className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition"
@@ -381,11 +417,9 @@ export default function AdminUsers() {
                 <div className="divide-y divide-gray-200">
                   {filteredUsers.map((user) => (
                     <div key={user.id} className="hover:bg-gray-50 transition">
-                      {/* User Row */}
                       <div className="px-6 py-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4 flex-1">
-                            {/* Avatar */}
                             {user.avatar || user.photoURL ? (
                               <img 
                                 src={user.avatar || user.photoURL} 
@@ -404,15 +438,20 @@ export default function AdminUsers() {
                               {user.name?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase() || '?'}
                             </div>
 
-                            {/* User Info */}
                             <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <h3 className="text-lg font-semibold text-gray-900">
                                   {user.name || 'No name'}
                                 </h3>
                                 {user.role === 'admin' && (
                                   <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium">
                                     ADMIN
+                                  </span>
+                                )}
+                                {/* ✅ NEW: Ambassador badge */}
+                                {user.isAmbassador === true && (
+                                  <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs font-medium flex items-center gap-1">
+                                    ⭐ AMBASSADOR
                                   </span>
                                 )}
                                 {user.banned === true && (
@@ -439,7 +478,6 @@ export default function AdminUsers() {
                             </div>
                           </div>
 
-                          {/* Actions */}
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => toggleUserDetails(user.id)}
@@ -458,7 +496,6 @@ export default function AdminUsers() {
                       {/* Expanded Details */}
                       {expandedUser === user.id && (
                         <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                          {/* User Details */}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             <div className="bg-white rounded-lg p-4 shadow-sm">
                               <h4 className="font-semibold text-gray-900 mb-3">Account Details</h4>
@@ -489,6 +526,19 @@ export default function AdminUsers() {
                                     {user.role || 'user'}
                                   </span>
                                 </div>
+                                {/* ✅ NEW: Ambassador status in details */}
+                                <div className="flex justify-between">
+                                  <span className="text-gray-600">Ambassador:</span>
+                                  <span className={`font-semibold ${user.isAmbassador ? 'text-yellow-600' : 'text-gray-400'}`}>
+                                    {user.isAmbassador ? '⭐ Yes' : 'No'}
+                                  </span>
+                                </div>
+                                {user.isAmbassador && user.ambassadorSince && (
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Ambassador Since:</span>
+                                    <span className="text-gray-900">{formatDate(user.ambassadorSince)}</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
 
@@ -535,6 +585,19 @@ export default function AdminUsers() {
                               {user.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
                             </button>
 
+                            {/* ✅ NEW: Ambassador toggle button */}
+                            <button
+                              onClick={() => toggleAmbassador(user.id, user.isAmbassador)}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
+                                user.isAmbassador
+                                  ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                                  : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                              }`}
+                            >
+                              <Star size={18} />
+                              {user.isAmbassador ? 'Remove Ambassador' : 'Make Ambassador'}
+                            </button>
+
                             <button
                               onClick={() => toggleBan(user.id, user.banned)}
                               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
@@ -560,6 +623,15 @@ export default function AdminUsers() {
                             <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
                               <p className="text-sm text-red-700">
                                 ⚠️ This user is currently banned and cannot access the platform.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* ✅ NEW: Ambassador info banner */}
+                          {user.isAmbassador === true && (
+                            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                              <p className="text-sm text-yellow-700">
+                                ⭐ This user is an OutingStation Ambassador and earns ₦500 per referral instead of ₦300.
                               </p>
                             </div>
                           )}

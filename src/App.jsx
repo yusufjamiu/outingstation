@@ -35,6 +35,7 @@ import AboutUs from './pages/AboutUs';
 import HowItWorks from './pages/HowItWorks';
 import SubmitEventPage from './pages/SubmitEventPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
+import AmbassadorPage from './pages/AmbassadorPage';
 
 // User Dashboard Pages
 import UserDashboard from './pages/dashboard/UserDashboard';
@@ -61,6 +62,7 @@ import AdminSavedEventsAnalytics from './pages/admin/AdminSavedEventsAnalytics';
 import EventSubmissionsPage from './pages/admin/EventSubmissionsPage';
 import AdminEarlyAccess from './pages/admin/AdminEarlyAccess';
 import AdminNotifications from './pages/admin/AdminNotifications';
+import AdminAmbassadors from './pages/admin/AdminAmbassadors';
 
 // ✅ FUNCTION STARTS HERE (NOT IMPORTS!)
 function App() {
@@ -94,6 +96,7 @@ function App() {
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/submit-event" element={<SubmitEventPage />} />
               <Route path="/manage/:manageKey" element={<ManageEvent />} />
+              <Route path="/ambassador" element={<AmbassadorPage />} />
 
               {/* USER DASHBOARD ROUTES */}
               <Route element={<UserLayout />}>
@@ -179,6 +182,12 @@ function App() {
               <Route path="/admin/early-access" element={
                 <AdminRoute>
                   <AdminEarlyAccess />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/ambassadors" element={
+                <AdminRoute>
+                  <AdminAmbassadors />
                 </AdminRoute>
               } />
             </Routes>

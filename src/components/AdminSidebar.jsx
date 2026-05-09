@@ -21,6 +21,7 @@ export function AdminSidebar({ isOpen, onClose }) {
     { icon: BarChart3, label: 'Analytics', path: '/admin/saved-events-analytics' },
     { icon: Bell, label: 'Send Notification', path: '/admin/notifications' },
     { icon: Mail, label: 'Early Access', path: '/admin/early-access' },
+    { icon: Star, label: 'Ambassadors', path: '/admin/ambassadors' },
   ];
 
   return (

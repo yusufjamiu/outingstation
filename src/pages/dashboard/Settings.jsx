@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useOutletContext } from 'react-router-dom';
-import { X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Phone, Camera, CreditCard, Clock } from 'lucide-react';
+import { X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Phone, Camera, CreditCard, Clock, Star } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -40,20 +40,14 @@ export default function Settings() {
     city: userProfile?.city || ''
   });
 
-  // ✅ REAL-TIME USER DATA LISTENER
   useEffect(() => {
     if (!currentUser) return;
 
-    console.log('📡 Setting up real-time user data listener...');
-
-    // ✅ Listen for real-time updates
     const unsubscribe = onSnapshot(
       doc(db, 'users', currentUser.uid),
       (docSnapshot) => {
         if (docSnapshot.exists()) {
           const data = docSnapshot.data();
-          console.log('✅ User data updated:', data);
-          
           setUserData(data);
           setSavedCount((data.savedEvents || []).length);
           
@@ -74,10 +68,7 @@ export default function Settings() {
       }
     );
 
-    return () => {
-      console.log('🔌 Cleaning up user data listener');
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [currentUser]);
 
   const handleEditClick = () => {
@@ -93,9 +84,7 @@ export default function Settings() {
   const handleCancelEdit = () => setIsEditing(false);
 
   const handleAvatarClick = () => {
-    if (isEditing) {
-      fileInputRef.current?.click();
-    }
+    if (isEditing) fileInputRef.current?.click();
   };
 
   const uploadToCloudinary = async (file) => {
@@ -104,28 +93,14 @@ export default function Settings() {
     formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
     formData.append('folder', 'outingstation/profiles');
 
-    try {
-      console.log('📤 Uploading to Cloudinary...');
-      
-      const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
-        {
-          method: 'POST',
-          body: formData,
-        }
-      );
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
+      { method: 'POST', body: formData }
+    );
 
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log('✅ Cloudinary upload successful!');
-      return data.secure_url;
-    } catch (error) {
-      console.error('❌ Cloudinary upload error:', error);
-      throw error;
-    }
+    if (!response.ok) throw new Error(`Upload failed: ${response.statusText}`);
+    const data = await response.json();
+    return data.secure_url;
   };
 
   const handleImageUpload = async (e) => {
@@ -133,35 +108,19 @@ export default function Settings() {
     if (!file || !currentUser) return;
 
     try {
-      if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Image size must be less than 5MB');
-        return;
-      }
+      if (!file.type.startsWith('image/')) { alert('Please select an image file'); return; }
+      if (file.size > 5 * 1024 * 1024) { alert('Image size must be less than 5MB'); return; }
 
       setUploadingAvatar(true);
-
       let imageUrl = '';
 
       try {
-        console.log('📤 Uploading profile picture to Cloudinary...');
-        
         const uploadPromise = uploadToCloudinary(file);
-
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Upload timeout after 10 seconds')), 10000)
         );
-
         imageUrl = await Promise.race([uploadPromise, timeoutPromise]);
-        console.log('✅ Upload complete:', imageUrl);
-
       } catch (uploadError) {
-        console.warn('⚠️ Upload failed, using base64 fallback:', uploadError.message);
-        
         const reader = new FileReader();
         imageUrl = await new Promise((resolve) => {
           reader.onloadend = () => resolve(reader.result);
@@ -171,14 +130,10 @@ export default function Settings() {
 
       const userRef = doc(db, 'users', currentUser.uid);
       await updateDoc(userRef, { avatar: imageUrl });
-
       await updateProfile({ avatar: imageUrl });
-
       setAvatarUrl(imageUrl);
-
       setUploadingAvatar(false);
       alert('Profile picture updated successfully!');
-
     } catch (err) {
       console.error('❌ Upload error:', err);
       alert(err.message || 'Failed to upload profile picture');
@@ -188,29 +143,19 @@ export default function Settings() {
 
   const handleSaveChanges = async () => {
     if (!currentUser) return;
-
     try {
       setSaving(true);
-
       const userRef = doc(db, 'users', currentUser.uid);
-      
       await updateDoc(userRef, {
         name: formData.name,
         phone: formData.phone,
         city: formData.city,
         updatedAt: new Date()
       });
-
-      await updateProfile({
-        name: formData.name,
-        phone: formData.phone,
-        city: formData.city
-      });
-
+      await updateProfile({ name: formData.name, phone: formData.phone, city: formData.city });
       setIsEditing(false);
       setShowSavedNotification(true);
       setTimeout(() => setShowSavedNotification(false), 3000);
-
     } catch (err) {
       console.error('❌ Error saving:', err);
       alert('Error saving changes: ' + err.message);
@@ -227,9 +172,9 @@ export default function Settings() {
     }
   };
 
-  // ✅ CALCULATE CREDITS (will auto-update via real-time listener)
   const availableCredits = calculateAvailableCredits(userData?.creditsHistory || []);
   const activeCredits = getActiveCredits(userData?.creditsHistory || []);
+  const isAmbassador = userData?.isAmbassador === true;
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
@@ -257,7 +202,22 @@ export default function Settings() {
 
       {!isEditing ? (
         <>
-          {/* ✅ REFERRAL & CREDITS SECTION */}
+          {/* ✅ AMBASSADOR BANNER */}
+          {isAmbassador && (
+            <div className="bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-xl p-4 mb-4 sm:mb-6 flex items-center gap-4">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
+                <Star className="text-white" size={24} fill="white" />
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-white text-base sm:text-lg">⭐ OutingStation Ambassador</p>
+                <p className="text-yellow-50 text-xs sm:text-sm">
+                  You earn <strong>₦500</strong> per referral instead of ₦300. Keep sharing and earning!
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* REFERRAL & CREDITS SECTION */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
             {/* Referral Card */}
             {userData?.referralCode ? (
@@ -268,9 +228,7 @@ export default function Settings() {
             ) : (
               <div className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">
                 <h3 className="text-lg sm:text-xl font-bold mb-2">🎁 Get Your Referral Code</h3>
-                <p className="text-sm text-cyan-50 mb-4">
-                  Loading your referral link...
-                </p>
+                <p className="text-sm text-cyan-50 mb-4">Loading your referral link...</p>
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
               </div>
             )}
@@ -292,7 +250,6 @@ export default function Settings() {
                 </p>
               </div>
 
-              {/* Credit Breakdown */}
               {activeCredits.length > 0 ? (
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   <p className="text-xs font-semibold text-gray-500 mb-2">ACTIVE CREDITS</p>
@@ -322,13 +279,15 @@ export default function Settings() {
               ) : (
                 <div className="text-center py-6">
                   <p className="text-sm text-gray-500 mb-2">No active credits</p>
-                  <p className="text-xs text-gray-400">Refer friends to earn ₦300!</p>
+                  <p className="text-xs text-gray-400">
+                    {isAmbassador ? 'Refer friends to earn ₦500!' : 'Refer friends to earn ₦300!'}
+                  </p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* ✅ ADD PHONE BANNER */}
+          {/* ADD PHONE BANNER */}
           {!userData?.phone && (
             <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl p-4 mb-4 sm:mb-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -351,13 +310,30 @@ export default function Settings() {
           <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm border border-gray-200 mb-4 sm:mb-6">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
-                <img 
-                  src={avatarUrl} 
-                  alt={displayName} 
-                  className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover" 
-                />
+                <div className="relative">
+                  <img 
+                    src={avatarUrl} 
+                    alt={displayName} 
+                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover" 
+                  />
+                  {/* ✅ Ambassador star on avatar */}
+                  {isAmbassador && (
+                    <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-yellow-400 rounded-full flex items-center justify-center border-2 border-white">
+                      <Star size={14} className="text-white" fill="white" />
+                    </div>
+                  )}
+                </div>
                 <div className="text-center sm:text-left">
-                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">{displayName}</h2>
+                  <div className="flex items-center gap-2 justify-center sm:justify-start mb-1">
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">{displayName}</h2>
+                    {/* ✅ Ambassador badge next to name */}
+                    {isAmbassador && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-semibold">
+                        <Star size={10} fill="currentColor" />
+                        Ambassador
+                      </span>
+                    )}
+                  </div>
                   <p className="text-sm sm:text-base text-gray-600 mb-1 break-all">{currentUser?.email}</p>
                   {userProfile?.phone && <p className="text-sm text-gray-600 mb-3">{userProfile.phone}</p>}
                   
@@ -457,7 +433,15 @@ export default function Settings() {
             </div>
 
             <div className="text-center sm:text-left flex-1">
-              <h3 className="text-lg sm:text-xl font-bold text-gray-900">{displayName}</h3>
+              <div className="flex items-center gap-2 justify-center sm:justify-start">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900">{displayName}</h3>
+                {isAmbassador && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-semibold">
+                    <Star size={10} fill="currentColor" />
+                    Ambassador
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-gray-600 break-all mb-2">{currentUser?.email}</p>
               <p className="text-xs text-gray-500">
                 {uploadingAvatar ? 'Uploading...' : 'Click the camera icon to upload a new photo (max 5MB)'}
@@ -468,9 +452,7 @@ export default function Settings() {
           <div className="space-y-5 sm:space-y-6 mb-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">
-                  Full Name *
-                </label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">Full Name *</label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                   <input 
@@ -566,9 +548,7 @@ export default function Settings() {
               </div>
             </div>
 
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 text-center mb-2 sm:mb-3">
-              Logout?
-            </h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 text-center mb-2 sm:mb-3">Logout?</h2>
             <p className="text-sm sm:text-base text-gray-600 text-center mb-6 sm:mb-8">
               Are you sure you want to logout? You'll need to sign back in to access your saved events.
             </p>
