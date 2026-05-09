@@ -145,8 +145,9 @@ export default function AdminEarlyAccess() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Early Access Subscribers</h1>
-          <p className="text-gray-500 mt-1">People who signed up to be notified at launch</p>
+          <h1 className="text-2xl font-bold text-gray-900">Early Adopters</h1>
+          <p className="text-gray-500 mt-1">People who signed up to be first when we launch</p>
+
         </div>
         <div className="flex flex-wrap gap-2">
           {/* Download CSV */}
@@ -189,7 +190,7 @@ export default function AdminEarlyAccess() {
           </div>
           <div>
             <p className="text-2xl font-bold text-gray-900">{subscribers.length}</p>
-            <p className="text-sm text-gray-500">Total Subscribers</p>
+            <p className="text-sm text-gray-500">Total Early Adopters</p>
           </div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
@@ -242,7 +243,7 @@ export default function AdminEarlyAccess() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="p-5 border-b border-gray-100 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900">Subscriber List</h2>
-          <p className="text-sm text-gray-500">{subscribers.length} total</p>
+          <p className="text-sm text-gray-500">{subscribers.length} early adopters</p>
         </div>
 
         {loading ? (
@@ -252,7 +253,7 @@ export default function AdminEarlyAccess() {
         ) : subscribers.length === 0 ? (
           <div className="text-center py-16">
             <Mail className="mx-auto text-gray-300 mb-3" size={48} />
-            <p className="text-gray-500">No subscribers yet</p>
+            <p className="text-gray-500">No early adopters yet</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
