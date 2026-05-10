@@ -87,6 +87,7 @@ function App() {
               <Route path="/webinar-events" element={<WebinarEventsPage />} />
               <Route path="/city/:city" element={<CityEventsPage />} />
               <Route path="/event/:id" element={<EventDetails />} />
+              <Route path="/e/:slug" element={<EventDetails />} />
               <Route path="/contact" element={<ContactUs />} />
               <Route path="/terms" element={<TermsOfService />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />

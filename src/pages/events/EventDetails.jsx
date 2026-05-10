@@ -6,7 +6,7 @@ import {
   Calendar, Clock, MapPin, DollarSign, Users, Share2, Heart, 
   ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft, CheckCircle, Navigation, Ticket, CreditCard
 } from 'lucide-react';
-import { doc, getDoc, collection, getDocs, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, updateDoc, arrayUnion, arrayRemove, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
@@ -17,7 +17,7 @@ import {
   formatCredits, 
   calculateAvailableCredits, 
   calculateMaxCreditUsage 
-} from '../../utils/referralUtils'; // ✅ NEW IMPORT
+} from '../../utils/referralUtils';
 
 const openInMaps = (event) => {
   if (event.mapLocation) {
@@ -31,11 +31,10 @@ const openInMaps = (event) => {
     return;
   }
   
-  const query = encodeURIComponent(location);
-  window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+  const q = encodeURIComponent(location);
+  window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, '_blank');
 };
 
-// ✅ Calculate fees
 const calculateServiceFee = (event) => {
   if (event.serviceFeeType === 'fixed') {
     return event.serviceFeeAmount || 100;
@@ -60,32 +59,26 @@ const calculateTotal = (event) => {
   return ticketPrice + serviceFee + paystackFee;
 };
 
-// ✅ Ticket Purchase Component WITH CREDITS
 const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [buyerName, setBuyerName] = useState(currentUser?.displayName || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
   const [buyerPhone, setBuyerPhone] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [showPaystackButton, setShowPaystackButton] = useState(false);
-  
-  // ✅ NEW: Credit states
   const [userCredits, setUserCredits] = useState([]);
   const [availableCredits, setAvailableCredits] = useState(0);
   const [useCredits, setUseCredits] = useState(false);
   const [creditsToApply, setCreditsToApply] = useState(0);
 
-  // ✅ NEW: Load user credits
   useEffect(() => {
     const loadUserCredits = async () => {
       if (!currentUser) return;
-
       try {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           const data = userDoc.data();
           const creditsHistory = data.creditsHistory || [];
           setUserCredits(creditsHistory);
-          
           const available = calculateAvailableCredits(creditsHistory);
           setAvailableCredits(available);
         }
@@ -93,7 +86,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         console.error('Error loading credits:', err);
       }
     };
-
     loadUserCredits();
   }, [currentUser]);
 
@@ -101,16 +93,12 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const serviceFee = calculateServiceFee(event);
   const paystackFee = calculatePaystackFee(event);
   const baseTotal = calculateTotal(event);
-  
-  // ✅ NEW: Calculate credits to apply
   const totalBeforeCredits = baseTotal * quantity;
   const maxCreditsAllowed = calculateMaxCreditUsage(totalBeforeCredits, availableCredits);
   const actualCreditsApplied = useCredits ? Math.min(creditsToApply || maxCreditsAllowed, maxCreditsAllowed) : 0;
   const finalTotal = totalBeforeCredits - actualCreditsApplied;
-
   const ticketsRemaining = (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
 
-  // ✅ NEW: Update credits when useCredits toggles
   useEffect(() => {
     if (useCredits) {
       setCreditsToApply(maxCreditsAllowed);
@@ -122,11 +110,9 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const paystackConfig = {
     reference: `OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     email: buyerEmail,
-    amount: finalTotal * 100, // ✅ UPDATED: Use final total after credits
+    amount: finalTotal * 100,
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
     text: `Pay ${formatCredits(finalTotal)}`,
-    
-    // ✅ UPDATED: Include credit info in metadata
     metadata: {
       event_id: event.id,
       event_title: event.title,
@@ -139,12 +125,10 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       credits_applied: actualCreditsApplied,
       total_amount: finalTotal
     },
-    
     onSuccess: (reference) => {
       console.log('Payment successful!', reference);
       toast.success('🎉 Payment successful! Check your email for tickets.', { duration: 5000 });
     },
-    
     onClose: () => {
       toast.error('Payment cancelled');
     }
@@ -165,22 +149,18 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       navigate('/login');
       return;
     }
-
     if (!buyerName || !buyerEmail || !buyerPhone) {
       toast.error('Please enter your name, email, and phone number');
       return;
     }
-
     if (quantity < 1) {
       toast.error('Please select at least 1 ticket');
       return;
     }
-
     if (quantity > ticketsRemaining) {
       toast.error(`Only ${ticketsRemaining} tickets remaining`);
       return;
     }
-
     setShowPaystackButton(true);
   };
 
@@ -191,7 +171,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         <h3 className="text-xl font-bold text-gray-900">Purchase Tickets</h3>
       </div>
 
-      {/* Tickets Remaining */}
       <div className="bg-cyan-50 rounded-lg p-3 mb-4">
         <p className="text-sm text-gray-700">
           <span className="font-semibold">{ticketsRemaining}</span> tickets remaining
@@ -204,7 +183,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         )}
       </div>
 
-      {/* Buyer Information */}
       <div className="space-y-3 mb-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
@@ -216,7 +194,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
           />
         </div>
-
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
           <input
@@ -227,7 +204,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
           />
         </div>
-
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
           <input
@@ -238,7 +214,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
           />
         </div>
-
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
           <input
@@ -252,7 +227,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         </div>
       </div>
 
-      {/* ✅ NEW: CREDIT TOGGLE */}
       {availableCredits > 0 && (
         <div className="bg-purple-50 rounded-lg p-4 mb-4 border-2 border-purple-200">
           <div className="flex items-start justify-between mb-2">
@@ -283,7 +257,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         </div>
       )}
 
-      {/* ✅ UPDATED: Price Breakdown with Credits */}
       <div className="bg-gray-50 rounded-lg p-4 mb-4">
         <p className="text-sm font-semibold text-gray-900 mb-2">Price Breakdown:</p>
         <div className="space-y-1 text-sm">
@@ -299,8 +272,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
             <span className="text-gray-600">Payment Processing:</span>
             <span className="font-medium">{formatCredits(paystackFee * quantity)}</span>
           </div>
-          
-          {/* ✅ NEW: Show subtotal if credits applied */}
           {actualCreditsApplied > 0 && (
             <>
               <div className="border-t pt-2 mt-2 flex justify-between">
@@ -313,15 +284,13 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
               </div>
             </>
           )}
-          
-          <div className={`${actualCreditsApplied > 0 ? 'border-t pt-2 mt-2' : 'border-t pt-2 mt-2'} flex justify-between`}>
+          <div className="border-t pt-2 mt-2 flex justify-between">
             <span className="font-bold text-gray-900">Total:</span>
             <span className="font-bold text-cyan-600 text-lg">{formatCredits(finalTotal)}</span>
           </div>
         </div>
       </div>
 
-      {/* Payment Button */}
       {ticketsRemaining > 0 ? (
         showPaystackButton ? (
           <PaystackButton
@@ -358,13 +327,11 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
 
 const handleRegister = (event, currentUser, navigate) => {
   toast.dismiss();
-  
   if (!currentUser) {
     toast.error('Please login to register for this event');
     navigate('/login');
     return;
   }
-  
   if (event.subCategory === 'places') {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -377,10 +344,7 @@ const handleRegister = (event, currentUser, navigate) => {
         <div className="flex gap-2">
           {event.mapLocation && (
             <button
-              onClick={() => {
-                openInMaps(event);
-                toast.dismiss(t.id);
-              }}
+              onClick={() => { openInMaps(event); toast.dismiss(t.id); }}
               className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
             >
               View Map
@@ -394,14 +358,9 @@ const handleRegister = (event, currentUser, navigate) => {
           </button>
         </div>
       </div>
-    ), { 
-      duration: Infinity, 
-      icon: '🏪',
-      id: 'place-info'
-    });
+    ), { duration: Infinity, icon: '🏪', id: 'place-info' });
     return;
   }
-  
   if (event.ticketingOption === 'outingstation' && event.ticketingEnabled) {
     const ticketSection = document.getElementById('ticket-purchase-section');
     if (ticketSection) {
@@ -410,23 +369,17 @@ const handleRegister = (event, currentUser, navigate) => {
     }
     return;
   }
-
   if (event.ticketingOption === 'external' && event.externalTicketLink) {
     toast((t) => (
       <div className="flex flex-col gap-3">
         <div>
           <p className="font-semibold">🎟️ External Ticketing</p>
           <p className="text-sm text-gray-600 mt-1">{event.title}</p>
-          <p className="text-sm font-semibold text-cyan-600 mt-1">
-            Price: ₦{event.price?.toLocaleString()}
-          </p>
+          <p className="text-sm font-semibold text-cyan-600 mt-1">Price: ₦{event.price?.toLocaleString()}</p>
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => {
-              window.open(event.externalTicketLink, '_blank');
-              toast.dismiss(t.id);
-            }}
+            onClick={() => { window.open(event.externalTicketLink, '_blank'); toast.dismiss(t.id); }}
             className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600"
           >
             Buy Tickets
@@ -439,13 +392,9 @@ const handleRegister = (event, currentUser, navigate) => {
           </button>
         </div>
       </div>
-    ), { 
-      duration: Infinity,
-      id: 'external-ticket-info'
-    });
+    ), { duration: Infinity, id: 'external-ticket-info' });
     return;
   }
-  
   if (event.isFree || event.ticketingOption === 'none') {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -456,12 +405,8 @@ const handleRegister = (event, currentUser, navigate) => {
           </p>
           <div className="mt-3 bg-cyan-50 rounded-lg p-3 text-sm">
             <p className="font-medium text-gray-800 mb-1">📅 Event Details:</p>
-            <p className="text-gray-700">
-              <strong>Date:</strong> {formatEventDateFull(event)}
-            </p>
-            <p className="text-gray-700">
-              <strong>Location:</strong> {event.location || event.address || 'TBD'}
-            </p>
+            <p className="text-gray-700"><strong>Date:</strong> {formatEventDateFull(event)}</p>
+            <p className="text-gray-700"><strong>Location:</strong> {event.location || event.address || 'TBD'}</p>
           </div>
           {(event.organizerEmail || event.organizerPhone) && (
             <div className="mt-2 text-sm text-gray-700">
@@ -478,11 +423,7 @@ const handleRegister = (event, currentUser, navigate) => {
           Got it, thanks!
         </button>
       </div>
-    ), { 
-      duration: Infinity, 
-      icon: '🎉',
-      id: 'free-event-info'
-    });
+    ), { duration: Infinity, icon: '🎉', id: 'free-event-info' });
     return;
   }
 };
@@ -492,7 +433,8 @@ const getImage = (event) => {
 };
 
 export default function EventDetails() {
-  const { id } = useParams();
+  // ✅ Support both id and slug params
+  const { id, slug } = useParams();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
 
@@ -505,7 +447,7 @@ export default function EventDetails() {
   useEffect(() => {
     loadEventDetails();
     checkIfSaved();
-  }, [id, currentUser]);
+  }, [id, slug, currentUser]);
 
   useEffect(() => {
     return () => {
@@ -513,30 +455,48 @@ export default function EventDetails() {
     };
   }, []);
 
+  // ✅ Load by ID or slug
   const loadEventDetails = async () => {
     try {
       setLoading(true);
-      
-      const eventDoc = await getDoc(doc(db, 'events', id));
-      
-      if (!eventDoc.exists()) {
-        navigate('/events');
-        return;
+
+      let eventData = null;
+
+      if (id) {
+        // Load by Firestore ID (old links still work)
+        const eventDoc = await getDoc(doc(db, 'events', id));
+        if (!eventDoc.exists()) {
+          navigate('/events');
+          return;
+        }
+        eventData = { id: eventDoc.id, ...eventDoc.data() };
+      } else if (slug) {
+        // Load by slug (new clean links)
+        const q = query(
+          collection(db, 'events'),
+          where('slug', '==', slug)
+        );
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+          navigate('/events');
+          return;
+        }
+        eventData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
       }
 
-      const eventData = { id: eventDoc.id, ...eventDoc.data() };
       setEvent(eventData);
 
+      // Load similar events
       const eventsSnapshot = await getDocs(collection(db, 'events'));
-      const allEvents = eventsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+      const allEvents = eventsSnapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
       }));
 
       const similar = allEvents
-        .filter(e => 
-          e.id !== id && 
-          e.category === eventData.category && 
+        .filter(e =>
+          e.id !== eventData.id &&
+          e.category === eventData.category &&
           e.status === 'published'
         )
         .slice(0, 3);
@@ -553,12 +513,11 @@ export default function EventDetails() {
       setSaved(false);
       return;
     }
-
     try {
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (userDoc.exists()) {
         const savedEvents = userDoc.data().savedEvents || [];
-        setSaved(savedEvents.includes(id));
+        setSaved(savedEvents.includes(id || event?.id));
       }
     } catch (err) {
       console.error('Error checking saved status:', err);
@@ -571,20 +530,15 @@ export default function EventDetails() {
       setTimeout(() => navigate('/login'), 1000);
       return;
     }
-
     try {
       const userRef = doc(db, 'users', currentUser.uid);
-      
+      const eventId = event?.id;
       if (saved) {
-        await updateDoc(userRef, {
-          savedEvents: arrayRemove(id)
-        });
+        await updateDoc(userRef, { savedEvents: arrayRemove(eventId) });
         setSaved(false);
         toast.success('Event removed from saved', { icon: '💔' });
       } else {
-        await updateDoc(userRef, {
-          savedEvents: arrayUnion(id)
-        });
+        await updateDoc(userRef, { savedEvents: arrayUnion(eventId) });
         setSaved(true);
         toast.success('Event saved!', { icon: '❤️' });
       }
@@ -594,25 +548,27 @@ export default function EventDetails() {
     }
   };
 
+  // ✅ Use clean slug URL for sharing
   const handleShare = (platform) => {
-    const url = window.location.href;
+    const shareUrl = event?.slug
+      ? `https://www.outingstation.com/e/${event.slug}`
+      : `https://www.outingstation.com/event/${event.id}`;
     const text = `Check out this event: ${event.title}`;
-    
+
     const shareUrls = {
-      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
-      twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
-      whatsapp: `https://wa.me/?text=${encodeURIComponent(text + ' ' + url)}`,
-      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`,
-      copy: url
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
+      twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`,
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(text + ' ' + shareUrl)}`,
+      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
+      copy: shareUrl
     };
 
     if (platform === 'copy') {
-      navigator.clipboard.writeText(url);
+      navigator.clipboard.writeText(shareUrl);
       toast.success('Link copied!', { icon: '📋' });
     } else {
       window.open(shareUrls[platform], '_blank');
     }
-    
     setShowShareMenu(false);
   };
 
@@ -639,9 +595,7 @@ export default function EventDetails() {
           <Navbar />
           <div className="max-w-4xl mx-auto px-4 py-20 text-center">
             <h1 className="text-2xl font-bold text-gray-900 mb-4">Event Not Found</h1>
-            <Link to="/events" className="text-cyan-500 hover:underline">
-              Back to Events
-            </Link>
+            <Link to="/events" className="text-cyan-500 hover:underline">Back to Events</Link>
           </div>
           <Footer />
         </div>
@@ -654,22 +608,27 @@ export default function EventDetails() {
   const eventTime = formatEventTime(event);
   const hasOutingStationTicketing = event.ticketingOption === 'outingstation' && event.ticketingEnabled;
 
+  // ✅ Clean URL for SEO
+  const canonicalUrl = event.slug
+    ? `https://www.outingstation.com/e/${event.slug}`
+    : `https://www.outingstation.com/event/${event.id}`;
+
   return (
     <>
-      <SEO 
+      <SEO
         title={`${event.title} - OutingStation`}
         description={event.description?.substring(0, 155) || `Join ${event.title} - an amazing ${isPlace ? 'place' : 'event'} in ${event.location || 'Nigeria'}`}
         image={event.imageUrl}
-        url={`https://outingstation.com/event/${event.id}`}
+        url={canonicalUrl}
         type="article"
         keywords={`${event.category}, ${event.location}, ${isPlace ? 'places' : 'events'} Nigeria, ${event.eventType} events, ${event.isFree ? 'free events' : 'paid events'}`}
       />
-      
+
       <div className="min-h-screen bg-gray-50">
         <Navbar />
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-          <button 
+          <button
             onClick={() => navigate(-1)}
             className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition"
           >
@@ -680,18 +639,16 @@ export default function EventDetails() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2">
               <div className="relative rounded-2xl overflow-hidden mb-6 shadow-lg">
-                <img 
-                  src={getImage(event)} 
+                <img
+                  src={getImage(event)}
                   alt={event.title}
                   className="w-full h-64 sm:h-96 object-cover"
                 />
-                
                 <div className="absolute top-4 left-4">
                   <span className="bg-white/90 backdrop-blur-sm text-cyan-500 px-4 py-2 rounded-full text-sm font-semibold">
                     #{event.category}
                   </span>
                 </div>
-
                 <div className="absolute top-4 right-4 flex flex-col gap-2">
                   {event.eventType && (
                     <span className="bg-purple-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
@@ -700,14 +657,12 @@ export default function EventDetails() {
                       {event.eventType === 'regular' && '🎉 Event'}
                     </span>
                   )}
-                  
                   {isPlace && (
                     <span className="bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
                       📍 PLACE
                     </span>
                   )}
                 </div>
-
                 {event.isFree && (
                   <div className="absolute bottom-4 right-4">
                     <span className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold">
@@ -721,21 +676,12 @@ export default function EventDetails() {
                 <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 flex-1">
                   {event.title}
                 </h1>
-                
                 <div className="flex gap-2 ml-4">
                   <button
                     onClick={handleSaveToggle}
-                    className={`p-3 rounded-full transition ${
-                      saved 
-                        ? 'bg-red-50 text-red-500' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
+                    className={`p-3 rounded-full transition ${saved ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                   >
-                    {saved ? (
-                      <Heart size={24} className="fill-current" />
-                    ) : (
-                      <Heart size={24} />
-                    )}
+                    {saved ? <Heart size={24} className="fill-current" /> : <Heart size={24} />}
                   </button>
 
                   <div className="relative">
@@ -745,45 +691,16 @@ export default function EventDetails() {
                     >
                       <Share2 size={24} />
                     </button>
-
                     {showShareMenu && (
                       <>
-                        <div 
-                          className="fixed inset-0 z-40"
-                          onClick={() => setShowShareMenu(false)}
-                        ></div>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowShareMenu(false)}></div>
                         <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
-                          <button
-                            onClick={() => handleShare('facebook')}
-                            className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
-                          >
-                            Share on Facebook
-                          </button>
-                          <button
-                            onClick={() => handleShare('twitter')}
-                            className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
-                          >
-                            Share on Twitter
-                          </button>
-                          <button
-                            onClick={() => handleShare('whatsapp')}
-                            className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
-                          >
-                            Share on WhatsApp
-                          </button>
-                          <button
-                            onClick={() => handleShare('linkedin')}
-                            className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
-                          >
-                            Share on LinkedIn
-                          </button>
+                          <button onClick={() => handleShare('facebook')} className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm">Share on Facebook</button>
+                          <button onClick={() => handleShare('twitter')} className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm">Share on Twitter</button>
+                          <button onClick={() => handleShare('whatsapp')} className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm">Share on WhatsApp</button>
+                          <button onClick={() => handleShare('linkedin')} className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm">Share on LinkedIn</button>
                           <hr className="my-2" />
-                          <button
-                            onClick={() => handleShare('copy')}
-                            className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
-                          >
-                            Copy Link
-                          </button>
+                          <button onClick={() => handleShare('copy')} className="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm">Copy Link</button>
                         </div>
                       </>
                     )}
@@ -800,14 +717,9 @@ export default function EventDetails() {
                 </p>
               </div>
 
-              {/* ✅ Ticket Purchase Section WITH CREDITS */}
               {hasOutingStationTicketing && (
                 <div id="ticket-purchase-section" className="mb-6">
-                  <TicketPurchaseSection 
-                    event={event} 
-                    currentUser={currentUser} 
-                    navigate={navigate} 
-                  />
+                  <TicketPurchaseSection event={event} currentUser={currentUser} navigate={navigate} />
                 </div>
               )}
 
@@ -830,12 +742,7 @@ export default function EventDetails() {
                     {event.platformLink && (
                       <div className="flex items-center gap-3">
                         <span className="font-semibold text-gray-700">Join Link:</span>
-                        <a 
-                          href={event.platformLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-cyan-500 hover:underline flex items-center gap-1"
-                        >
+                        <a href={event.platformLink} target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:underline flex items-center gap-1">
                           Join Meeting <ExternalLink size={16} />
                         </a>
                       </div>
@@ -865,36 +772,19 @@ export default function EventDetails() {
                     {event.organizerEmail && (
                       <div className="flex items-center gap-3">
                         <Mail size={20} className="text-gray-400" />
-                        <a 
-                          href={`mailto:${event.organizerEmail}`}
-                          className="text-cyan-500 hover:underline"
-                        >
-                          {event.organizerEmail}
-                        </a>
+                        <a href={`mailto:${event.organizerEmail}`} className="text-cyan-500 hover:underline">{event.organizerEmail}</a>
                       </div>
                     )}
                     {event.organizerPhone && (
                       <div className="flex items-center gap-3">
                         <Phone size={20} className="text-gray-400" />
-                        <a 
-                          href={`tel:${event.organizerPhone}`}
-                          className="text-cyan-500 hover:underline"
-                        >
-                          {event.organizerPhone}
-                        </a>
+                        <a href={`tel:${event.organizerPhone}`} className="text-cyan-500 hover:underline">{event.organizerPhone}</a>
                       </div>
                     )}
                     {event.organizerWebsite && (
                       <div className="flex items-center gap-3">
                         <Globe size={20} className="text-gray-400" />
-                        <a 
-                          href={event.organizerWebsite}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-cyan-500 hover:underline"
-                        >
-                          Visit Website
-                        </a>
+                        <a href={event.organizerWebsite} target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:underline">Visit Website</a>
                       </div>
                     )}
                   </div>
@@ -907,30 +797,23 @@ export default function EventDetails() {
                 <h2 className="text-xl font-bold text-gray-900 mb-6">
                   {isPlace ? 'Place Details' : 'Event Details'}
                 </h2>
-                
                 <div className="space-y-4 mb-6">
                   <div className="flex items-start gap-3">
                     <Calendar size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                     <div>
-                      <p className="font-semibold text-gray-900 text-sm">
-                        {isPlace ? 'Availability' : 'Date'}
-                      </p>
+                      <p className="font-semibold text-gray-900 text-sm">{isPlace ? 'Availability' : 'Date'}</p>
                       <p className="text-gray-600 text-sm">{eventDate}</p>
                     </div>
                   </div>
-
                   {eventTime && eventTime !== 'TBD' && (
                     <div className="flex items-start gap-3">
                       <Clock size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                       <div>
-                        <p className="font-semibold text-gray-900 text-sm">
-                          {isPlace ? 'Hours' : 'Time'}
-                        </p>
+                        <p className="font-semibold text-gray-900 text-sm">{isPlace ? 'Hours' : 'Time'}</p>
                         <p className="text-gray-600 text-sm">{eventTime}</p>
                       </div>
                     </div>
                   )}
-
                   <div className="flex items-start gap-3">
                     <MapPin size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                     <div className="flex-1">
@@ -938,32 +821,23 @@ export default function EventDetails() {
                       {event.address ? (
                         <>
                           <p className="text-gray-600 text-sm mb-1">{event.address}</p>
-                          {event.location && (
-                            <p className="text-gray-500 text-xs mb-2">📍 {event.location}</p>
-                          )}
+                          {event.location && <p className="text-gray-500 text-xs mb-2">📍 {event.location}</p>}
                         </>
                       ) : (
                         <p className="text-gray-600 text-sm mb-2">{event.location || 'Online'}</p>
                       )}
-                      {(event.mapLocation || event.address) && 
-                       event.location?.toLowerCase() !== 'online' && (
-                        <button
-                          onClick={() => openInMaps(event)}
-                          className="text-cyan-500 text-xs font-medium hover:underline flex items-center gap-1"
-                        >
+                      {(event.mapLocation || event.address) && event.location?.toLowerCase() !== 'online' && (
+                        <button onClick={() => openInMaps(event)} className="text-cyan-500 text-xs font-medium hover:underline flex items-center gap-1">
                           <Navigation size={14} />
                           Open in Maps
                         </button>
                       )}
                     </div>
                   </div>
-
                   <div className="flex items-start gap-3">
                     <DollarSign size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                     <div>
-                      <p className="font-semibold text-gray-900 text-sm">
-                        {isPlace ? 'Entry Fee' : 'Price'}
-                      </p>
+                      <p className="font-semibold text-gray-900 text-sm">{isPlace ? 'Entry Fee' : 'Price'}</p>
                       <p className="text-gray-600 text-sm">
                         {hasOutingStationTicketing ? (
                           <span className="font-semibold">₦{event.ticketPrice?.toLocaleString()}</span>
@@ -976,23 +850,17 @@ export default function EventDetails() {
                     </div>
                   </div>
                 </div>
-
                 <div className="space-y-3">
-                  <button 
+                  <button
                     onClick={() => handleRegister(event, currentUser, navigate)}
                     className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
                   >
                     <CheckCircle size={20} />
                     {hasOutingStationTicketing ? 'Buy Tickets' : isPlace ? 'Get Info' : (event.isFree ? 'Register' : 'Buy Tickets')}
                   </button>
-
-                  <button 
+                  <button
                     onClick={handleSaveToggle}
-                    className={`w-full py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2 ${
-                      saved
-                        ? 'bg-red-50 text-red-500 border-2 border-red-200'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
+                    className={`w-full py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2 ${saved ? 'bg-red-50 text-red-500 border-2 border-red-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                   >
                     <Bookmark size={20} className={saved ? 'fill-current' : ''} />
                     {saved ? 'Saved' : `Save ${isPlace ? 'Place' : 'Event'}`}
@@ -1009,25 +877,21 @@ export default function EventDetails() {
                 {similarEvents.map((similar) => (
                   <Link
                     key={similar.id}
-                    to={`/event/${similar.id}`}
+                    to={similar.slug ? `/e/${similar.slug}` : `/event/${similar.id}`}
                     className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group"
                   >
                     <div className="relative h-48">
-                      <img 
-                        src={similar.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=600&q=80'} 
+                      <img
+                        src={similar.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=600&q=80'}
                         alt={similar.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                       />
                       {similar.isFree && (
-                        <span className="absolute top-3 right-3 bg-emerald-500 text-white text-xs px-3 py-1 rounded-lg font-semibold">
-                          Free
-                        </span>
+                        <span className="absolute top-3 right-3 bg-emerald-500 text-white text-xs px-3 py-1 rounded-lg font-semibold">Free</span>
                       )}
                     </div>
                     <div className="p-4">
-                      <h3 className="font-bold text-gray-900 mb-2 group-hover:text-cyan-500 transition line-clamp-2">
-                        {similar.title}
-                      </h3>
+                      <h3 className="font-bold text-gray-900 mb-2 group-hover:text-cyan-500 transition line-clamp-2">{similar.title}</h3>
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Calendar size={14} />
                         <span>{formatEventDateFull(similar)}</span>

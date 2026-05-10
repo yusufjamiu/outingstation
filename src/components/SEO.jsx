@@ -1,4 +1,4 @@
-import { Helmet } from 'react-helmet';
+import { Helmet } from 'react-helmet-async';
 
 export default function SEO({ 
   title = 'OutingStation - Discover Amazing Events & Places in Nigeria',
