@@ -130,7 +130,7 @@ export default function AmbassadorPage() {
             <span style={styles.heroAccent}> Ambassador</span>
           </h1>
           <p style={styles.heroSub}>
-            Join our exclusive team of ambassadors and help bring OutingStation to your city.
+            Join our exclusive team of ambassadors and help bring OutingStation to your campus.
             Earn rewards, gain recognition, and be part of something big.
           </p>
         </div>

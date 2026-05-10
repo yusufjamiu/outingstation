@@ -1,6 +1,17 @@
 {
   "rewrites": [
     {
+      "source": "/e/:slug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*facebookexternalhit.*|.*Facebot.*|.*Twitterbot.*|.*WhatsApp.*|.*LinkedInBot.*|.*Googlebot.*|.*Slackbot.*|.*TelegramBot.*"
+        }
+      ],
+      "destination": "/api/og/event/:slug?bySlug=true"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/:path*"
     },
