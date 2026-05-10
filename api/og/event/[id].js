@@ -1,29 +1,63 @@
 export default async function handler(req, res) {
-  const { id } = req.query;
+  const { id, bySlug } = req.query;
 
   let title = 'OutingStation - Everything Your City Has To Offer';
   let description = 'Discover events and places in Lagos, Abuja and more.';
   let image = 'https://www.outingstation.com/og-image.png';
-  const url = `https://www.outingstation.com/event/${id}`;
+  const url = `https://www.outingstation.com/e/${id}`;
 
   try {
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
     const apiKey = process.env.VITE_FIREBASE_API_KEY;
 
-    const response = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/events/${id}?key=${apiKey}`
-    );
+    let fields = null;
 
-    if (response.ok) {
-      const data = await response.json();
-      const fields = data.fields;
+    if (bySlug) {
+      // Query by slug
+      const queryResponse = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            structuredQuery: {
+              from: [{ collectionId: 'events' }],
+              where: {
+                fieldFilter: {
+                  field: { fieldPath: 'slug' },
+                  op: 'EQUAL',
+                  value: { stringValue: id }
+                }
+              },
+              limit: 1
+            }
+          })
+        }
+      );
 
-      if (fields) {
-        title = `${fields.title?.stringValue || 'Event'} - OutingStation`;
-        description = fields.description?.stringValue?.substring(0, 150) || description;
-        image = fields.imageUrl?.stringValue || image;
+      if (queryResponse.ok) {
+        const queryData = await queryResponse.json();
+        if (queryData[0]?.document?.fields) {
+          fields = queryData[0].document.fields;
+        }
+      }
+    } else {
+      // Query by ID
+      const response = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/events/${id}?key=${apiKey}`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        fields = data.fields;
       }
     }
+
+    if (fields) {
+      title = `${fields.title?.stringValue || 'Event'} - OutingStation`;
+      description = fields.description?.stringValue?.substring(0, 150) || description;
+      image = fields.imageUrl?.stringValue || image;
+    }
+
   } catch (err) {
     console.error('Error fetching event:', err);
   }

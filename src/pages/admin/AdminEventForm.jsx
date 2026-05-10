@@ -14,6 +14,16 @@ const generateManageKey = () => {
     Math.floor(Math.random() * 16).toString(16)
   ).join('');
 };
+// ✅ Helper: Generate slug from event title
+const generateSlug = (title) => {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim()
+    .substring(0, 80);
+};
 
 export default function AdminEventForm() {
   const navigate = useNavigate();
@@ -271,6 +281,7 @@ export default function AdminEventForm() {
     try {
       const eventData = {
         ...formData,
+        slug: generateSlug(formData.title),
         price: formData.isFree ? 0 : Number(formData.price) || 0,
         capacity: Number(formData.capacity) || 0,
         date: stringToTimestamp(formData.date),
