@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import OutingStation from '../assets/OutingStation.png';
 
@@ -49,18 +49,6 @@ export default function AmbassadorPage() {
 
     try {
       setLoading(true);
-
-      // Check if email already applied
-      const q = query(
-        collection(db, 'ambassadorApplications'),
-        where('email', '==', formData.email.toLowerCase())
-      );
-      const existing = await getDocs(q);
-      if (!existing.empty) {
-        setError('This email has already submitted an application.');
-        setLoading(false);
-        return;
-      }
 
       await addDoc(collection(db, 'ambassadorApplications'), {
         ...formData,
