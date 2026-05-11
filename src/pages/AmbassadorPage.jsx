@@ -69,7 +69,7 @@ export default function AmbassadorPage() {
   const benefits = [
     { icon: '⭐', title: 'Ambassador Badge', desc: 'Exclusive badge on your OutingStation profile' },
     { icon: '💰', title: '₦500 Per Referral', desc: 'Earn more than regular users who get ₦300' },
-    { icon: '🎟️', title: 'Early Event Access', desc: 'See events before they go public' },
+    { icon: '🎫', title: 'Ticket Commission', desc: 'Earn commission on tickets sold for outings you helped bring to OutingStation' },    { icon: '🎟️', title: 'Early Outings Access', desc: 'See outings before they go public' },
     { icon: '📜', title: 'Official Certificate', desc: 'From OutingStation Limited (CAC Registered)' },
     { icon: '🏆', title: 'Top Ambassador Recognition', desc: 'Featured on our platform and socials' },
     { icon: '🚀', title: 'First To Know', desc: 'Early access to new features and launches' },
