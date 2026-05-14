@@ -2,15 +2,10 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "functions": {
-    "api/**/*.js": {
-      "runtime": "nodejs20.x"
-    }
-  },
   "rewrites": [
     {
       "source": "/e/:slug",
-      "destination": "/api/og/event/:slug?bySlug=true"
+      "destination": "https://og-vawapehfla-uc.a.run.app/:slug"
     },
     {
       "source": "/(.*)",
