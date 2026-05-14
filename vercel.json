@@ -4,8 +4,8 @@
   "installCommand": "npm install",
   "rewrites": [
     {
-      "source": "/e/:slug",
-      "destination": "https://og-vawapehfla-uc.a.run.app/:slug"
+      "source": "/e/(.*)",
+      "destination": "https://og-vawapehfla-uc.a.run.app/$1"
     },
     {
       "source": "/(.*)",

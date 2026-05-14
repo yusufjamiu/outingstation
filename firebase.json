@@ -19,33 +19,9 @@
   },
   "functions": [
     {
-      "codebase": "default",
-      "disallowLegacyRuntimeConfig": true,
-      "ignore": [
-        "node_modules",
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "*.local"
-      ],
-      "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run lint"
-      ],
-      "source": "functions",
+      "source": "ogfunctions",
+      "codebase": "functions",
       "runtime": "nodejs24"
-    },
-    {
-      "codebase": "og",
-      "source": "og",
-      "runtime": "nodejs24",
-      "disallowLegacyRuntimeConfig": true,
-      "ignore": [
-        "node_modules",
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "*.local"
-      ]
     }
   ]
 }

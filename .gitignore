@@ -35,3 +35,4 @@ firebase.js
 
 # Firebase Functions (contains secrets)
 functions/index.js
+.vercel
