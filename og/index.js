@@ -24,7 +24,7 @@ async function getEvent(slugOrId) {
 
 exports.og = functions.https.onRequest(async (req, res) => {
   try {
-    const slugOrId = req.path.replace("/", "").split("?")[0];
+    const slugOrId = req.path.replace(/^\//, "").split("?")[0];
 
     if (!slugOrId) {
       return res.redirect("https://www.outingstation.com");
