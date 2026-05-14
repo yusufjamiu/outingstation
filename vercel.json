@@ -2,14 +2,21 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "rewrites": [
+  "routes": [
     {
-      "source": "/e/:slug",
-      "destination": "https://og-vawapehfla-uc.a.run.app/:slug"
+      "src": "/e/(.+)",
+      "dest": "/api/og/event/$1?bySlug=true"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }

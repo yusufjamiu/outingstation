@@ -24,13 +24,11 @@ const openInMaps = (event) => {
     window.open(event.mapLocation, '_blank');
     return;
   }
-  
   const location = event.address || event.location;
   if (!location) {
     toast.error('No location information available');
     return;
   }
-  
   const q = encodeURIComponent(location);
   window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, '_blank');
 };
@@ -433,7 +431,6 @@ const getImage = (event) => {
 };
 
 export default function EventDetails() {
-  // ✅ Support both id and slug params
   const { id, slug } = useParams();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -455,15 +452,12 @@ export default function EventDetails() {
     };
   }, []);
 
-  // ✅ Load by ID or slug
   const loadEventDetails = async () => {
     try {
       setLoading(true);
-
       let eventData = null;
 
       if (id) {
-        // Load by Firestore ID (old links still work)
         const eventDoc = await getDoc(doc(db, 'events', id));
         if (!eventDoc.exists()) {
           navigate('/events');
@@ -471,7 +465,6 @@ export default function EventDetails() {
         }
         eventData = { id: eventDoc.id, ...eventDoc.data() };
       } else if (slug) {
-        // Load by slug (new clean links)
         const q = query(
           collection(db, 'events'),
           where('slug', '==', slug)
@@ -486,7 +479,6 @@ export default function EventDetails() {
 
       setEvent(eventData);
 
-      // Load similar events
       const eventsSnapshot = await getDocs(collection(db, 'events'));
       const allEvents = eventsSnapshot.docs.map(d => ({
         id: d.id,
@@ -548,23 +540,32 @@ export default function EventDetails() {
     }
   };
 
-  // ✅ Use clean slug URL for sharing
+  // ✅ UPDATED: Use OG API URL for social sharing so bots get correct OG tags
   const handleShare = (platform) => {
-    const shareUrl = event?.slug
+    const slugOrId = event?.slug || event?.id;
+
+    // ✅ OG URL — used for social sharing (bots read OG tags from here)
+    const ogUrl = `https://www.outingstation.com/api/og/event/${slugOrId}?bySlug=${event?.slug ? 'true' : 'false'}`;
+
+    // ✅ Clean URL — used for copy link (users visit this)
+    const cleanUrl = event?.slug
       ? `https://www.outingstation.com/e/${event.slug}`
       : `https://www.outingstation.com/event/${event.id}`;
+
     const text = `Check out this event: ${event.title}`;
 
     const shareUrls = {
-      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
-      twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`,
-      whatsapp: `https://wa.me/?text=${encodeURIComponent(text + ' ' + shareUrl)}`,
-      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
-      copy: shareUrl
+      // ✅ Social platforms use ogUrl so previews work
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(ogUrl)}`,
+      twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(ogUrl)}&text=${encodeURIComponent(text)}`,
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(text + ' ' + ogUrl)}`,
+      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(ogUrl)}`,
+      // ✅ Copy link uses clean URL
+      copy: cleanUrl,
     };
 
     if (platform === 'copy') {
-      navigator.clipboard.writeText(shareUrl);
+      navigator.clipboard.writeText(cleanUrl);
       toast.success('Link copied!', { icon: '📋' });
     } else {
       window.open(shareUrls[platform], '_blank');
@@ -608,7 +609,6 @@ export default function EventDetails() {
   const eventTime = formatEventTime(event);
   const hasOutingStationTicketing = event.ticketingOption === 'outingstation' && event.ticketingEnabled;
 
-  // ✅ Clean URL for SEO
   const canonicalUrl = event.slug
     ? `https://www.outingstation.com/e/${event.slug}`
     : `https://www.outingstation.com/event/${event.id}`;
