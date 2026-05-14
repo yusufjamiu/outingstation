@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/e/:slug",
-      "destination": "/api/og/event/:slug?bySlug=true"
+      "destination": "https://og-vawapehfla-uc.a.run.app/:slug"
     },
     {
       "source": "/(.*)",
