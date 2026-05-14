@@ -8,8 +8,8 @@
       "dest": "/assets/$1"
     },
     {
-      "src": "/favicon\\.png",
-      "dest": "/favicon.png"
+      "src": "/image\\.png",
+      "dest": "/image.png"
     },
     {
       "src": "/og-image\\.png",
@@ -28,7 +28,7 @@
       "dest": "/api/$1"
     },
     {
-      "src": "/e/(.*)",
+      "src": "/e/([^/]+)",
       "dest": "/api/og/event/$1?bySlug=true"
     },
     {
