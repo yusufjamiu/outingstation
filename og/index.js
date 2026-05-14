@@ -4,9 +4,7 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 const db = admin.firestore();
 
-// ✅ Helper to get event by slug or ID
 async function getEvent(slugOrId) {
-  // Try by slug first
   const slugQuery = await db.collection("events")
     .where("slug", "==", slugOrId)
     .limit(1)
@@ -16,7 +14,6 @@ async function getEvent(slugOrId) {
     return slugQuery.docs[0].data();
   }
 
-  // Try by ID
   const byId = await db.collection("events").doc(slugOrId).get();
   if (byId.exists) {
     return byId.data();
@@ -25,7 +22,6 @@ async function getEvent(slugOrId) {
   return null;
 }
 
-// ✅ OG preview function
 exports.og = functions.https.onRequest(async (req, res) => {
   try {
     const slugOrId = req.path.replace("/", "").split("?")[0];
@@ -36,9 +32,7 @@ exports.og = functions.https.onRequest(async (req, res) => {
 
     const event = await getEvent(slugOrId);
 
-    if (!event) {
-      // ✅ Event not found — redirect to home with default OG
-      return res.send(`<!DOCTYPE html>
+    const defaultHtml = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8" />
@@ -55,7 +49,11 @@ exports.og = functions.https.onRequest(async (req, res) => {
   <script>window.location.href = "https://www.outingstation.com";</script>
 </head>
 <body>Redirecting...</body>
-</html>`);
+</html>`;
+
+    if (!event) {
+      res.setHeader('Content-Type', 'text/html');
+      return res.status(200).send(defaultHtml);
     }
 
     const title = event.title || "OutingStation Event";
@@ -63,50 +61,49 @@ exports.og = functions.https.onRequest(async (req, res) => {
       ? event.description.substring(0, 200)
       : "Discover amazing events on OutingStation";
     const image = event.imageUrl || "https://www.outingstation.com/og-image.png";
-    const slug = event.slug || event.id;
-    const url = `https://www.outingstation.com/e/${slug}`;
+    const eventId = event.id || slugOrId;
+    const slug = event.slug || slugOrId;
     const price = event.isFree ? "Free" : `₦${event.price}`;
     const location = event.location || "Lagos, Nigeria";
-
     const fullDescription = `${description} | 📍 ${location} | 💰 ${price}`;
 
-    // ✅ Return OG HTML — bots get this, users get redirected
-    return res.send(`<!DOCTYPE html>
+    // ✅ Redirect to /event/:id not /e/:slug to avoid loop
+    const redirectUrl = `https://www.outingstation.com/event/${eventId}`;
+
+    const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8" />
   <title>${title} - OutingStation</title>
-
-  <!-- OG Tags -->
   <meta property="og:title" content="${title}" />
   <meta property="og:description" content="${fullDescription}" />
   <meta property="og:image" content="${image}" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:url" content="${url}" />
+  <meta property="og:url" content="https://www.outingstation.com/e/${slug}" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="OutingStation" />
-
-  <!-- Twitter Tags -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${title}" />
   <meta name="twitter:description" content="${fullDescription}" />
   <meta name="twitter:image" content="${image}" />
-
-  <!-- ✅ Redirect real users to the React app -->
   <script>
-    var isBot = /bot|crawler|spider|crawling|facebookexternalhit|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|Slackbot/i.test(navigator.userAgent);
+    var isBot = /bot|crawler|spider|facebookexternalhit|Twitterbot|WhatsApp|TelegramBot|LinkedInBot|Slackbot/i.test(navigator.userAgent);
     if (!isBot) {
-      window.location.href = "${url}";
+      window.location.href = "${redirectUrl}";
     }
   </script>
 </head>
 <body>
   <h1>${title}</h1>
   <p>${fullDescription}</p>
-  <p><a href="${url}">View on OutingStation</a></p>
+  <p><a href="${redirectUrl}">View on OutingStation</a></p>
 </body>
-</html>`);
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Cache-Control', 's-maxage=3600');
+    return res.status(200).send(html);
 
   } catch (error) {
     console.error("OG function error:", error);
