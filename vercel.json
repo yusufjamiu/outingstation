@@ -28,8 +28,11 @@
       "dest": "/api/$1"
     },
     {
-      "src": "/e/([^/]+)",
+      "src": "/e/(.+)",
       "dest": "/api/og/event/$1?bySlug=true"
+    },
+    {
+      "handle": "filesystem"
     },
     {
       "src": "/(.*)",
