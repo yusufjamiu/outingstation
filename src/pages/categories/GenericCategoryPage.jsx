@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Heart, Calendar, Clock, MapPin } from 'lucide-react';
 import { 
   Briefcase, Palette, UtensilsCrossed, Dumbbell, GraduationCap, 
@@ -15,12 +15,14 @@ import { formatEventDate, formatEventTime } from '../../utils/dateTimeHelpers';
 export default function GenericCategoryPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  
-  const [activeTab, setActiveTab] = useState('events');
+  const location = useLocation();
+
+  // ✅ Read places param from URL
+  const isPlacesMode = new URLSearchParams(location.search).get('places') === 'true';
+
   const [religionFilter, setReligionFilter] = useState('all');
   const [allEvents, setAllEvents] = useState([]);
   const [loading, setLoading] = useState(true);
-  
   const [dateFilter, setDateFilter] = useState('any');
   const [locationFilter, setLocationFilter] = useState('all');
   const [priceFilter, setPriceFilter] = useState('any');
@@ -53,18 +55,16 @@ export default function GenericCategoryPage() {
     try {
       setLoading(true);
       const snapshot = await getDocs(collection(db, 'events'));
-      
       const eventsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
 
       const categoryName = currentCategory.name;
-      let categoryEvents = eventsData.filter(e => 
+      let categoryEvents = eventsData.filter(e =>
         e.status === 'published' && e.category === categoryName
       );
       categoryEvents = filterUpcomingEvents(categoryEvents);
-
       setAllEvents(categoryEvents);
     } catch (err) {
       console.error('Error loading events:', err);
@@ -75,37 +75,35 @@ export default function GenericCategoryPage() {
   const getFilteredEvents = () => {
     let filtered = [...allEvents];
 
+    // ✅ Filter by places or events based on URL param
     if (currentCategory.hasPlaces) {
-      filtered = filtered.filter(e => e.subCategory === activeTab);
+      filtered = filtered.filter(e =>
+        isPlacesMode ? e.subCategory === 'places' : e.subCategory !== 'places'
+      );
     }
 
     if (currentCategory.isReligion && religionFilter !== 'all') {
       filtered = filtered.filter(e => e.religionType === religionFilter);
     }
 
-    if (dateFilter !== 'any' && activeTab === 'events') {
+    if (!isPlacesMode && dateFilter !== 'any') {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      
       filtered = filtered.filter(e => {
         if (!e.date) return false;
         const eventDate = e.date.toDate ? e.date.toDate() : new Date(e.date);
-        
         switch (dateFilter) {
           case 'today':
             const tomorrow = new Date(today);
             tomorrow.setDate(tomorrow.getDate() + 1);
             return eventDate >= today && eventDate < tomorrow;
-          
           case 'this-week':
             const weekEnd = new Date(today);
             weekEnd.setDate(weekEnd.getDate() + 7);
             return eventDate >= today && eventDate < weekEnd;
-          
           case 'this-month':
             const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
             return eventDate >= today && eventDate <= monthEnd;
-          
           default:
             return true;
         }
@@ -113,17 +111,14 @@ export default function GenericCategoryPage() {
     }
 
     if (locationFilter !== 'all') {
-      filtered = filtered.filter(e => 
+      filtered = filtered.filter(e =>
         e.location?.toLowerCase().includes(locationFilter.toLowerCase())
       );
     }
 
     if (priceFilter !== 'any') {
-      if (priceFilter === 'free') {
-        filtered = filtered.filter(e => e.isFree === true);
-      } else if (priceFilter === 'paid') {
-        filtered = filtered.filter(e => e.isFree === false);
-      }
+      if (priceFilter === 'free') filtered = filtered.filter(e => e.isFree === true);
+      else if (priceFilter === 'paid') filtered = filtered.filter(e => e.isFree === false);
     }
 
     return filtered;
@@ -135,7 +130,6 @@ export default function GenericCategoryPage() {
     e.stopPropagation();
     if (!currentUser) {
       navigate('/login');
-      return;
     }
   };
 
@@ -150,43 +144,23 @@ export default function GenericCategoryPage() {
       <Navbar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+
+        {/* Header */}
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <div className={`w-14 h-14 sm:w-16 sm:h-16 ${currentCategory.color} rounded-2xl flex items-center justify-center flex-shrink-0`}>
             <CategoryIcon size={28} className="sm:w-8 sm:h-8 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">{currentCategory.name}</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">
+              {currentCategory.name} {isPlacesMode ? 'Places' : 'Events'}
+            </h1>
             <p className="text-sm sm:text-base text-gray-600">
-              Discover amazing {currentCategory.name.toLowerCase()} {currentCategory.hasPlaces ? 'events & places' : 'events'} happening around you
+              Discover amazing {currentCategory.name.toLowerCase()} {isPlacesMode ? 'places' : 'events'} around you
             </p>
           </div>
         </div>
 
-        {currentCategory.hasPlaces && (
-          <div className="flex gap-2 mb-6 border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab('events')}
-              className={`px-6 py-3 font-medium transition-colors ${
-                activeTab === 'events'
-                  ? 'border-b-2 border-cyan-500 text-cyan-500'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Events
-            </button>
-            <button
-              onClick={() => setActiveTab('places')}
-              className={`px-6 py-3 font-medium transition-colors ${
-                activeTab === 'places'
-                  ? 'border-b-2 border-cyan-500 text-cyan-500'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Places
-            </button>
-          </div>
-        )}
-
+        {/* ✅ Religion filter */}
         {currentCategory.isReligion && (
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Religion:</label>
@@ -208,11 +182,12 @@ export default function GenericCategoryPage() {
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
-          {activeTab === 'events' && (
+        {/* ✅ Filters — only show for events not places */}
+        {!isPlacesMode && (
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
             <div className="flex-1 sm:flex-initial">
               <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Date:</label>
-              <select 
+              <select
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
                 className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
@@ -223,40 +198,48 @@ export default function GenericCategoryPage() {
                 <option value="this-month">This Month</option>
               </select>
             </div>
-          )}
 
-          <div className="flex-1 sm:flex-initial">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Location:</label>
-            <select 
-              value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
-              className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
-            >
-              <option value="all">All Cities</option>
-              <option value="lagos">Lagos</option>
-            </select>
+            <div className="flex-1 sm:flex-initial">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Location:</label>
+              <select
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+                className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+              >
+                <option value="all">All Cities</option>
+                <option value="lagos">Lagos</option>
+              </select>
+            </div>
+
+            <div className="flex-1 sm:flex-initial">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Price:</label>
+              <select
+                value={priceFilter}
+                onChange={(e) => setPriceFilter(e.target.value)}
+                className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+              >
+                <option value="any">Any Price</option>
+                <option value="free">Free</option>
+                <option value="paid">Paid</option>
+              </select>
+            </div>
+
+            <div className="sm:ml-auto flex items-end">
+              <p className="text-sm sm:text-base text-gray-600 font-medium">
+                {events.length} Events Available
+              </p>
+            </div>
           </div>
+        )}
 
-          <div className="flex-1 sm:flex-initial">
-            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Price:</label>
-            <select 
-              value={priceFilter}
-              onChange={(e) => setPriceFilter(e.target.value)}
-              className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
-            >
-              <option value="any">Any Price</option>
-              <option value="free">Free</option>
-              <option value="paid">Paid</option>
-            </select>
+        {/* ✅ Places count */}
+        {isPlacesMode && (
+          <div className="mb-6">
+            <p className="text-sm text-gray-600 font-medium">{events.length} Places Available</p>
           </div>
+        )}
 
-          <div className="sm:ml-auto flex items-end">
-            <p className="text-sm sm:text-base text-gray-600 font-medium">
-              {events.length} {activeTab === 'places' ? 'Places' : 'Events'} Available
-            </p>
-          </div>
-        </div>
-
+        {/* Results */}
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
@@ -265,58 +248,60 @@ export default function GenericCategoryPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
             {events.map((event) => {
               const eventTime = formatEventTime(event);
-              
               return (
-                <div 
+                <div
                   key={event.id}
                   onClick={() => handleEventClick(event.id)}
                   className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
                 >
                   <div className="relative h-48 sm:h-56">
-                    <img 
-                      src={getImage(event)} 
+                    <img
+                      src={getImage(event)}
                       alt={event.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                     />
-                    
                     <div className="absolute top-3 left-3">
                       <span className={`${currentCategory.color} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
                         #{currentCategory.name}
                       </span>
                     </div>
-
                     <button
                       onClick={(e) => handleSaveClick(e, event.id)}
                       className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
                     >
-                      <Heart size={18} className="sm:w-5 sm:h-5 text-gray-600" />
+                      <Heart size={18} className="text-gray-600" />
                     </button>
-
                     {event.isFree && (
                       <div className="absolute bottom-3 right-3">
                         <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
-                          Free
+                          {isPlacesMode ? 'Free Entry' : 'Free'}
                         </span>
                       </div>
                     )}
                   </div>
-
                   <div className="p-4 sm:p-5">
                     <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 group-hover:text-cyan-500 transition line-clamp-2">
                       {event.title}
                     </h3>
-                    
                     <div className="space-y-2 text-xs sm:text-sm text-gray-600">
-                      <div className="flex items-center gap-2">
-                        <Calendar size={14} />
-                        <span>{formatEventDate(event)}</span>
-                        {eventTime && (
-                          <>
-                            <Clock size={14} />
-                            <span>{eventTime}</span>
-                          </>
-                        )}
-                      </div>
+                      {!isPlacesMode && (
+                        <div className="flex items-center gap-2">
+                          <Calendar size={14} />
+                          <span>{formatEventDate(event)}</span>
+                          {eventTime && (
+                            <>
+                              <Clock size={14} />
+                              <span>{eventTime}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
+                      {isPlacesMode && event.openingTime && event.closingTime && (
+                        <div className="flex items-center gap-2">
+                          <Clock size={14} />
+                          <span>{event.openingTime} - {event.closingTime}</span>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <MapPin size={14} />
                         <span>{event.location || 'Online'}</span>
@@ -329,8 +314,10 @@ export default function GenericCategoryPage() {
           </div>
         ) : (
           <div className="text-center py-12">
-            <p className="text-gray-500 text-lg">No {activeTab} available with current filters.</p>
-            <p className="text-gray-400 text-sm mt-2">Try adjusting your filters</p>
+            <p className="text-gray-500 text-lg">
+              No {isPlacesMode ? 'places' : 'events'} available yet.
+            </p>
+            <p className="text-gray-400 text-sm mt-2">Check back soon!</p>
           </div>
         )}
       </main>

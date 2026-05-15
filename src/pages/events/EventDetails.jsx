@@ -63,7 +63,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [buyerPhone, setBuyerPhone] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [showPaystackButton, setShowPaystackButton] = useState(false);
-  const [userCredits, setUserCredits] = useState([]);
   const [availableCredits, setAvailableCredits] = useState(0);
   const [useCredits, setUseCredits] = useState(false);
   const [creditsToApply, setCreditsToApply] = useState(0);
@@ -76,7 +75,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         if (userDoc.exists()) {
           const data = userDoc.data();
           const creditsHistory = data.creditsHistory || [];
-          setUserCredits(creditsHistory);
           const available = calculateAvailableCredits(creditsHistory);
           setAvailableCredits(available);
         }
@@ -141,12 +139,8 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     toast.error('Payment cancelled');
   };
 
+  // ✅ No login required — anyone can buy tickets
   const handleProceedToPayment = () => {
-    if (!currentUser) {
-      toast.error('Please login to purchase tickets');
-      navigate('/login');
-      return;
-    }
     if (!buyerName || !buyerEmail || !buyerPhone) {
       toast.error('Please enter your name, email, and phone number');
       return;
@@ -225,7 +219,8 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         </div>
       </div>
 
-      {availableCredits > 0 && (
+      {/* ✅ Credits only shown for logged in users */}
+      {currentUser && availableCredits > 0 && (
         <div className="bg-purple-50 rounded-lg p-4 mb-4 border-2 border-purple-200">
           <div className="flex items-start justify-between mb-2">
             <div className="flex items-center gap-2">
@@ -323,13 +318,10 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   );
 };
 
+// ✅ No login required for any action
 const handleRegister = (event, currentUser, navigate) => {
   toast.dismiss();
-  if (!currentUser) {
-    toast.error('Please login to register for this event');
-    navigate('/login');
-    return;
-  }
+
   if (event.subCategory === 'places') {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -359,6 +351,7 @@ const handleRegister = (event, currentUser, navigate) => {
     ), { duration: Infinity, icon: '🏪', id: 'place-info' });
     return;
   }
+
   if (event.ticketingOption === 'outingstation' && event.ticketingEnabled) {
     const ticketSection = document.getElementById('ticket-purchase-section');
     if (ticketSection) {
@@ -367,6 +360,7 @@ const handleRegister = (event, currentUser, navigate) => {
     }
     return;
   }
+
   if (event.ticketingOption === 'external' && event.externalTicketLink) {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -393,6 +387,7 @@ const handleRegister = (event, currentUser, navigate) => {
     ), { duration: Infinity, id: 'external-ticket-info' });
     return;
   }
+
   if (event.isFree || event.ticketingOption === 'none') {
     toast((t) => (
       <div className="flex flex-col gap-3">
@@ -540,36 +535,29 @@ export default function EventDetails() {
     }
   };
 
-  // ✅ UPDATED: Use OG API URL for social sharing so bots get correct OG tags
   const handleShare = (platform) => {
-  const slugOrId = event?.slug || event?.id;
+    const shareUrl = event?.slug
+      ? `https://www.outingstation.com/e/${event.slug}`
+      : `https://www.outingstation.com/event/${event.id}`;
 
-  // ✅ Public OG route
-  const shareUrl = event?.slug
-    ? `https://www.outingstation.com/e/${event.slug}`
-    : `https://www.outingstation.com/event/${event.id}`;
+    const text = `Check out this event: ${event.title}`;
 
-  const text = `Check out this event: ${event.title}`;
+    const shareUrls = {
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
+      twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`,
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(text + ' ' + shareUrl)}`,
+      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
+      copy: shareUrl,
+    };
 
-  const shareUrls = {
-    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
-    twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`,
-    whatsapp: `https://wa.me/?text=${encodeURIComponent(text + ' ' + shareUrl)}`,
-    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
-    copy: shareUrl,
+    if (platform === 'copy') {
+      navigator.clipboard.writeText(shareUrl);
+      toast.success('Link copied!', { icon: '📋' });
+    } else {
+      window.open(shareUrls[platform], '_blank');
+    }
+    setShowShareMenu(false);
   };
-
-  if (platform === 'copy') {
-    navigator.clipboard.writeText(shareUrl);
-    toast.success('Link copied!', { icon: '📋' });
-  } else {
-    window.open(shareUrls[platform], '_blank');
-  }
-
-  setShowShareMenu(false);
-};
-
-  
 
   if (loading) {
     return (
@@ -856,6 +844,8 @@ export default function EventDetails() {
                     <CheckCircle size={20} />
                     {hasOutingStationTicketing ? 'Buy Tickets' : isPlace ? 'Get Info' : (event.isFree ? 'Register' : 'Buy Tickets')}
                   </button>
+
+                  {/* ✅ Save button — prompt login if not logged in */}
                   <button
                     onClick={handleSaveToggle}
                     className={`w-full py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2 ${saved ? 'bg-red-50 text-red-500 border-2 border-red-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
@@ -863,6 +853,16 @@ export default function EventDetails() {
                     <Bookmark size={20} className={saved ? 'fill-current' : ''} />
                     {saved ? 'Saved' : `Save ${isPlace ? 'Place' : 'Event'}`}
                   </button>
+
+                  {/* ✅ Subtle signup nudge for non-users */}
+                  {!currentUser && (
+                    <p className="text-xs text-center text-gray-400">
+                      <Link to="/signup" className="text-cyan-500 hover:underline font-medium">
+                        Create an account
+                      </Link>{' '}
+                      to save events & get personalized picks
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

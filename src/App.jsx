@@ -25,6 +25,7 @@ import GenericCategoryPage from './pages/categories/GenericCategoryPage';
 import CategoryBrowsePage from './pages/categories/CategoryBrowsePage';
 import CampusEventsPage from './pages/categories/CampusEventsPage';
 import WebinarEventsPage from './pages/categories/WebinarEventsPage';
+import CampusPlacesPage from './pages/categories/CampusPlacesPage'; // ✅ NEW
 import ContactUs from './pages/ContactUs';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -45,6 +46,7 @@ import GenericCategory from './pages/dashboard/GenericCategory';
 import WebinarEvents from './pages/dashboard/WebinarEvents';
 import CategoryBrowse from './pages/dashboard/CategoryBrowse';
 import CampusEvents from './pages/dashboard/CampusEvents';
+import CampusPlaces from './pages/dashboard/CampusPlaces'; // ✅ NEW
 
 // Event Management
 import ManageEvent from './pages/EventManage/ManageEvent';
@@ -64,7 +66,7 @@ import AdminEarlyAccess from './pages/admin/AdminEarlyAccess';
 import AdminNotifications from './pages/admin/AdminNotifications';
 import AdminAmbassadors from './pages/admin/AdminAmbassadors';
 
-// ✅ FUNCTION STARTS HERE (NOT IMPORTS!)
+// ✅ FUNCTION STARTS HERE
 function App() {
   return (
     <AuthProvider>
@@ -85,6 +87,7 @@ function App() {
               <Route path="/categories" element={<CategoryBrowsePage />} />
               <Route path="/campus-events" element={<CampusEventsPage />} />
               <Route path="/webinar-events" element={<WebinarEventsPage />} />
+              <Route path="/campus-places" element={<CampusPlacesPage />} /> {/* ✅ NEW */}
               <Route path="/city/:city" element={<CityEventsPage />} />
               <Route path="/event/:id" element={<EventDetails />} />
               <Route path="/e/:slug" element={<EventDetails />} />
@@ -105,6 +108,7 @@ function App() {
                 <Route path="/dashboard/categories" element={<CategoryBrowse />} />
                 <Route path="/dashboard/uni-events" element={<CampusEvents />} />
                 <Route path="/dashboard/web-events" element={<WebinarEvents />} />
+                <Route path="/dashboard/campus-places" element={<CampusPlaces />} /> {/* ✅ NEW */}
                 <Route path="/dashboard/category/:slug" element={<GenericCategory />} />
                 <Route path="/saved-events" element={<SavedEvents />} />
                 <Route path="/settings" element={<Settings />} />
@@ -113,67 +117,67 @@ function App() {
 
               {/* ADMIN ROUTES - PROTECTED */}
               <Route path="/admin/login" element={<AdminLogin />} />
-              
+
               <Route path="/admin" element={
                 <AdminRoute>
                   <AdminDashboard />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/events" element={
                 <AdminRoute>
                   <AdminEvents />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/events/create" element={
                 <AdminRoute>
                   <AdminEventForm />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/events/edit/:id" element={
                 <AdminRoute>
                   <AdminEventForm />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/users" element={
                 <AdminRoute>
                   <AdminUsers />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/event-submissions" element={
                 <AdminRoute>
                   <EventSubmissionsPage />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/categories" element={
                 <AdminRoute>
                   <AdminCategories />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/tickets" element={
                 <AdminRoute>
                   <AdminTickets />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/universities" element={
                 <AdminRoute>
                   <AdminUniversities />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/notifications" element={
                 <AdminRoute>
                   <AdminNotifications />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/saved-events-analytics" element={
                 <AdminRoute>
                   <AdminSavedEventsAnalytics />
@@ -185,14 +189,14 @@ function App() {
                   <AdminEarlyAccess />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/ambassadors" element={
                 <AdminRoute>
                   <AdminAmbassadors />
                 </AdminRoute>
               } />
+
             </Routes>
-            
           </div>
         </Router>
       </SavedEventsProvider>
