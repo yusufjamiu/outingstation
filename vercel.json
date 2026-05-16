@@ -2,19 +2,29 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
+
+  "functions": {
+    "api/og-proxy.js": {
+      "runtime": "nodejs20.x"
+    }
+  },
+
   "rewrites": [
     {
       "source": "/og/(.*)",
       "destination": "https://og-vawapehfla-uc.a.run.app/$1"
     },
+
     {
-      "source": "/e/(.*)",
-      "destination": "/index.html"
+      "source": "/e/:slug",
+      "destination": "/api/og-proxy?slug=:slug"
     },
+
     {
       "source": "/event/(.*)",
       "destination": "/index.html"
     },
+
     {
       "source": "/(.*)",
       "destination": "/index.html"
