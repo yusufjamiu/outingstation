@@ -55,6 +55,8 @@ import ManageEvent from './pages/EventManage/ManageEvent';
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminEvents from './pages/admin/AdminEvents';
+import AdminPlaces from './pages/admin/AdminPlaces';
+import AdminPlaceForm from './pages/admin/AdminPlaceForm';
 import AdminEventForm from './pages/admin/AdminEventForm';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminCategories from './pages/admin/AdminCategories';
@@ -163,6 +165,23 @@ function App() {
               <Route path="/admin/tickets" element={
                 <AdminRoute>
                   <AdminTickets />
+                </AdminRoute>
+              } />
+              <Route path="/admin/places" element={
+                <AdminRoute>
+                  <AdminPlaces />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/places/create" element={
+                <AdminRoute>
+                  <AdminPlaceForm />
+                </AdminRoute>
+              } />
+              
+              <Route path="/admin/places/edit/:id" element={
+                <AdminRoute>
+                  <AdminPlaceForm />
                 </AdminRoute>
               } />
 
