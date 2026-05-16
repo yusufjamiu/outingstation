@@ -3,11 +3,6 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
 
-  "functions": {
-    "api/og-proxy.js": {
-      "runtime": "nodejs20.x"
-    }
-  },
 
   "rewrites": [
     {
