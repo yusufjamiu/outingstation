@@ -5,18 +5,17 @@ import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { isUpcomingEvent } from '../../utils/eventFilters';
-import NotifyUsersModal from '../../components/NotifyUsersModal'; // ✅ ADDED
+import NotifyUsersModal from '../../components/NotifyUsersModal';
 
 export default function AdminEvents() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterTime, setFilterTime] = useState('all'); // NEW: all, upcoming, past
+  const [filterType, setFilterType] = useState('all');
+  const [filterTime, setFilterTime] = useState('all');
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  // ✅ ADDED: Notification modal state
   const [showNotifyModal, setShowNotifyModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
 
@@ -27,14 +26,12 @@ export default function AdminEvents() {
   const loadEvents = async () => {
     try {
       setLoading(true);
-
       const snapshot = await getDocs(collection(db, 'events'));
-      const eventsData = snapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
+      const eventsData = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        // ✅ Exclude places — they have their own admin page
+        .filter(e => e.subCategory !== 'places');
 
-      // Sort by createdAt
       eventsData.sort((a, b) => {
         const aTime = a.createdAt?.seconds || 0;
         const bTime = b.createdAt?.seconds || 0;
@@ -45,7 +42,6 @@ export default function AdminEvents() {
     } catch (err) {
       console.error('Error loading events:', err);
     }
-
     setLoading(false);
   };
 
@@ -60,7 +56,6 @@ export default function AdminEvents() {
     }
   };
 
-  // ✅ ADDED: Handle notify button
   const handleNotifyUpdate = (event) => {
     setSelectedEvent(event);
     setShowNotifyModal(true);
@@ -68,123 +63,73 @@ export default function AdminEvents() {
 
   const formatSingleDate = (rawDate) => {
     if (!rawDate) return '';
-
-    if (rawDate?.toDate) {
-      return rawDate.toDate().toLocaleDateString();
-    }
-
-    if (rawDate instanceof Date) {
-      return rawDate.toLocaleDateString();
-    }
-
+    if (rawDate?.toDate) return rawDate.toDate().toLocaleDateString();
+    if (rawDate instanceof Date) return rawDate.toLocaleDateString();
     return rawDate;
   };
 
   const formatDate = (event) => {
-    if (event.date) {
-      return formatSingleDate(event.date);
-    }
-
+    if (event.date) return formatSingleDate(event.date);
     if (event.startDate) {
       const start = formatSingleDate(event.startDate);
       const end = formatSingleDate(event.endDate);
       return end ? `${start} → ${end}` : start;
     }
-
-    if (event.recurringPattern) {
-      return `Every ${event.recurringDay || event.recurringPattern}`;
-    }
-
+    if (event.recurringPattern) return `Every ${event.recurringDay || event.recurringPattern}`;
     return 'N/A';
   };
 
   const formatTime = (event) => {
     if (event.time) return event.time;
-
-    if (event.dailyStartTime) {
-      return `${event.dailyStartTime} - ${event.dailyEndTime || ''}`;
-    }
-
+    if (event.dailyStartTime) return `${event.dailyStartTime} - ${event.dailyEndTime || ''}`;
     if (event.recurringTime) return event.recurringTime;
-
     return '';
   };
 
-  const getCategory = (event) => {
-    return event.category || 'N/A';
-  };
-
-  // ✅ NEW: Filter by time (upcoming/past)
   const filteredEvents = events.filter(event => {
-    const matchesSearch = (event.title || '')
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-
-    const matchesFilter =
-      filterStatus === 'all' ||
-      (event.status || '').toLowerCase() === filterStatus;
-
-    // NEW: Time filter
+    const matchesSearch = (event.title || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = filterStatus === 'all' || (event.status || '').toLowerCase() === filterStatus;
+    const matchesType = filterType === 'all' || event.eventType === filterType;
     let matchesTime = true;
-    if (filterTime === 'upcoming') {
-      matchesTime = isUpcomingEvent(event);
-    } else if (filterTime === 'past') {
-      matchesTime = !isUpcomingEvent(event);
-    }
-
-    return matchesSearch && matchesFilter && matchesTime;
+    if (filterTime === 'upcoming') matchesTime = isUpcomingEvent(event);
+    else if (filterTime === 'past') matchesTime = !isUpcomingEvent(event);
+    return matchesSearch && matchesStatus && matchesType && matchesTime;
   });
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <AdminSidebar
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
+      <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="flex-1 overflow-auto">
         <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-
             <div className="flex items-center gap-4">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
-              >
+              <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
                 <Menu size={24} />
               </button>
-
               <div>
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
-                  Manage Events
-                </h2>
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Manage Events</h2>
                 <p className="text-sm text-gray-500">
                   {filteredEvents.length} of {events.length} events shown
                 </p>
               </div>
             </div>
-
             <div className="flex gap-2">
-              <button
-                onClick={loadEvents}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm"
-              >
+              <button onClick={loadEvents} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm">
                 Refresh
               </button>
-
               <button
                 onClick={() => navigate('/admin/events/create')}
-                className="flex items-center gap-2 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition"
+                className="flex items-center gap-2 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition text-sm font-medium"
               >
-                <Plus size={20} />
-                <span>Create Event</span>
+                <Plus size={18} />
+                Create Event
               </button>
             </div>
           </div>
 
-          {/* ✅ NEW: Filters Row */}
+          {/* Filters */}
           <div className="mt-4 flex flex-col sm:flex-row gap-3">
-            {/* Search */}
             <input
               type="text"
               placeholder="Search events..."
@@ -192,8 +137,6 @@ export default function AdminEvents() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
             />
-
-            {/* Status Filter */}
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
@@ -203,8 +146,16 @@ export default function AdminEvents() {
               <option value="published">Published</option>
               <option value="draft">Draft</option>
             </select>
-
-            {/* ✅ NEW: Time Filter */}
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            >
+              <option value="all">All Types</option>
+              <option value="regular">Regular</option>
+              <option value="campus">Campus</option>
+              <option value="webinar">Webinar</option>
+            </select>
             <select
               value={filterTime}
               onChange={(e) => setFilterTime(e.target.value)}
@@ -228,102 +179,103 @@ export default function AdminEvents() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      {['Event', 'University', 'Category', 'Date & Time', 'Type', 'Status', 'Price', 'Actions'].map(h => (
-                        <th
-                          key={h}
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                        >
+                      {['Event', 'Category', 'Date & Time', 'Type', 'Status', 'Price', 'Actions'].map(h => (
+                        <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           {h}
                         </th>
                       ))}
                     </tr>
                   </thead>
-
                   <tbody className="divide-y divide-gray-200">
                     {filteredEvents.map((event) => (
                       <tr key={event.id} className="hover:bg-gray-50">
-
                         <td className="px-6 py-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {event.title}
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={event.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=100'}
+                              alt={event.title}
+                              className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                              onError={(e) => e.target.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=100'}
+                            />
+                            <div>
+                              <div className="text-sm font-medium text-gray-900 line-clamp-1">{event.title}</div>
+                              <div className="text-xs text-gray-500">{event.location || 'Online'}</div>
+                              {event.university && (
+                                <div className="text-xs text-purple-600">🏛️ {event.university}</div>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-sm text-gray-500">
-                            {event.location || 'Online'}
-                          </div>
                         </td>
-
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {event.eventType === 'campus' ? (event.university || '—') : '—'}
+                          {event.category || 'N/A'}
                         </td>
-
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {getCategory(event)}
-                        </td>
-
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {formatDate(event)}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {formatTime(event)}
-                          </div>
+                          <div className="text-sm text-gray-900">{formatDate(event)}</div>
+                          <div className="text-xs text-gray-500">{formatTime(event)}</div>
                         </td>
-
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                            event.eventType === 'campus' ? 'bg-purple-100 text-purple-700' :
+                            event.eventType === 'webinar' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {event.eventType === 'campus' ? '🎓 Campus' :
+                             event.eventType === 'webinar' ? '📹 Webinar' : '🎉 Regular'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                            event.status === 'published' ? 'bg-emerald-100 text-emerald-700' :
+                            event.status === 'draft' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {event.status || 'draft'}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {event.eventType || 'regular'}
+                          {event.isFree ? (
+                            <span className="text-emerald-600 font-medium">Free</span>
+                          ) : (
+                            <span>₦{(event.ticketPrice || event.price || 0).toLocaleString()}</span>
+                          )}
                         </td>
-
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {event.status || 'draft'}
-                        </td>
-
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {event.isFree ? 'Free' : `₦${event.price || 0}`}
-                        </td>
-
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="flex gap-2">
+                          <div className="flex gap-1">
                             <button
                               onClick={() => navigate(`/event/${event.id}`)}
                               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
                               title="View"
                             >
-                              <Eye size={18} />
+                              <Eye size={16} />
                             </button>
-
                             <button
                               onClick={() => navigate(`/admin/events/edit/${event.id}`)}
                               className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
                               title="Edit"
                             >
-                              <Edit size={18} />
+                              <Edit size={16} />
                             </button>
-
-                            {/* ✅ ADDED: Notify Button */}
                             <button
                               onClick={() => handleNotifyUpdate(event)}
                               className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition"
                               title="Notify Users"
                             >
-                              <Bell size={18} />
+                              <Bell size={16} />
                             </button>
-
                             <button
                               onClick={() => handleDelete(event.id)}
                               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
                               title="Delete"
                             >
-                              <Trash2 size={18} />
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         </td>
-
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-
               {filteredEvents.length === 0 && (
                 <div className="text-center py-12 text-gray-500">
                   No events found matching your filters.
@@ -334,7 +286,6 @@ export default function AdminEvents() {
         </div>
       </main>
 
-      {/* ✅ ADDED: Notification Modal */}
       {showNotifyModal && selectedEvent && (
         <NotifyUsersModal
           event={selectedEvent}
