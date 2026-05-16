@@ -2,29 +2,11 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-
-  "functions": {
-    "api/og-proxy.js": {
-      "runtime": "@vercel/node@3.2.17"
-    }
-  },
-
   "rewrites": [
     {
-      "source": "/og/(.*)",
-      "destination": "https://og-vawapehfla-uc.a.run.app/$1"
+      "source": "/e/(.*)",
+      "destination": "https://og-vawapehfla-uc.a.run.app/e/$1"
     },
-
-    {
-      "source": "/e/:slug",
-      "destination": "/api/og-proxy?slug=:slug"
-    },
-
-    {
-      "source": "/event/(.*)",
-      "destination": "/index.html"
-    },
-
     {
       "source": "/(.*)",
       "destination": "/index.html"
