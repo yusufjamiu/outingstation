@@ -3,6 +3,11 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
 
+  "functions": {
+    "api/og-proxy.js": {
+      "runtime": "@vercel/node@3.2.17"
+    }
+  },
 
   "rewrites": [
     {
