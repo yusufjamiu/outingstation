@@ -37,6 +37,7 @@ import HowItWorks from './pages/HowItWorks';
 import SubmitEventPage from './pages/SubmitEventPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import AmbassadorPage from './pages/AmbassadorPage';
+import VerifyTicket from './pages/VerifyTicket';
 
 // User Dashboard Pages
 import UserDashboard from './pages/dashboard/UserDashboard';
@@ -103,6 +104,7 @@ function App() {
               <Route path="/submit-event" element={<SubmitEventPage />} />
               <Route path="/manage/:manageKey" element={<ManageEvent />} />
               <Route path="/ambassador" element={<AmbassadorPage />} />
+              <Route path="/verify-ticket/:ticketId" element={<VerifyTicket />} />
 
               {/* USER DASHBOARD ROUTES */}
               <Route element={<UserLayout />}>

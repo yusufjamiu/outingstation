@@ -4,11 +4,12 @@ import toast from 'react-hot-toast';
 import SEO from '../../components/SEO';
 import {
   Calendar, Clock, MapPin, DollarSign, Users, Share2, Heart,
-  ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft, CheckCircle, Navigation, Ticket, CreditCard
+  ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft,
+  CheckCircle, Navigation, Ticket, CreditCard
 } from 'lucide-react';
 import {
-  doc, getDoc, collection, getDocs, updateDoc,
-  arrayUnion, arrayRemove, query, where, addDoc, serverTimestamp
+  doc, getDoc, collection, getDocs,
+  updateDoc, arrayUnion, arrayRemove, query, where
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -23,7 +24,7 @@ import {
 } from '../../utils/referralUtils';
 import TicketModal from '../../components/TicketModal';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const openInMaps = (event) => {
   if (event.mapLocation) { window.open(event.mapLocation, '_blank'); return; }
@@ -47,6 +48,7 @@ const calculateTotal = (event) => {
   return (event.ticketPrice || 0) + calculateServiceFee(event) + calculatePaystackFee(event);
 };
 
+// ✅ Generate ticket ID — same format as webhook
 const generateTicketId = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const random = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -55,7 +57,7 @@ const generateTicketId = () => {
 
 const getImage = (event) => event?.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80';
 
-// ─── Ticket Purchase Section ─────────────────────────────────────────────────
+// ─── Ticket Purchase Section ──────────────────────────────────────────────────
 
 const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [buyerName, setBuyerName] = useState(currentUser?.displayName || '');
@@ -69,7 +71,8 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketData, setTicketData] = useState(null);
 
-  // ✅ Stable payment ref — generated once
+  // ✅ Generate ONCE — shared between frontend modal and webhook
+  const ticketId = useRef(generateTicketId());
   const paymentRef = useRef(`OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
 
   useEffect(() => {
@@ -94,7 +97,9 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const baseTotal = calculateTotal(event);
   const totalBeforeCredits = baseTotal * quantity;
   const maxCreditsAllowed = calculateMaxCreditUsage(totalBeforeCredits, availableCredits);
-  const actualCreditsApplied = useCredits ? Math.min(creditsToApply || maxCreditsAllowed, maxCreditsAllowed) : 0;
+  const actualCreditsApplied = useCredits
+    ? Math.min(creditsToApply || maxCreditsAllowed, maxCreditsAllowed)
+    : 0;
   const finalTotal = totalBeforeCredits - actualCreditsApplied;
   const ticketsRemaining = (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
 
@@ -102,60 +107,31 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     setCreditsToApply(useCredits ? maxCreditsAllowed : 0);
   }, [useCredits, maxCreditsAllowed]);
 
-  // ✅ Save ticket to Firestore + show modal
-  const handlePaymentSuccess = async (reference) => {
-    try {
-      const ticketId = generateTicketId();
+  // ✅ Just show modal — webhook handles Firestore save + email
+  const handlePaymentSuccess = (reference) => {
+    const newTicket = {
+      ticketId: ticketId.current,
+      eventId: event.id,
+      eventTitle: event.title,
+      eventDate: formatEventDateFull(event),
+      eventLocation: event.location || event.address || '',
+      eventImageUrl: event.imageUrl || '',
+      buyerName,
+      buyerEmail,
+      buyerPhone,
+      quantity,
+      ticketPrice,
+      serviceFee: serviceFee * quantity,
+      paystackFee: paystackFee * quantity,
+      totalPaid: finalTotal,
+      creditsApplied: actualCreditsApplied,
+      paymentRef: reference.reference || paymentRef.current,
+      status: 'valid',
+    };
 
-      const newTicket = {
-        ticketId,
-        eventId: event.id,
-        eventTitle: event.title,
-        eventDate: formatEventDateFull(event),
-        eventLocation: event.location || event.address || '',
-        eventImageUrl: event.imageUrl || '',
-        buyerName,
-        buyerEmail,
-        buyerPhone,
-        quantity,
-        ticketPrice,
-        serviceFee: serviceFee * quantity,
-        paystackFee: paystackFee * quantity,
-        totalPaid: finalTotal,
-        creditsApplied: actualCreditsApplied,
-        paymentRef: reference.reference || paymentRef.current,
-        status: 'valid',
-        userId: currentUser?.uid || null,
-        createdAt: serverTimestamp(),
-      };
-
-      // ✅ Save ticket to Firestore
-      await addDoc(collection(db, 'tickets'), newTicket);
-
-      // ✅ Update ticketsSold on event
-      await updateDoc(doc(db, 'events', event.id), {
-        ticketsSold: (event.ticketsSold || 0) + quantity
-      });
-
-      // ✅ Deduct credits if used
-      if (currentUser && actualCreditsApplied > 0) {
-        await updateDoc(doc(db, 'users', currentUser.uid), {
-          creditsHistory: arrayUnion({
-            type: 'deducted',
-            amount: actualCreditsApplied,
-            description: `Used for ticket: ${event.title}`,
-            createdAt: new Date().toISOString()
-          })
-        });
-      }
-
-      setTicketData(newTicket);
-      setShowTicketModal(true);
-      toast.success('🎉 Payment successful! Your ticket is ready.', { duration: 4000 });
-    } catch (err) {
-      console.error('Error saving ticket:', err);
-      toast.success('🎉 Payment successful! Check your email for your ticket.', { duration: 5000 });
-    }
+    setTicketData(newTicket);
+    setShowTicketModal(true);
+    toast.success('🎉 Payment successful! Your ticket is ready.', { duration: 4000 });
   };
 
   const handlePaymentClose = () => {
@@ -168,7 +144,10 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       return;
     }
     if (quantity < 1) { toast.error('Please select at least 1 ticket'); return; }
-    if (quantity > ticketsRemaining) { toast.error(`Only ${ticketsRemaining} tickets remaining`); return; }
+    if (quantity > ticketsRemaining) {
+      toast.error(`Only ${ticketsRemaining} tickets remaining`);
+      return;
+    }
     setShowPaystackButton(true);
   };
 
@@ -178,6 +157,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     amount: finalTotal * 100,
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
     metadata: {
+      ticket_id: ticketId.current,      // ✅ Send to webhook
       event_id: event.id,
       event_title: event.title,
       buyer_name: buyerName,
@@ -199,7 +179,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           <h3 className="text-xl font-bold text-gray-900">Purchase Tickets</h3>
         </div>
 
-        {/* Tickets remaining */}
+        {/* Remaining */}
         <div className="bg-cyan-50 rounded-lg p-3 mb-4">
           <p className="text-sm text-gray-700">
             <span className="font-semibold">{ticketsRemaining}</span> tickets remaining
@@ -212,44 +192,36 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           )}
         </div>
 
-        {/* Buyer details */}
+        {/* Fields */}
         <div className="space-y-3 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-            <input
-              type="text" value={buyerName} onChange={(e) => setBuyerName(e.target.value)}
+            <input type="text" value={buyerName} onChange={(e) => setBuyerName(e.target.value)}
               placeholder="John Doe"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
-            />
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-            <input
-              type="email" value={buyerEmail} onChange={(e) => setBuyerEmail(e.target.value)}
+            <input type="email" value={buyerEmail} onChange={(e) => setBuyerEmail(e.target.value)}
               placeholder="john@example.com"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
-            />
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
-            <input
-              type="tel" value={buyerPhone} onChange={(e) => setBuyerPhone(e.target.value)}
+            <input type="tel" value={buyerPhone} onChange={(e) => setBuyerPhone(e.target.value)}
               placeholder="+234 800 000 0000"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
-            />
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-            <input
-              type="number" value={quantity}
+            <input type="number" value={quantity}
               onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
               min="1" max={ticketsRemaining}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent"
-            />
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent" />
           </div>
         </div>
 
-        {/* Credits — logged in users only */}
+        {/* Credits */}
         {currentUser && availableCredits > 0 && (
           <div className="bg-purple-50 rounded-lg p-4 mb-4 border-2 border-purple-200">
             <div className="flex items-start justify-between mb-2">
@@ -258,13 +230,20 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
                 <span className="font-semibold text-gray-900">Use Credits</span>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={useCredits} onChange={(e) => setUseCredits(e.target.checked)} className="sr-only peer" />
+                <input type="checkbox" checked={useCredits}
+                  onChange={(e) => setUseCredits(e.target.checked)} className="sr-only peer" />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
               </label>
             </div>
             <div className="text-sm">
-              <p className="text-gray-700 mb-1">Available: <span className="font-bold text-purple-600">{formatCredits(availableCredits)}</span></p>
-              {useCredits && <p className="text-green-600 font-medium">✓ Applying {formatCredits(actualCreditsApplied)} (Max 50%)</p>}
+              <p className="text-gray-700 mb-1">
+                Available: <span className="font-bold text-purple-600">{formatCredits(availableCredits)}</span>
+              </p>
+              {useCredits && (
+                <p className="text-green-600 font-medium">
+                  ✓ Applying {formatCredits(actualCreditsApplied)} (Max 50%)
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -345,7 +324,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   );
 };
 
-// ─── Handle Register ─────────────────────────────────────────────────────────
+// ─── Handle Register ──────────────────────────────────────────────────────────
 
 const handleRegister = (event, currentUser, navigate) => {
   toast.dismiss();
@@ -391,7 +370,9 @@ const handleRegister = (event, currentUser, navigate) => {
         <div>
           <p className="font-semibold">🎟️ External Ticketing</p>
           <p className="text-sm text-gray-600 mt-1">{event.title}</p>
-          <p className="text-sm font-semibold text-cyan-600 mt-1">Price: ₦{event.price?.toLocaleString()}</p>
+          <p className="text-sm font-semibold text-cyan-600 mt-1">
+            Price: ₦{event.price?.toLocaleString()}
+          </p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => { window.open(event.externalTicketLink, '_blank'); toast.dismiss(t.id); }}
@@ -547,8 +528,6 @@ export default function EventDetails() {
     setShowShareMenu(false);
   };
 
-  // ─── Loading ───────────────────────────────────────────────────────────────
-
   if (loading) {
     return (
       <>
@@ -588,8 +567,6 @@ export default function EventDetails() {
     ? `https://www.outingstation.com/e/${event.slug}`
     : `https://www.outingstation.com/event/${event.id}`;
 
-  // ─── Render ────────────────────────────────────────────────────────────────
-
   return (
     <>
       <SEO
@@ -605,7 +582,6 @@ export default function EventDetails() {
         <Navbar />
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-
           <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition">
             <ArrowLeft size={20} />
             <span>Back</span>
@@ -613,7 +589,7 @@ export default function EventDetails() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-            {/* ── Left Column ── */}
+            {/* Left Column */}
             <div className="lg:col-span-2">
 
               {/* Hero Image */}
@@ -647,18 +623,17 @@ export default function EventDetails() {
                 )}
               </div>
 
-              {/* Title + actions */}
+              {/* Title + Share */}
               <div className="flex items-start justify-between mb-6">
                 <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 flex-1">{event.title}</h1>
                 <div className="flex gap-2 ml-4">
-                  <button
-                    onClick={handleSaveToggle}
-                    className={`p-3 rounded-full transition ${saved ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                  >
+                  <button onClick={handleSaveToggle}
+                    className={`p-3 rounded-full transition ${saved ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                     {saved ? <Heart size={24} className="fill-current" /> : <Heart size={24} />}
                   </button>
                   <div className="relative">
-                    <button onClick={() => setShowShareMenu(!showShareMenu)} className="p-3 bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200 transition">
+                    <button onClick={() => setShowShareMenu(!showShareMenu)}
+                      className="p-3 bg-gray-100 text-gray-600 rounded-full hover:bg-gray-200 transition">
                       <Share2 size={24} />
                     </button>
                     {showShareMenu && (
@@ -713,7 +688,8 @@ export default function EventDetails() {
                     {event.platformLink && (
                       <div className="flex items-center gap-3">
                         <span className="font-semibold text-gray-700">Join Link:</span>
-                        <a href={event.platformLink} target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:underline flex items-center gap-1">
+                        <a href={event.platformLink} target="_blank" rel="noopener noreferrer"
+                          className="text-cyan-500 hover:underline flex items-center gap-1">
                           Join Meeting <ExternalLink size={16} />
                         </a>
                       </div>
@@ -756,7 +732,8 @@ export default function EventDetails() {
                     {event.organizerWebsite && (
                       <div className="flex items-center gap-3">
                         <Globe size={20} className="text-gray-400" />
-                        <a href={event.organizerWebsite} target="_blank" rel="noopener noreferrer" className="text-cyan-500 hover:underline">Visit Website</a>
+                        <a href={event.organizerWebsite} target="_blank" rel="noopener noreferrer"
+                          className="text-cyan-500 hover:underline">Visit Website</a>
                       </div>
                     )}
                   </div>
@@ -764,15 +741,13 @@ export default function EventDetails() {
               )}
             </div>
 
-            {/* ── Right Column ── */}
+            {/* Right Column */}
             <div className="lg:col-span-1">
               <div className="bg-white rounded-xl p-6 shadow-lg sticky top-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">
                   {isPlace ? 'Place Details' : 'Event Details'}
                 </h2>
                 <div className="space-y-4 mb-6">
-
-                  {/* Date */}
                   <div className="flex items-start gap-3">
                     <Calendar size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                     <div>
@@ -780,8 +755,6 @@ export default function EventDetails() {
                       <p className="text-gray-600 text-sm">{eventDate}</p>
                     </div>
                   </div>
-
-                  {/* Time */}
                   {eventTime && eventTime !== 'TBD' && (
                     <div className="flex items-start gap-3">
                       <Clock size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
@@ -791,8 +764,6 @@ export default function EventDetails() {
                       </div>
                     </div>
                   )}
-
-                  {/* Location */}
                   <div className="flex items-start gap-3">
                     <MapPin size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                     <div className="flex-1">
@@ -806,15 +777,14 @@ export default function EventDetails() {
                         <p className="text-gray-600 text-sm mb-2">{event.location || 'Online'}</p>
                       )}
                       {(event.mapLocation || event.address) && event.location?.toLowerCase() !== 'online' && (
-                        <button onClick={() => openInMaps(event)} className="text-cyan-500 text-xs font-medium hover:underline flex items-center gap-1">
+                        <button onClick={() => openInMaps(event)}
+                          className="text-cyan-500 text-xs font-medium hover:underline flex items-center gap-1">
                           <Navigation size={14} />
                           Open in Maps
                         </button>
                       )}
                     </div>
                   </div>
-
-                  {/* Price */}
                   <div className="flex items-start gap-3">
                     <DollarSign size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                     <div>
@@ -832,7 +802,6 @@ export default function EventDetails() {
                   </div>
                 </div>
 
-                {/* Action buttons */}
                 <div className="space-y-3">
                   <button
                     onClick={() => handleRegister(event, currentUser, navigate)}
@@ -854,7 +823,9 @@ export default function EventDetails() {
 
                   {!currentUser && (
                     <p className="text-xs text-center text-gray-400">
-                      <Link to="/signup" className="text-cyan-500 hover:underline font-medium">Create an account</Link>{' '}
+                      <Link to="/signup" className="text-cyan-500 hover:underline font-medium">
+                        Create an account
+                      </Link>{' '}
                       to save events & get personalized picks
                     </p>
                   )}
