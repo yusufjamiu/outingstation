@@ -48,7 +48,6 @@ const calculateTotal = (event) => {
   return (event.ticketPrice || 0) + calculateServiceFee(event) + calculatePaystackFee(event);
 };
 
-// ✅ Generate ticket ID — same format as webhook
 const generateTicketId = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const random = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -71,7 +70,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketData, setTicketData] = useState(null);
 
-  // ✅ Generate ONCE — shared between frontend modal and webhook
   const ticketId = useRef(generateTicketId());
   const paymentRef = useRef(`OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
 
@@ -107,7 +105,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     setCreditsToApply(useCredits ? maxCreditsAllowed : 0);
   }, [useCredits, maxCreditsAllowed]);
 
-  // ✅ Just show modal — webhook handles Firestore save + email
   const handlePaymentSuccess = (reference) => {
     const newTicket = {
       ticketId: ticketId.current,
@@ -128,7 +125,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       paymentRef: reference.reference || paymentRef.current,
       status: 'valid',
     };
-
     setTicketData(newTicket);
     setShowTicketModal(true);
     toast.success('🎉 Payment successful! Your ticket is ready.', { duration: 4000 });
@@ -157,7 +153,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     amount: finalTotal * 100,
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
     metadata: {
-      ticket_id: ticketId.current,      // ✅ Send to webhook
+      ticket_id: ticketId.current,
       event_id: event.id,
       event_title: event.title,
       buyer_name: buyerName,
@@ -179,7 +175,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           <h3 className="text-xl font-bold text-gray-900">Purchase Tickets</h3>
         </div>
 
-        {/* Remaining */}
         <div className="bg-cyan-50 rounded-lg p-3 mb-4">
           <p className="text-sm text-gray-700">
             <span className="font-semibold">{ticketsRemaining}</span> tickets remaining
@@ -192,7 +187,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           )}
         </div>
 
-        {/* Fields */}
         <div className="space-y-3 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
@@ -221,7 +215,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           </div>
         </div>
 
-        {/* Credits */}
         {currentUser && availableCredits > 0 && (
           <div className="bg-purple-50 rounded-lg p-4 mb-4 border-2 border-purple-200">
             <div className="flex items-start justify-between mb-2">
@@ -248,7 +241,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           </div>
         )}
 
-        {/* Price breakdown */}
         <div className="bg-gray-50 rounded-lg p-4 mb-4">
           <p className="text-sm font-semibold text-gray-900 mb-2">Price Breakdown:</p>
           <div className="space-y-1 text-sm">
@@ -283,7 +275,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           </div>
         </div>
 
-        {/* Pay button */}
         {ticketsRemaining > 0 ? (
           showPaystackButton ? (
             <PaystackButton
@@ -313,7 +304,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         </p>
       </div>
 
-      {/* ✅ Ticket Modal */}
       {showTicketModal && ticketData && (
         <TicketModal
           ticketData={ticketData}
@@ -572,7 +562,11 @@ export default function EventDetails() {
       <SEO
         title={`${event.title} - OutingStation`}
         description={event.description?.substring(0, 155) || `Join ${event.title} - an amazing ${isPlace ? 'place' : 'event'} in ${event.location || 'Nigeria'}`}
-        image={event.imageUrl}
+        // ✅ Use /og/:slug for social preview image — Cloud Run handles it
+        image={event.slug
+          ? `https://www.outingstation.com/og/${event.slug}`
+          : event.imageUrl
+        }
         url={canonicalUrl}
         type="article"
         keywords={`${event.category}, ${event.location}, ${isPlace ? 'places' : 'events'} Nigeria, ${event.eventType} events, ${event.isFree ? 'free events' : 'paid events'}`}
@@ -592,7 +586,6 @@ export default function EventDetails() {
             {/* Left Column */}
             <div className="lg:col-span-2">
 
-              {/* Hero Image */}
               <div className="relative rounded-2xl overflow-hidden mb-6 shadow-lg">
                 <img src={getImage(event)} alt={event.title} className="w-full h-64 sm:h-96 object-cover" />
                 <div className="absolute top-4 left-4">
@@ -623,7 +616,6 @@ export default function EventDetails() {
                 )}
               </div>
 
-              {/* Title + Share */}
               <div className="flex items-start justify-between mb-6">
                 <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 flex-1">{event.title}</h1>
                 <div className="flex gap-2 ml-4">
@@ -653,7 +645,6 @@ export default function EventDetails() {
                 </div>
               </div>
 
-              {/* About */}
               <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">About This {isPlace ? 'Place' : 'Event'}</h2>
                 <p className="text-gray-700 leading-relaxed whitespace-pre-line">
@@ -661,14 +652,12 @@ export default function EventDetails() {
                 </p>
               </div>
 
-              {/* Ticket Purchase */}
               {hasOutingStationTicketing && (
                 <div id="ticket-purchase-section" className="mb-6">
                   <TicketPurchaseSection event={event} currentUser={currentUser} navigate={navigate} />
                 </div>
               )}
 
-              {/* Additional Info */}
               {(event.university || event.platform || event.religionType) && (
                 <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
                   <h2 className="text-xl font-bold text-gray-900 mb-4">Additional Information</h2>
@@ -704,7 +693,6 @@ export default function EventDetails() {
                 </div>
               )}
 
-              {/* Organizer */}
               {(event.organizerName || event.organizerEmail || event.organizerPhone) && (
                 <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
                   <h2 className="text-xl font-bold text-gray-900 mb-4">
@@ -834,7 +822,6 @@ export default function EventDetails() {
             </div>
           </div>
 
-          {/* Similar Events */}
           {similarEvents.length > 0 && (
             <div className="mt-12">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Similar Events</h2>
