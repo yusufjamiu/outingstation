@@ -4,7 +4,7 @@
   "installCommand": "npm install",
   "functions": {
     "api/**/*.js": {
-      "runtime": "nodejs@22"
+      "runtime": "nodejs22.x"
     }
   },
   "rewrites": [
