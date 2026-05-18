@@ -56,6 +56,190 @@ const generateTicketId = () => {
 
 const getImage = (event) => event?.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80';
 
+// ─── Ticket Modal (Compact) ───────────────────────────────────────────────────
+
+function CompactTicketModal({ ticketData, onClose }) {
+  const qrCanvasRef = useRef(null);
+  const verifyUrl = `https://www.outingstation.com/verify-ticket/${ticketData.ticketId}`;
+
+  useEffect(() => {
+    generateQRCode();
+  }, [ticketData]);
+
+  const generateQRCode = async () => {
+    try {
+      const QRCode = (await import('qrcode')).default;
+      if (qrCanvasRef.current) {
+        await QRCode.toCanvas(qrCanvasRef.current, verifyUrl, {
+          width: 100,
+          margin: 1,
+          color: { dark: '#0e7490', light: '#ffffff' }
+        });
+      }
+    } catch (err) {
+      console.error('QR error:', err);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-3xl">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="text-emerald-500" size={20} />
+            <div>
+              <p className="text-sm font-bold text-gray-900">Payment Successful!</p>
+              <p className="text-xs text-gray-400">Check your email for ticket</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full transition">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-4">
+
+          {/* Event header strip */}
+          <div style={{
+            background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+            borderRadius: 14, padding: '14px 16px', marginBottom: 12,
+            position: 'relative', overflow: 'hidden'
+          }}>
+            <div style={{
+              position: 'absolute', top: -16, right: -16,
+              width: 70, height: 70, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.1)'
+            }} />
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              <span style={{
+                background: 'rgba(255,255,255,0.2)', borderRadius: 6,
+                padding: '2px 8px', fontSize: 9, fontWeight: 800,
+                color: 'white', letterSpacing: 1.5, textTransform: 'uppercase'
+              }}>OutingStation</span>
+              <span style={{
+                background: 'rgba(255,255,255,0.15)', borderRadius: 6,
+                padding: '2px 7px', fontSize: 9, color: 'rgba(255,255,255,0.85)'
+              }}>🎟️ E-Ticket</span>
+            </div>
+            <p style={{ color: 'white', fontSize: 14, fontWeight: 800, margin: '0 0 6px', lineHeight: 1.3 }}>
+              {ticketData.eventTitle}
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+              {ticketData.eventDate && (
+                <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>📅 {ticketData.eventDate}</span>
+              )}
+              {ticketData.eventLocation && (
+                <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>📍 {ticketData.eventLocation}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Ticket ID */}
+          <div style={{
+            background: 'white', borderRadius: 10, padding: '8px 12px',
+            marginBottom: 10, border: '1.5px solid #e0f2fe',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+          }}>
+            <div>
+              <p style={{ fontSize: 8, color: '#64748b', margin: '0 0 2px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8 }}>Ticket ID</p>
+              <p style={{ fontSize: 13, fontWeight: 900, color: '#0e7490', margin: 0, fontFamily: 'monospace', letterSpacing: 0.8 }}>
+                {ticketData.ticketId}
+              </p>
+            </div>
+            <div style={{ background: '#ecfdf5', borderRadius: 6, padding: '3px 8px', fontSize: 10, fontWeight: 800, color: '#059669' }}>
+              ✓ VALID
+            </div>
+          </div>
+
+          {/* Buyer + QR */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
+            <div style={{ flex: 1 }}>
+              <MiniRow label="Name" value={ticketData.buyerName} />
+              <MiniRow label="Email" value={ticketData.buyerEmail} />
+              <MiniRow label="Phone" value={ticketData.buyerPhone} />
+              <MiniRow label="Qty" value={`${ticketData.quantity} ticket${ticketData.quantity > 1 ? 's' : ''}`} />
+              <MiniRow label="Paid" value={`₦${ticketData.totalPaid?.toLocaleString()}`} highlight />
+              {ticketData.creditsApplied > 0 && (
+                <MiniRow label="Credits" value={`-₦${ticketData.creditsApplied?.toLocaleString()}`} />
+              )}
+            </div>
+
+            {/* QR Code */}
+            <div style={{ flexShrink: 0, textAlign: 'center' }}>
+              <div style={{
+                background: 'white', padding: 6, borderRadius: 10,
+                border: '1.5px solid #bae6fd', display: 'inline-block'
+              }}>
+                <canvas
+                  ref={qrCanvasRef}
+                  style={{ width: 90, height: 90, display: 'block' }}
+                />
+              </div>
+              <p style={{ fontSize: 8, color: '#94a3b8', marginTop: 4, textAlign: 'center' }}>Scan to verify</p>
+            </div>
+          </div>
+
+          {/* Payment ref */}
+          <div style={{
+            background: '#f9fafb', borderRadius: 8, padding: '7px 10px',
+            border: '1px solid #e5e7eb', marginBottom: 10
+          }}>
+            <p style={{ fontSize: 8, color: '#9ca3af', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700 }}>Payment Ref</p>
+            <p style={{ fontSize: 10, color: '#374151', margin: 0, fontFamily: 'monospace', fontWeight: 600 }}>
+              {ticketData.paymentRef}
+            </p>
+          </div>
+
+          {/* Note */}
+          <div style={{
+            background: 'linear-gradient(135deg, #ecfeff, #e0f2fe)',
+            borderRadius: 8, padding: '8px 10px',
+            border: '1px solid #a5f3fc', marginBottom: 12
+          }}>
+            <p style={{ fontSize: 10, color: '#0e7490', margin: 0, lineHeight: 1.5 }}>
+              🎉 Show QR code or Ticket ID at the entrance. Ticket also sent to your email.
+            </p>
+          </div>
+        </div>
+
+        {/* Buttons */}
+        <div className="px-4 pb-6 space-y-2">
+          <button
+            onClick={() => window.open(verifyUrl, '_blank')}
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:shadow-lg transition"
+          >
+            <ExternalLink size={15} />
+            View Ticket Online
+          </button>
+          <button
+            onClick={onClose}
+            className="w-full py-2 text-gray-400 hover:text-gray-600 text-sm font-medium transition"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniRow({ label, value, highlight }) {
+  return (
+    <div style={{ marginBottom: 7 }}>
+      <p style={{ fontSize: 8, color: '#9ca3af', margin: '0 0 1px', textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: 700 }}>
+        {label}
+      </p>
+      <p style={{ fontSize: 11, margin: 0, color: highlight ? '#0e7490' : '#111827', fontWeight: highlight ? 800 : 500 }}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 // ─── Ticket Purchase Section ──────────────────────────────────────────────────
 
 const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
@@ -127,7 +311,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     };
     setTicketData(newTicket);
     setShowTicketModal(true);
-    toast.success('🎉 Payment successful! Your ticket is ready.', { duration: 4000 });
+    toast.success('🎉 Payment successful! Check your email for your ticket.', { duration: 5000 });
   };
 
   const handlePaymentClose = () => {
@@ -147,23 +331,30 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     setShowPaystackButton(true);
   };
 
+  // ✅ FIXED: metadata in custom_fields format + direct fields as fallback
   const paystackConfig = {
     reference: paymentRef.current,
     email: buyerEmail,
     amount: finalTotal * 100,
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
     metadata: {
+      custom_fields: [
+        { display_name: 'Ticket ID', variable_name: 'ticket_id', value: ticketId.current },
+        { display_name: 'Event ID', variable_name: 'event_id', value: event.id },
+        { display_name: 'Event Title', variable_name: 'event_title', value: event.title },
+        { display_name: 'Buyer Name', variable_name: 'buyer_name', value: buyerName },
+        { display_name: 'Buyer Phone', variable_name: 'buyer_phone', value: buyerPhone },
+        { display_name: 'Ticket Price', variable_name: 'ticket_price', value: String(ticketPrice) },
+        { display_name: 'Service Fee', variable_name: 'service_fee', value: String(serviceFee) },
+        { display_name: 'Quantity', variable_name: 'quantity', value: String(quantity) },
+        { display_name: 'Subtotal', variable_name: 'subtotal', value: String(totalBeforeCredits) },
+        { display_name: 'Credits Applied', variable_name: 'credits_applied', value: String(actualCreditsApplied) },
+        { display_name: 'Total Amount', variable_name: 'total_amount', value: String(finalTotal) },
+      ],
+      // ✅ Direct fields as fallback
       ticket_id: ticketId.current,
       event_id: event.id,
-      event_title: event.title,
-      buyer_name: buyerName,
-      buyer_phone: buyerPhone,
-      ticket_price: ticketPrice,
-      service_fee: serviceFee,
-      quantity,
-      subtotal: totalBeforeCredits,
-      credits_applied: actualCreditsApplied,
-      total_amount: finalTotal
+      total_amount: finalTotal,
     },
   };
 
@@ -304,8 +495,9 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         </p>
       </div>
 
+      {/* ✅ Compact modal — slides up from bottom on mobile */}
       {showTicketModal && ticketData && (
-        <TicketModal
+        <CompactTicketModal
           ticketData={ticketData}
           onClose={() => setShowTicketModal(false)}
         />
@@ -562,11 +754,7 @@ export default function EventDetails() {
       <SEO
         title={`${event.title} - OutingStation`}
         description={event.description?.substring(0, 155) || `Join ${event.title} - an amazing ${isPlace ? 'place' : 'event'} in ${event.location || 'Nigeria'}`}
-        // ✅ Use /og/:slug for social preview image — Cloud Run handles it
-        image={event.slug
-          ? `https://www.outingstation.com/og/${event.slug}`
-          : event.imageUrl
-        }
+        image={event.imageUrl}
         url={canonicalUrl}
         type="article"
         keywords={`${event.category}, ${event.location}, ${isPlace ? 'places' : 'events'} Nigeria, ${event.eventType} events, ${event.isFree ? 'free events' : 'paid events'}`}

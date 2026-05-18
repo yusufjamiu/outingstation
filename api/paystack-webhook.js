@@ -124,42 +124,60 @@ async function findUserByEmail(email) {
   }
 }
 
+// ✅ FIXED: Extract metadata handling ALL formats Paystack can send
 function extractMetadata(paymentData) {
   const rawMetadata = paymentData.metadata || {};
 
+  console.log('🔍 Raw metadata from Paystack:', JSON.stringify(rawMetadata, null, 2));
+
+  // ✅ Try custom_fields array first (Flutter app format)
   if (rawMetadata.custom_fields && Array.isArray(rawMetadata.custom_fields)) {
-    const metadata = rawMetadata.custom_fields.reduce((acc, field) => {
+    const fields = rawMetadata.custom_fields.reduce((acc, field) => {
       acc[field.variable_name] = field.value;
       return acc;
     }, {});
 
+    console.log('📦 Parsed custom_fields:', JSON.stringify(fields, null, 2));
+
+    const eventId = fields.event_id || fields.eventId ||
+                    rawMetadata.event_id || rawMetadata.eventId;
+
     return {
-      ticketId: metadata.ticket_id || metadata.ticketId || null,
-      eventId: metadata.event_id || metadata.eventId,
-      eventTitle: metadata.event_title || metadata.eventTitle,
-      quantity: parseInt(metadata.quantity) || 1,
-      buyerName: metadata.buyer_name || metadata.buyerName,
-      buyerPhone: metadata.buyer_phone || metadata.buyerPhone,
-      ticketPrice: parseInt(metadata.ticket_price || metadata.ticketPrice) || 0,
-      serviceFee: parseInt(metadata.service_fee || metadata.serviceFee) || 0,
-      subtotal: parseInt(metadata.subtotal) || 0,
-      creditsApplied: parseInt(metadata.credits_applied) || 0,
-      totalAmount: parseInt(metadata.total_amount || metadata.totalPaid) || 0,
+      ticketId: fields.ticket_id || fields.ticketId ||
+                rawMetadata.ticket_id || rawMetadata.ticketId || null,
+      eventId,
+      eventTitle: fields.event_title || fields.eventTitle,
+      quantity: parseInt(fields.quantity) || 1,
+      buyerName: fields.buyer_name || fields.buyerName,
+      buyerPhone: fields.buyer_phone || fields.buyerPhone,
+      ticketPrice: parseInt(fields.ticket_price || fields.ticketPrice) || 0,
+      serviceFee: parseInt(fields.service_fee || fields.serviceFee) || 0,
+      subtotal: parseInt(fields.subtotal) || 0,
+      creditsApplied: parseInt(fields.credits_applied || fields.creditsApplied) || 0,
+      totalAmount: parseInt(fields.total_amount || fields.totalAmount ||
+                            fields.totalPaid || rawMetadata.total_amount ||
+                            rawMetadata.totalAmount) || 0,
     };
   }
 
+  // ✅ Direct metadata fields (web app format from EventDetails.jsx)
+  const eventId = rawMetadata.event_id || rawMetadata.eventId;
+
+  console.log('📦 Direct metadata fields, eventId:', eventId);
+
   return {
     ticketId: rawMetadata.ticket_id || rawMetadata.ticketId || null,
-    eventId: rawMetadata.eventId || rawMetadata.event_id,
-    eventTitle: rawMetadata.eventTitle || rawMetadata.event_title,
+    eventId,
+    eventTitle: rawMetadata.event_title || rawMetadata.eventTitle,
     quantity: parseInt(rawMetadata.quantity) || 1,
-    buyerName: rawMetadata.buyerName || rawMetadata.buyer_name,
-    buyerPhone: rawMetadata.buyerPhone || rawMetadata.buyer_phone,
-    ticketPrice: parseInt(rawMetadata.ticketPrice || rawMetadata.ticket_price) || 0,
-    serviceFee: parseInt(rawMetadata.serviceFee || rawMetadata.service_fee) || 0,
+    buyerName: rawMetadata.buyer_name || rawMetadata.buyerName,
+    buyerPhone: rawMetadata.buyer_phone || rawMetadata.buyerPhone,
+    ticketPrice: parseInt(rawMetadata.ticket_price || rawMetadata.ticketPrice) || 0,
+    serviceFee: parseInt(rawMetadata.service_fee || rawMetadata.serviceFee) || 0,
     subtotal: parseInt(rawMetadata.subtotal) || 0,
     creditsApplied: parseInt(rawMetadata.credits_applied || rawMetadata.creditsApplied) || 0,
-    totalAmount: parseInt(rawMetadata.total_amount || rawMetadata.totalAmount || rawMetadata.totalPaid) || 0,
+    totalAmount: parseInt(rawMetadata.total_amount || rawMetadata.totalAmount ||
+                          rawMetadata.totalPaid) || 0,
   };
 }
 
@@ -184,7 +202,7 @@ function generateTicketEmail(ticketData, eventData) {
 
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 60%, #0e7490 100%); padding: 44px 36px; text-align: center; position: relative;">
+            <td style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 60%, #0e7490 100%); padding: 44px 36px; text-align: center;">
               <p style="color: rgba(255,255,255,0.75); margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">OutingStation</p>
               <h1 style="color: #ffffff; margin: 0 0 8px; font-size: 30px; font-weight: 900;">🎉 You're Going!</h1>
               <p style="color: #e0f2fe; margin: 0; font-size: 15px;">Your ticket has been confirmed</p>
@@ -196,15 +214,9 @@ function generateTicketEmail(ticketData, eventData) {
             <td style="padding: 28px 36px 16px;">
               <h2 style="margin: 0 0 12px; color: #0f172a; font-size: 22px; font-weight: 800; line-height: 1.3;">${eventData.title}</h2>
               <table cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="padding: 3px 0; font-size: 14px; color: #475569;">📅&nbsp;&nbsp;${ticketData.eventDate}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 3px 0; font-size: 14px; color: #475569;">🕐&nbsp;&nbsp;${ticketData.eventTime}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 3px 0; font-size: 14px; color: #475569;">📍&nbsp;&nbsp;${eventData.address || eventData.location || 'TBD'}</td>
-                </tr>
+                <tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">📅&nbsp;&nbsp;${ticketData.eventDate}</td></tr>
+                <tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">🕐&nbsp;&nbsp;${ticketData.eventTime}</td></tr>
+                <tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">📍&nbsp;&nbsp;${eventData.address || eventData.location || 'TBD'}</td></tr>
               </table>
             </td>
           </tr>
@@ -212,64 +224,44 @@ function generateTicketEmail(ticketData, eventData) {
           <!-- Divider -->
           <tr>
             <td style="padding: 0 36px;">
-              <div style="border-top: 2px dashed #cbd5e1; position: relative;">
-                <div style="position: absolute; left: -20px; top: -10px; width: 20px; height: 20px; background: #f0f9ff; border-radius: 50%;"></div>
-                <div style="position: absolute; right: -20px; top: -10px; width: 20px; height: 20px; background: #f0f9ff; border-radius: 50%;"></div>
-              </div>
+              <div style="border-top: 2px dashed #cbd5e1;"></div>
             </td>
           </tr>
 
-          <!-- Ticket body: details + QR -->
+          <!-- Ticket body -->
           <tr>
             <td style="padding: 24px 36px;">
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <!-- Left: ticket details -->
                   <td style="vertical-align: top; padding-right: 24px;">
-
-                    <!-- Ticket ID -->
                     <div style="background: linear-gradient(135deg, #ecfeff, #e0f2fe); border: 2px dashed #06b6d4; border-radius: 14px; padding: 16px 20px; margin-bottom: 16px;">
                       <p style="margin: 0 0 4px; font-size: 10px; color: #0891b2; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px;">Ticket ID</p>
                       <p style="margin: 0; font-size: 20px; font-weight: 900; color: #0e7490; font-family: 'Courier New', monospace; letter-spacing: 1px;">${ticketData.ticketId}</p>
                     </div>
-
-                    <!-- Buyer details -->
                     <table cellpadding="0" cellspacing="0" width="100%">
-                      <tr>
-                        <td style="padding-bottom: 10px;">
-                          <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Ticket Holder</p>
-                          <p style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">${ticketData.buyerName}</p>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding-bottom: 10px;">
-                          <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Email</p>
-                          <p style="margin: 0; font-size: 13px; color: #1e293b; font-weight: 500;">${ticketData.buyerEmail}</p>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding-bottom: 10px;">
-                          <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Phone</p>
-                          <p style="margin: 0; font-size: 13px; color: #1e293b; font-weight: 500;">${ticketData.buyerPhone}</p>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding-bottom: 10px;">
-                          <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Quantity</p>
-                          <p style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">${ticketData.quantity} ticket${ticketData.quantity > 1 ? 's' : ''}</p>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Amount Paid</p>
-                          <p style="margin: 0; font-size: 20px; color: #0891b2; font-weight: 900;">₦${ticketData.totalPaid?.toLocaleString()}</p>
-                          ${showCredits ? `<p style="margin: 3px 0 0; font-size: 11px; color: #10b981; font-weight: 600;">💰 Saved ₦${ticketData.creditsApplied?.toLocaleString()} with credits</p>` : ''}
-                        </td>
-                      </tr>
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Ticket Holder</p>
+                        <p style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">${ticketData.buyerName}</p>
+                      </td></tr>
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Email</p>
+                        <p style="margin: 0; font-size: 13px; color: #1e293b; font-weight: 500;">${ticketData.buyerEmail}</p>
+                      </td></tr>
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Phone</p>
+                        <p style="margin: 0; font-size: 13px; color: #1e293b; font-weight: 500;">${ticketData.buyerPhone}</p>
+                      </td></tr>
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Quantity</p>
+                        <p style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">${ticketData.quantity} ticket${ticketData.quantity > 1 ? 's' : ''}</p>
+                      </td></tr>
+                      <tr><td>
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Amount Paid</p>
+                        <p style="margin: 0; font-size: 20px; color: #0891b2; font-weight: 900;">₦${ticketData.totalPaid?.toLocaleString()}</p>
+                        ${showCredits ? `<p style="margin: 3px 0 0; font-size: 11px; color: #10b981; font-weight: 600;">💰 Saved ₦${ticketData.creditsApplied?.toLocaleString()} with credits</p>` : ''}
+                      </td></tr>
                     </table>
                   </td>
-
-                  <!-- Right: QR Code -->
                   <td style="vertical-align: top; width: 160px; text-align: center;">
                     <div style="background: white; border: 2px solid #bae6fd; border-radius: 14px; padding: 12px; display: inline-block;">
                       <img src="${qrImageUrl}" alt="QR Code" width="136" height="136" style="display: block; border-radius: 6px;" />
@@ -319,9 +311,7 @@ function generateTicketEmail(ticketData, eventData) {
                     <td style="font-size: 13px; color: #10b981; text-align: right; font-weight: 700;">-₦${ticketData.creditsApplied?.toLocaleString()}</td>
                   </tr>` : ''}
                   <tr>
-                    <td colspan="2" style="padding: 6px 0;">
-                      <div style="border-top: 1px solid #e5e7eb;"></div>
-                    </td>
+                    <td colspan="2" style="padding: 6px 0;"><div style="border-top: 1px solid #e5e7eb;"></div></td>
                   </tr>
                   <tr>
                     <td style="font-size: 15px; color: #111827; font-weight: 800; padding-top: 6px;">Total Paid</td>
@@ -382,28 +372,37 @@ export default async function handler(req, res) {
     }
 
     const paymentData = event.data;
-    const metadata = extractMetadata(paymentData);
 
     console.log('📦 Processing payment:', paymentData.customer.email);
-    console.log('📦 Metadata:', JSON.stringify(metadata, null, 2));
 
-    // Find user
+    const metadata = extractMetadata(paymentData);
+
+    console.log('📦 Extracted metadata:', JSON.stringify(metadata, null, 2));
+
+    // ✅ Guard — stop if eventId missing
+    if (!metadata.eventId) {
+      console.error('❌ CRITICAL: eventId missing from metadata!');
+      console.error('❌ Full payment data:', JSON.stringify(paymentData, null, 2));
+      return res.status(400).json({ error: 'Missing eventId in metadata' });
+    }
+
+    // Find user (null for non-users — that's fine)
     const userId = await findUserByEmail(paymentData.customer.email);
 
-    // Deduct credits
+    // Deduct credits if user found and credits applied
     if (userId && metadata.creditsApplied > 0) {
       await deductCreditsFromUser(userId, metadata.creditsApplied);
     }
 
-    // Load event
+    // Load event from Firestore
     const eventDoc = await getDoc(doc(db, 'events', metadata.eventId));
     if (!eventDoc.exists()) {
-      console.error('❌ Event not found:', metadata.eventId);
+      console.error('❌ Event not found in Firestore:', metadata.eventId);
       return res.status(404).json({ error: 'Event not found' });
     }
     const eventData = eventDoc.data();
 
-    // ✅ Use ticketId from frontend metadata if provided, else generate new
+    // ✅ Use ticketId from frontend if provided, else generate
     const ticketId = metadata.ticketId || generateTicketId();
 
     const paystackFee = Math.round((paymentData.amount / 100) * 0.015 + 100);
@@ -431,15 +430,16 @@ export default async function handler(req, res) {
       purchasedAt: serverTimestamp(),
     };
 
-    // Save ticket (use ticketId as doc ID for easy lookup)
+    // ✅ Save ticket to Firestore (ticketId as doc ID for fast lookup)
     await setDoc(doc(db, 'tickets', ticketId), ticketData);
+    console.log(`✅ Ticket saved to Firestore: ${ticketId}`);
 
-    // Update ticketsSold
+    // ✅ Update ticketsSold on event
     await updateDoc(doc(db, 'events', metadata.eventId), {
       ticketsSold: increment(metadata.quantity)
     });
 
-    // Send email
+    // ✅ Send email
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -466,6 +466,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('❌ Webhook error:', error);
+    console.error('❌ Stack:', error.stack);
     return res.status(500).json({
       error: 'Webhook processing failed',
       message: error.message
