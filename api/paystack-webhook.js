@@ -124,13 +124,24 @@ async function findUserByEmail(email) {
   }
 }
 
-// ✅ FIXED: Extract metadata handling ALL formats Paystack can send
+// ✅ FULLY FIXED: Handles metadata as string OR object
 function extractMetadata(paymentData) {
-  const rawMetadata = paymentData.metadata || {};
+  let rawMetadata = paymentData.metadata || {};
+
+  // ✅ CRITICAL: Paystack sends metadata as JSON string — parse it
+  if (typeof rawMetadata === 'string') {
+    try {
+      rawMetadata = JSON.parse(rawMetadata);
+      console.log('✅ Parsed metadata string successfully');
+    } catch (e) {
+      console.error('❌ Failed to parse metadata string:', e);
+      rawMetadata = {};
+    }
+  }
 
   console.log('🔍 Raw metadata from Paystack:', JSON.stringify(rawMetadata, null, 2));
 
-  // ✅ Try custom_fields array first (Flutter app format)
+  // ✅ Try custom_fields array first
   if (rawMetadata.custom_fields && Array.isArray(rawMetadata.custom_fields)) {
     const fields = rawMetadata.custom_fields.reduce((acc, field) => {
       acc[field.variable_name] = field.value;
@@ -143,8 +154,7 @@ function extractMetadata(paymentData) {
                     rawMetadata.event_id || rawMetadata.eventId;
 
     return {
-      ticketId: fields.ticket_id || fields.ticketId ||
-                rawMetadata.ticket_id || rawMetadata.ticketId || null,
+      ticketId: fields.ticket_id || fields.ticketId || null,
       eventId,
       eventTitle: fields.event_title || fields.eventTitle,
       quantity: parseInt(fields.quantity) || 1,
@@ -154,15 +164,12 @@ function extractMetadata(paymentData) {
       serviceFee: parseInt(fields.service_fee || fields.serviceFee) || 0,
       subtotal: parseInt(fields.subtotal) || 0,
       creditsApplied: parseInt(fields.credits_applied || fields.creditsApplied) || 0,
-      totalAmount: parseInt(fields.total_amount || fields.totalAmount ||
-                            fields.totalPaid || rawMetadata.total_amount ||
-                            rawMetadata.totalAmount) || 0,
+      totalAmount: parseInt(fields.total_amount || fields.totalAmount || fields.totalPaid) || 0,
     };
   }
 
-  // ✅ Direct metadata fields (web app format from EventDetails.jsx)
+  // ✅ Direct fields fallback
   const eventId = rawMetadata.event_id || rawMetadata.eventId;
-
   console.log('📦 Direct metadata fields, eventId:', eventId);
 
   return {
@@ -176,8 +183,7 @@ function extractMetadata(paymentData) {
     serviceFee: parseInt(rawMetadata.service_fee || rawMetadata.serviceFee) || 0,
     subtotal: parseInt(rawMetadata.subtotal) || 0,
     creditsApplied: parseInt(rawMetadata.credits_applied || rawMetadata.creditsApplied) || 0,
-    totalAmount: parseInt(rawMetadata.total_amount || rawMetadata.totalAmount ||
-                          rawMetadata.totalPaid) || 0,
+    totalAmount: parseInt(rawMetadata.total_amount || rawMetadata.totalAmount || rawMetadata.totalPaid) || 0,
   };
 }
 
@@ -389,7 +395,7 @@ export default async function handler(req, res) {
     // Find user (null for non-users — that's fine)
     const userId = await findUserByEmail(paymentData.customer.email);
 
-    // Deduct credits if user found and credits applied
+    // Deduct credits if applicable
     if (userId && metadata.creditsApplied > 0) {
       await deductCreditsFromUser(userId, metadata.creditsApplied);
     }
@@ -405,22 +411,27 @@ export default async function handler(req, res) {
     // ✅ Use ticketId from frontend if provided, else generate
     const ticketId = metadata.ticketId || generateTicketId();
 
+    // ✅ Use actual amount paid from Paystack if totalAmount is 0
+    const totalPaid = metadata.totalAmount > 0
+      ? metadata.totalAmount
+      : Math.round(paymentData.amount / 100);
+
     const paystackFee = Math.round((paymentData.amount / 100) * 0.015 + 100);
 
     const ticketData = {
       ticketId,
       eventId: metadata.eventId,
       eventTitle: eventData.title,
-      buyerName: metadata.buyerName || 'Guest',
+      buyerName: metadata.buyerName || paymentData.customer.first_name || 'Guest',
       buyerEmail: paymentData.customer.email,
-      buyerPhone: metadata.buyerPhone || 'N/A',
+      buyerPhone: metadata.buyerPhone || paymentData.customer.phone || 'N/A',
       quantity: metadata.quantity,
       ticketPrice: metadata.ticketPrice,
       serviceFee: metadata.serviceFee,
       paystackFee,
       subtotal: metadata.subtotal,
       creditsApplied: metadata.creditsApplied,
-      totalPaid: metadata.totalAmount,
+      totalPaid,
       paymentReference: paymentData.reference,
       eventDate: formatEventDate(eventData),
       eventTime: formatEventTime(eventData),
@@ -430,7 +441,7 @@ export default async function handler(req, res) {
       purchasedAt: serverTimestamp(),
     };
 
-    // ✅ Save ticket to Firestore (ticketId as doc ID for fast lookup)
+    // ✅ Save ticket to Firestore
     await setDoc(doc(db, 'tickets', ticketId), ticketData);
     console.log(`✅ Ticket saved to Firestore: ${ticketId}`);
 
