@@ -266,10 +266,7 @@ function extractMetadata(paymentData) {
         '✅ Parsed metadata string successfully'
       );
     } catch (error) {
-      console.error(
-        '❌ Failed parsing metadata string:',
-        error.message
-      );
+      console.log('⚠️ Metadata JSON truncated — using regex fallback');
 
       /* ---------------------------------------------
          REGEX FALLBACK
