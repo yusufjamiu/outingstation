@@ -22,7 +22,6 @@ import {
   calculateAvailableCredits,
   calculateMaxCreditUsage
 } from '../../utils/referralUtils';
-import TicketModal from '../../components/TicketModal';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -56,7 +55,7 @@ const generateTicketId = () => {
 
 const getImage = (event) => event?.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80';
 
-// ─── Ticket Modal (Compact) ───────────────────────────────────────────────────
+// ─── Compact Ticket Modal ─────────────────────────────────────────────────────
 
 function CompactTicketModal({ ticketData, onClose }) {
   const qrCanvasRef = useRef(null);
@@ -331,7 +330,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     setShowPaystackButton(true);
   };
 
-  // ✅ FIXED: metadata in custom_fields format + direct fields as fallback
+  // ✅ FIXED: Removed event_title to prevent metadata truncation
   const paystackConfig = {
     reference: paymentRef.current,
     email: buyerEmail,
@@ -341,7 +340,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       custom_fields: [
         { display_name: 'Ticket ID', variable_name: 'ticket_id', value: ticketId.current },
         { display_name: 'Event ID', variable_name: 'event_id', value: event.id },
-        { display_name: 'Event Title', variable_name: 'event_title', value: event.title },
         { display_name: 'Buyer Name', variable_name: 'buyer_name', value: buyerName },
         { display_name: 'Buyer Phone', variable_name: 'buyer_phone', value: buyerPhone },
         { display_name: 'Ticket Price', variable_name: 'ticket_price', value: String(ticketPrice) },
@@ -351,7 +349,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         { display_name: 'Credits Applied', variable_name: 'credits_applied', value: String(actualCreditsApplied) },
         { display_name: 'Total Amount', variable_name: 'total_amount', value: String(finalTotal) },
       ],
-      // ✅ Direct fields as fallback
       ticket_id: ticketId.current,
       event_id: event.id,
       total_amount: finalTotal,
@@ -495,7 +492,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         </p>
       </div>
 
-      {/* ✅ Compact modal — slides up from bottom on mobile */}
       {showTicketModal && ticketData && (
         <CompactTicketModal
           ticketData={ticketData}
