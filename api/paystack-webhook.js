@@ -124,7 +124,7 @@ async function findUserByEmail(email) {
   }
 }
 
-// ✅ FULLY FIXED: Handles metadata as string OR object
+// ✅ FULLY FIXED: Handles string, truncated string, and object metadata
 function extractMetadata(paymentData) {
   let rawMetadata = paymentData.metadata || {};
 
@@ -134,8 +134,45 @@ function extractMetadata(paymentData) {
       rawMetadata = JSON.parse(rawMetadata);
       console.log('✅ Parsed metadata string successfully');
     } catch (e) {
-      console.error('❌ Failed to parse metadata string:', e);
-      rawMetadata = {};
+      console.error('❌ Failed to parse metadata string:', e.message);
+
+      // ✅ REGEX FALLBACK: Extract fields from truncated string
+      const str = rawMetadata;
+      const extract = (key) => {
+        const match = str.match(new RegExp(`"variable_name":"${key}","value":"([^"]+)"`));
+        return match ? match[1] : null;
+      };
+
+      const eventId = extract('event_id');
+      const ticketId = extract('ticket_id');
+      const buyerName = extract('buyer_name');
+      const buyerPhone = extract('buyer_phone');
+      const quantity = extract('quantity');
+      const ticketPrice = extract('ticket_price');
+      const serviceFee = extract('service_fee');
+      const subtotal = extract('subtotal');
+      const creditsApplied = extract('credits_applied');
+      const totalAmount = extract('total_amount');
+
+      console.log('📦 Regex extracted eventId:', eventId);
+      console.log('📦 Regex extracted ticketId:', ticketId);
+      console.log('📦 Regex extracted buyerName:', buyerName);
+
+      return {
+        ticketId,
+        eventId,
+        eventTitle: null,
+        quantity: parseInt(quantity) || 1,
+        buyerName,
+        buyerPhone,
+        ticketPrice: parseInt(ticketPrice) || 0,
+        serviceFee: parseInt(serviceFee) || 0,
+        subtotal: parseInt(subtotal) || 0,
+        creditsApplied: parseInt(creditsApplied) || 0,
+        totalAmount: totalAmount
+          ? parseInt(totalAmount)
+          : Math.round(paymentData.amount / 100),
+      };
     }
   }
 
@@ -153,6 +190,8 @@ function extractMetadata(paymentData) {
     const eventId = fields.event_id || fields.eventId ||
                     rawMetadata.event_id || rawMetadata.eventId;
 
+    const totalAmount = parseInt(fields.total_amount || fields.totalAmount || fields.totalPaid) || 0;
+
     return {
       ticketId: fields.ticket_id || fields.ticketId || null,
       eventId,
@@ -164,7 +203,7 @@ function extractMetadata(paymentData) {
       serviceFee: parseInt(fields.service_fee || fields.serviceFee) || 0,
       subtotal: parseInt(fields.subtotal) || 0,
       creditsApplied: parseInt(fields.credits_applied || fields.creditsApplied) || 0,
-      totalAmount: parseInt(fields.total_amount || fields.totalAmount || fields.totalPaid) || 0,
+      totalAmount: totalAmount > 0 ? totalAmount : Math.round(paymentData.amount / 100),
     };
   }
 
