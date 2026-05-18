@@ -84,7 +84,6 @@ function CompactTicketModal({ ticketData, onClose }) {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[90vh] overflow-y-auto">
 
-        {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-3xl">
           <div className="flex items-center gap-2">
             <CheckCircle className="text-emerald-500" size={20} />
@@ -101,8 +100,6 @@ function CompactTicketModal({ ticketData, onClose }) {
         </div>
 
         <div className="p-4">
-
-          {/* Event header strip */}
           <div style={{
             background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
             borderRadius: 14, padding: '14px 16px', marginBottom: 12,
@@ -137,7 +134,6 @@ function CompactTicketModal({ ticketData, onClose }) {
             </div>
           </div>
 
-          {/* Ticket ID */}
           <div style={{
             background: 'white', borderRadius: 10, padding: '8px 12px',
             marginBottom: 10, border: '1.5px solid #e0f2fe',
@@ -154,7 +150,6 @@ function CompactTicketModal({ ticketData, onClose }) {
             </div>
           </div>
 
-          {/* Buyer + QR */}
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
             <div style={{ flex: 1 }}>
               <MiniRow label="Name" value={ticketData.buyerName} />
@@ -166,23 +161,17 @@ function CompactTicketModal({ ticketData, onClose }) {
                 <MiniRow label="Credits" value={`-₦${ticketData.creditsApplied?.toLocaleString()}`} />
               )}
             </div>
-
-            {/* QR Code */}
             <div style={{ flexShrink: 0, textAlign: 'center' }}>
               <div style={{
                 background: 'white', padding: 6, borderRadius: 10,
                 border: '1.5px solid #bae6fd', display: 'inline-block'
               }}>
-                <canvas
-                  ref={qrCanvasRef}
-                  style={{ width: 90, height: 90, display: 'block' }}
-                />
+                <canvas ref={qrCanvasRef} style={{ width: 90, height: 90, display: 'block' }} />
               </div>
               <p style={{ fontSize: 8, color: '#94a3b8', marginTop: 4, textAlign: 'center' }}>Scan to verify</p>
             </div>
           </div>
 
-          {/* Payment ref */}
           <div style={{
             background: '#f9fafb', borderRadius: 8, padding: '7px 10px',
             border: '1px solid #e5e7eb', marginBottom: 10
@@ -193,7 +182,6 @@ function CompactTicketModal({ ticketData, onClose }) {
             </p>
           </div>
 
-          {/* Note */}
           <div style={{
             background: 'linear-gradient(135deg, #ecfeff, #e0f2fe)',
             borderRadius: 8, padding: '8px 10px',
@@ -205,7 +193,6 @@ function CompactTicketModal({ ticketData, onClose }) {
           </div>
         </div>
 
-        {/* Buttons */}
         <div className="px-4 pb-6 space-y-2">
           <button
             onClick={() => window.open(verifyUrl, '_blank')}
@@ -330,7 +317,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     setShowPaystackButton(true);
   };
 
-  // ✅ FIXED: Removed event_title to prevent metadata truncation
+  // ✅ Short keys — event_id first to avoid truncation
   const paystackConfig = {
     reference: paymentRef.current,
     email: buyerEmail,
@@ -338,19 +325,19 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
     metadata: {
       custom_fields: [
-        { display_name: 'Ticket ID', variable_name: 'ticket_id', value: ticketId.current },
-        { display_name: 'Event ID', variable_name: 'event_id', value: event.id },
-        { display_name: 'Buyer Name', variable_name: 'buyer_name', value: buyerName },
-        { display_name: 'Buyer Phone', variable_name: 'buyer_phone', value: buyerPhone },
-        { display_name: 'Ticket Price', variable_name: 'ticket_price', value: String(ticketPrice) },
-        { display_name: 'Service Fee', variable_name: 'service_fee', value: String(serviceFee) },
-        { display_name: 'Quantity', variable_name: 'quantity', value: String(quantity) },
-        { display_name: 'Subtotal', variable_name: 'subtotal', value: String(totalBeforeCredits) },
-        { display_name: 'Credits Applied', variable_name: 'credits_applied', value: String(actualCreditsApplied) },
-        { display_name: 'Total Amount', variable_name: 'total_amount', value: String(finalTotal) },
+        { display_name: 'EID', variable_name: 'eid', value: event.id },
+        { display_name: 'TID', variable_name: 'tid', value: ticketId.current },
+        { display_name: 'Name', variable_name: 'buyer_name', value: buyerName },
+        { display_name: 'Phone', variable_name: 'buyer_phone', value: buyerPhone },
+        { display_name: 'Price', variable_name: 'ticket_price', value: String(ticketPrice) },
+        { display_name: 'Fee', variable_name: 'service_fee', value: String(serviceFee) },
+        { display_name: 'Qty', variable_name: 'quantity', value: String(quantity) },
+        { display_name: 'Sub', variable_name: 'subtotal', value: String(totalBeforeCredits) },
+        { display_name: 'Cr', variable_name: 'credits_applied', value: String(actualCreditsApplied) },
+        { display_name: 'Tot', variable_name: 'total_amount', value: String(finalTotal) },
       ],
-      ticket_id: ticketId.current,
       event_id: event.id,
+      ticket_id: ticketId.current,
       total_amount: finalTotal,
     },
   };
@@ -767,7 +754,6 @@ export default function EventDetails() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-            {/* Left Column */}
             <div className="lg:col-span-2">
 
               <div className="relative rounded-2xl overflow-hidden mb-6 shadow-lg">
@@ -913,7 +899,6 @@ export default function EventDetails() {
               )}
             </div>
 
-            {/* Right Column */}
             <div className="lg:col-span-1">
               <div className="bg-white rounded-xl p-6 shadow-lg sticky top-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">
