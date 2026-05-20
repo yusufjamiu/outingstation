@@ -66,27 +66,34 @@ export default function UserDashboard() {
       );
       allEvents = filterUpcomingEvents(allEvents);
 
-      if (userCity && userCity.toLowerCase().trim() !== 'lagos') {
-        const userCityNormalized = userCity.toLowerCase().split(',')[0].trim();
-        const cityMatchedEvents = allEvents.filter(e => {
-          const eventLocation = (e.location || '').toLowerCase();
-          const eventCity = eventLocation.split(',')[0].trim();
-          return eventCity === userCityNormalized;
-        });
+      // ✅ FIXED: Filter by city for ALL cities including Lagos
+      const userCityNormalized = userCity.toLowerCase().split(',')[0].trim();
 
-        if (cityMatchedEvents.length === 0) {
-          setHasEventsInUserCity(false);
-          setTrendingEvents([]);
-          setPickedEvents([]);
-          setLoadingEvents(false);
-          return;
-        } else {
-          setHasEventsInUserCity(true);
-          allEvents = cityMatchedEvents;
-        }
-      } else {
-        setHasEventsInUserCity(true);
+      const cityMatchedEvents = allEvents.filter(e => {
+        // ✅ Webinars show everywhere
+        if (e.eventType === 'webinar') return true;
+
+        const eventLocation = (e.location || e.city || '').toLowerCase();
+        const eventCity = (e.city || '').toLowerCase().trim();
+        const locationCity = eventLocation.split(',')[0].trim();
+
+        return (
+          locationCity === userCityNormalized ||
+          eventCity === userCityNormalized ||
+          eventLocation.includes(userCityNormalized)
+        );
+      });
+
+      if (cityMatchedEvents.length === 0) {
+        setHasEventsInUserCity(false);
+        setTrendingEvents([]);
+        setPickedEvents([]);
+        setLoadingEvents(false);
+        return;
       }
+
+      setHasEventsInUserCity(true);
+      allEvents = cityMatchedEvents;
 
       if (activeCategory !== 'All') {
         allEvents = allEvents.filter(e => e.category === activeCategory);
@@ -120,16 +127,14 @@ export default function UserDashboard() {
     );
   };
 
-  // ✅ displayTrending defined BEFORE useEffect that uses it
   const displayTrending = filterEventsBySearch(trendingEvents);
   const displayPicked = filterEventsBySearch(pickedEvents);
 
-  // ✅ Auto-scroll trending on mobile — AFTER displayTrending is defined
   useEffect(() => {
     const container = trendingScrollRef.current;
     if (!container || displayTrending.length <= 1) return;
 
-    const cardWidth = 288 + 16; // w-72 + gap-4
+    const cardWidth = 288 + 16;
     let currentIndex = 0;
 
     const interval = setInterval(() => {
@@ -184,10 +189,8 @@ export default function UserDashboard() {
           {(() => {
             const hasEvents = trendingEvents.length > 0 || pickedEvents.length > 0;
             const userCityName = userCity.split(',')[0].trim();
-            if (userCity === 'Lagos') {
-              return <>Here's what is happening in <span className="font-semibold">Lagos</span> today.</>;
-            } else if (hasEvents) {
-              return <>Showing events in your area.</>;
+            if (hasEvents) {
+              return <>Here's what is happening in <span className="font-semibold">{userCityName}</span> today.</>;
             } else if (!loadingEvents) {
               return (
                 <>
@@ -233,7 +236,7 @@ export default function UserDashboard() {
         </div>
       ) : (
         <>
-          {/* ✅ Trending Events */}
+          {/* Trending Events */}
           {displayTrending.length > 0 && (
             <section className="mb-8">
               <div className="flex items-center justify-between mb-4 px-4 sm:px-0">
@@ -246,7 +249,6 @@ export default function UserDashboard() {
                 </button>
               </div>
 
-              {/* Mobile: horizontal auto-scroll | Desktop: 3-col grid */}
               <div
                 ref={trendingScrollRef}
                 className="
@@ -306,7 +308,7 @@ export default function UserDashboard() {
                 })}
               </div>
 
-              {/* ✅ Dot indicators — mobile only */}
+              {/* Dot indicators — mobile only */}
               {displayTrending.length > 1 && (
                 <div className="flex justify-center gap-1.5 mt-3 sm:hidden">
                   {displayTrending.map((_, index) => (
@@ -324,7 +326,7 @@ export default function UserDashboard() {
             </section>
           )}
 
-          {/* ✅ Places Banner */}
+          {/* Places Banner */}
           {!searchQuery && (
             <section className="mb-8 px-4 sm:px-0">
               <Link to="/dashboard/categories" className="block group">
@@ -372,7 +374,7 @@ export default function UserDashboard() {
             </section>
           )}
 
-          {/* ✅ Picked For You */}
+          {/* Picked For You */}
           {displayPicked.length > 0 && (
             <section className="px-4 sm:px-0 mb-6">
               <h2 className="text-xl sm:text-2xl font-bold mb-4">Picked For You</h2>
@@ -426,7 +428,7 @@ export default function UserDashboard() {
                   <p className="text-gray-500 text-lg mb-2">No events found for "{searchQuery}"</p>
                   <p className="text-gray-400 text-sm">Try a different search term</p>
                 </>
-              ) : !hasEventsInUserCity && userCity.toLowerCase() !== 'lagos' ? (
+              ) : !hasEventsInUserCity ? (
                 <div className="max-w-md mx-auto">
                   <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <MapPin size={32} className="text-gray-400" />
@@ -435,7 +437,7 @@ export default function UserDashboard() {
                     No events in {userCity.split(',')[0]} yet
                   </p>
                   <p className="text-gray-500 text-sm mb-6">
-                    We're currently only available in Lagos, but we're expanding soon!
+                    We're currently focused on Lagos, but we're expanding soon!
                   </p>
                   <button
                     onClick={() => navigate('/settings')}
