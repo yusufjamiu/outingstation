@@ -10,7 +10,7 @@ const placeSubCategories = [
   { name: 'Library', icon: '📚' },
   { name: 'Auditorium', icon: '🎭' },
   { name: 'Cafeteria', icon: '🍽️' },
-  { name: 'Vendors', icon: '🛒' }, // ✅ Renamed from Campus Market
+  { name: 'Vendors', icon: '🛒' },
   { name: 'Shortlets', icon: '🏠' },
   { name: 'Chapel / Mosque', icon: '🕌' },
   { name: 'Gym', icon: '💪' },
@@ -41,7 +41,6 @@ export default function CampusPlaces() {
   const [savedEventIds, setSavedEventIds] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Vendor state
   const [showVendorCategories, setShowVendorCategories] = useState(false);
   const [selectedVendorCategory, setSelectedVendorCategory] = useState(null);
 
@@ -49,7 +48,6 @@ export default function CampusPlaces() {
     loadData();
   }, [currentUser]);
 
-  // ✅ When subcategory changes — handle vendor flow
   useEffect(() => {
     if (selectedSubCategory === 'Vendors') {
       setShowVendorCategories(true);
@@ -71,19 +69,24 @@ export default function CampusPlaces() {
         }
       }
 
+      // ✅ Load ALL universities from universities collection
       const uniSnapshot = await getDocs(collection(db, 'universities'));
       const uniImagesMap = {};
       const uniList = ['All Universities'];
 
       uniSnapshot.docs.forEach(doc => {
         const data = doc.data();
-        if (data.name && data.imageUrl) {
-          uniImagesMap[data.name] = data.imageUrl;
+        if (data.name) {
+          // ✅ Always add to list even if no image
           uniList.push(data.name);
+          if (data.imageUrl) {
+            uniImagesMap[data.name] = data.imageUrl;
+          }
         }
       });
 
       setUniversityImages(uniImagesMap);
+      setUniversities(uniList);
 
       // ✅ Load campus places
       const snapshot = await getDocs(collection(db, 'events'));
@@ -95,19 +98,12 @@ export default function CampusPlaces() {
           e.status === 'published'
         );
 
-      places.forEach(place => {
-        if (place.university && !uniList.includes(place.university)) {
-          uniList.push(place.university);
-        }
-      });
-
       // ✅ Load vendors
       const vendorSnapshot = await getDocs(collection(db, 'vendors'));
       const vendors = vendorSnapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(v => v.status === 'active');
 
-      setUniversities(uniList);
       setAllPlaces(places);
       setAllVendors(vendors);
     } catch (err) {
@@ -138,7 +134,8 @@ export default function CampusPlaces() {
     if (selectedUniversity === 'All Universities') {
       return 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80';
     }
-    return universityImages[selectedUniversity] || 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80';
+    return universityImages[selectedUniversity] ||
+      'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80';
   };
 
   const filteredPlaces = allPlaces.filter(place => {
@@ -151,7 +148,6 @@ export default function CampusPlaces() {
     return uniMatch && subMatch && searchMatch;
   });
 
-  // ✅ Filter vendors by university + category
   const filteredVendors = allVendors.filter(vendor => {
     const uniMatch = selectedUniversity === 'All Universities' || vendor.university === selectedUniversity;
     const catMatch = !selectedVendorCategory || vendor.category === selectedVendorCategory;
@@ -161,7 +157,6 @@ export default function CampusPlaces() {
     return uniMatch && catMatch && searchMatch;
   });
 
-  // ✅ Check which vendor categories have vendors for selected university
   const vendorCategoriesWithCount = VENDOR_CATEGORIES.map(cat => ({
     ...cat,
     count: allVendors.filter(v =>
@@ -176,7 +171,6 @@ export default function CampusPlaces() {
     window.open(`https://wa.me/${cleaned}`, '_blank');
   };
 
-  // ✅ Render vendor category grid
   const renderVendorCategories = () => (
     <div>
       <div className="flex items-center gap-3 mb-6">
@@ -219,7 +213,6 @@ export default function CampusPlaces() {
     </div>
   );
 
-  // ✅ Render vendor list for selected category
   const renderVendorList = () => (
     <div>
       <div className="flex items-center gap-3 mb-6">
@@ -264,7 +257,6 @@ export default function CampusPlaces() {
               key={vendor.id}
               className="bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition group"
             >
-              {/* Vendor Image */}
               <div className="relative h-44">
                 <img
                   src={vendor.imageUrl || 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=400'}
@@ -280,7 +272,6 @@ export default function CampusPlaces() {
                 </div>
               </div>
 
-              {/* Vendor Info */}
               <div className="p-4">
                 <h3 className="font-bold text-gray-900 text-base mb-1 group-hover:text-cyan-500 transition">
                   {vendor.shopName}
@@ -288,14 +279,11 @@ export default function CampusPlaces() {
                 <p className="text-sm text-gray-500 mb-3 line-clamp-2">
                   {vendor.description}
                 </p>
-
                 {vendor.university && (
                   <p className="text-xs text-gray-400 mb-3 flex items-center gap-1">
                     🏛️ {vendor.university}
                   </p>
                 )}
-
-                {/* WhatsApp Button */}
                 <button
                   onClick={(e) => handleWhatsApp(e, vendor.whatsappNumber)}
                   className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-semibold transition"
@@ -389,7 +377,7 @@ export default function CampusPlaces() {
         </div>
       </div>
 
-      {/* ✅ SubCategory Filter — hide when viewing vendor list */}
+      {/* SubCategory Filter — hide when viewing vendor list */}
       {!selectedVendorCategory && (
         <div className="flex gap-2 flex-wrap mb-6">
           {placeSubCategories.map((sub) => (
@@ -413,6 +401,7 @@ export default function CampusPlaces() {
         <div className="flex justify-center py-20">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
         </div>
+
       ) : selectedUniversity === 'All Universities' ? (
         <div className="text-center py-20">
           <div className="text-6xl mb-4">🏛️</div>
@@ -425,15 +414,12 @@ export default function CampusPlaces() {
         </div>
 
       ) : showVendorCategories && !selectedVendorCategory ? (
-        // ✅ Show vendor category grid
         renderVendorCategories()
 
       ) : showVendorCategories && selectedVendorCategory ? (
-        // ✅ Show vendor list for selected category
         renderVendorList()
 
       ) : filteredPlaces.length > 0 ? (
-        // ✅ Show regular campus places
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredPlaces.map((place) => (
             <div
@@ -493,12 +479,13 @@ export default function CampusPlaces() {
             </div>
           ))}
         </div>
+
       ) : (
         <div className="text-center py-20">
           <div className="text-6xl mb-4">😔</div>
           <p className="text-gray-700 text-lg font-semibold mb-2">
             {selectedSubCategory !== 'All'
-              ? `${selectedSubCategory} not available for ${selectedUniversity}`
+              ? `No ${selectedSubCategory} available at ${selectedUniversity} yet`
               : `No places found for ${selectedUniversity}`}
           </p>
           <p className="text-gray-500 text-sm">
@@ -506,6 +493,14 @@ export default function CampusPlaces() {
               ? 'Try selecting a different type'
               : 'Places will appear here once added for this campus'}
           </p>
+          {selectedSubCategory !== 'All' && (
+            <button
+              onClick={() => setSelectedSubCategory('All')}
+              className="mt-4 px-6 py-2 bg-cyan-500 text-white rounded-lg text-sm font-medium hover:bg-cyan-600 transition"
+            >
+              View All Places
+            </button>
+          )}
         </div>
       )}
     </div>
