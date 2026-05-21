@@ -1,4 +1,4 @@
-// ✅ IMPORTS - ONLY AT THE TOP (Lines 1-50)
+// ✅ IMPORTS - ONLY AT THE TOP
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -25,7 +25,7 @@ import GenericCategoryPage from './pages/categories/GenericCategoryPage';
 import CategoryBrowsePage from './pages/categories/CategoryBrowsePage';
 import CampusEventsPage from './pages/categories/CampusEventsPage';
 import WebinarEventsPage from './pages/categories/WebinarEventsPage';
-import CampusPlacesPage from './pages/categories/CampusPlacesPage'; // ✅ NEW
+import CampusPlacesPage from './pages/categories/CampusPlacesPage';
 import ContactUs from './pages/ContactUs';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
@@ -47,7 +47,7 @@ import GenericCategory from './pages/dashboard/GenericCategory';
 import WebinarEvents from './pages/dashboard/WebinarEvents';
 import CategoryBrowse from './pages/dashboard/CategoryBrowse';
 import CampusEvents from './pages/dashboard/CampusEvents';
-import CampusPlaces from './pages/dashboard/CampusPlaces'; // ✅ NEW
+import CampusPlaces from './pages/dashboard/CampusPlaces';
 
 // Event Management
 import ManageEvent from './pages/EventManage/ManageEvent';
@@ -68,6 +68,8 @@ import EventSubmissionsPage from './pages/admin/EventSubmissionsPage';
 import AdminEarlyAccess from './pages/admin/AdminEarlyAccess';
 import AdminNotifications from './pages/admin/AdminNotifications';
 import AdminAmbassadors from './pages/admin/AdminAmbassadors';
+import AdminVendors from './pages/admin/AdminVendors'; // ✅ NEW
+import AdminVendorForm from './pages/admin/AdminVendorForm'; // ✅ NEW
 
 // ✅ FUNCTION STARTS HERE
 function App() {
@@ -90,7 +92,7 @@ function App() {
               <Route path="/categories" element={<CategoryBrowsePage />} />
               <Route path="/campus-events" element={<CampusEventsPage />} />
               <Route path="/webinar-events" element={<WebinarEventsPage />} />
-              <Route path="/campus-places" element={<CampusPlacesPage />} /> {/* ✅ NEW */}
+              <Route path="/campus-places" element={<CampusPlacesPage />} />
               <Route path="/city/:city" element={<CityEventsPage />} />
               <Route path="/event/:id" element={<EventDetails />} />
               <Route path="/e/:slug" element={<EventDetails />} />
@@ -112,7 +114,7 @@ function App() {
                 <Route path="/dashboard/categories" element={<CategoryBrowse />} />
                 <Route path="/dashboard/uni-events" element={<CampusEvents />} />
                 <Route path="/dashboard/web-events" element={<WebinarEvents />} />
-                <Route path="/dashboard/campus-places" element={<CampusPlaces />} /> {/* ✅ NEW */}
+                <Route path="/dashboard/campus-places" element={<CampusPlaces />} />
                 <Route path="/dashboard/category/:slug" element={<GenericCategory />} />
                 <Route path="/saved-events" element={<SavedEvents />} />
                 <Route path="/settings" element={<Settings />} />
@@ -169,21 +171,41 @@ function App() {
                   <AdminTickets />
                 </AdminRoute>
               } />
+
               <Route path="/admin/places" element={
                 <AdminRoute>
                   <AdminPlaces />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/places/create" element={
                 <AdminRoute>
                   <AdminPlaceForm />
                 </AdminRoute>
               } />
-              
+
               <Route path="/admin/places/edit/:id" element={
                 <AdminRoute>
                   <AdminPlaceForm />
+                </AdminRoute>
+              } />
+
+              {/* ✅ VENDOR ROUTES */}
+              <Route path="/admin/vendors" element={
+                <AdminRoute>
+                  <AdminVendors />
+                </AdminRoute>
+              } />
+
+              <Route path="/admin/vendors/create" element={
+                <AdminRoute>
+                  <AdminVendorForm />
+                </AdminRoute>
+              } />
+
+              <Route path="/admin/vendors/edit/:id" element={
+                <AdminRoute>
+                  <AdminVendorForm />
                 </AdminRoute>
               } />
 

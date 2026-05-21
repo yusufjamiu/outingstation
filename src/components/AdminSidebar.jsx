@@ -1,4 +1,4 @@
-import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, LogOut, X, FileText, Bell, Ticket, Mail, Star, MapPin } from 'lucide-react';
+import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, LogOut, X, FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export function AdminSidebar({ isOpen, onClose }) {
@@ -13,7 +13,8 @@ export function AdminSidebar({ isOpen, onClose }) {
   const menuItems = [
     { icon: Home, label: 'Dashboard', path: '/admin' },
     { icon: Calendar, label: 'Events', path: '/admin/events' },
-    { icon: MapPin, label: 'Places', path: '/admin/places' }, // ✅ NEW
+    { icon: MapPin, label: 'Places', path: '/admin/places' },
+    { icon: ShoppingBag, label: 'Vendors', path: '/admin/vendors' }, // ✅ NEW
     { icon: Ticket, label: 'Ticketing', path: '/admin/tickets' },
     { icon: FileText, label: 'Event Submissions', path: '/admin/event-submissions' },
     { icon: Users, label: 'Users', path: '/admin/users' },
