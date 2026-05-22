@@ -1,25 +1,31 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Menu, Plus, Edit, Trash2, Eye, EyeOff, ShoppingBag, Search, Check, X, Clock } from 'lucide-react';
+import { Menu, Plus, Edit, Trash2, Eye, EyeOff, ShoppingBag, Search, Check, X, Clock, Flag } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { collection, getDocs, deleteDoc, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 
 const VENDOR_CATEGORIES = [
-  'Food & Drinks',
-  'Fashion & Clothing',
-  'Electronics & Gadgets',
-  'Beauty & Grooming',
-  'Books & Stationery',
-  'Accessories',
+  'Food & Drinks', 'Fashion & Clothing', 'Electronics & Gadgets',
+  'Beauty & Grooming', 'Books & Stationery', 'Accessories',
 ];
+
+const REASON_LABELS = {
+  inactive: '🚫 Shop no longer exists / closed',
+  scam: '⚠️ Scam / Fraud',
+  wrong_contact: '📱 Wrong WhatsApp number',
+  wrong_location: '📍 Wrong university / location',
+  fake: '🤥 Fake listing',
+  other: '💬 Other reason',
+};
 
 export default function AdminVendors() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('active'); // ✅ active | pending
+  const [activeTab, setActiveTab] = useState('active');
   const [vendors, setVendors] = useState([]);
   const [pendingVendors, setPendingVendors] = useState([]);
+  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterUniversity, setFilterUniversity] = useState('All');
@@ -29,14 +35,14 @@ export default function AdminVendors() {
   useEffect(() => {
     loadVendors();
     loadPendingVendors();
+    loadReports();
   }, []);
 
   const loadVendors = async () => {
     try {
       setLoading(true);
       const snapshot = await getDocs(collection(db, 'vendors'));
-      const allVendors = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setVendors(allVendors);
+      setVendors(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (err) {
       console.error('Error loading vendors:', err);
     }
@@ -46,12 +52,23 @@ export default function AdminVendors() {
   const loadPendingVendors = async () => {
     try {
       const snapshot = await getDocs(collection(db, 'vendor_submissions'));
-      const pending = snapshot.docs
+      setPendingVendors(snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(v => v.status === 'pending');
-      setPendingVendors(pending);
+        .filter(v => v.status === 'pending'));
     } catch (err) {
       console.error('Error loading pending vendors:', err);
+    }
+  };
+
+  const loadReports = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'vendor_reports'));
+      setReports(snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(r => r.status === 'pending')
+        .sort((a, b) => (b.reportedAt?.seconds || 0) - (a.reportedAt?.seconds || 0)));
+    } catch (err) {
+      console.error('Error loading reports:', err);
     }
   };
 
@@ -69,18 +86,14 @@ export default function AdminVendors() {
     const newStatus = vendor.status === 'active' ? 'inactive' : 'active';
     try {
       await updateDoc(doc(db, 'vendors', vendor.id), { status: newStatus });
-      setVendors(prev => prev.map(v =>
-        v.id === vendor.id ? { ...v, status: newStatus } : v
-      ));
+      setVendors(prev => prev.map(v => v.id === vendor.id ? { ...v, status: newStatus } : v));
     } catch (err) {
       console.error('Error updating vendor status:', err);
     }
   };
 
-  // ✅ Approve vendor submission
   const handleApprove = async (submission) => {
     try {
-      // Add to vendors collection
       await addDoc(collection(db, 'vendors'), {
         shopName: submission.shopName,
         description: submission.description,
@@ -93,19 +106,12 @@ export default function AdminVendors() {
         approvedAt: serverTimestamp(),
         submittedBy: submission.organizerEmail || null,
       });
-
-      // Update submission status
       await updateDoc(doc(db, 'vendor_submissions', submission.id), {
         status: 'approved',
         approvedAt: serverTimestamp(),
       });
-
-      // Remove from pending list
       setPendingVendors(prev => prev.filter(v => v.id !== submission.id));
-
-      // Reload vendors
       loadVendors();
-
       alert(`✅ ${submission.shopName} approved and is now live!`);
     } catch (err) {
       console.error('Error approving vendor:', err);
@@ -113,7 +119,6 @@ export default function AdminVendors() {
     }
   };
 
-  // ✅ Reject vendor submission
   const handleReject = async (submission) => {
     if (!window.confirm(`Reject ${submission.shopName}?`)) return;
     try {
@@ -122,9 +127,36 @@ export default function AdminVendors() {
         rejectedAt: serverTimestamp(),
       });
       setPendingVendors(prev => prev.filter(v => v.id !== submission.id));
-      alert(`❌ ${submission.shopName} rejected.`);
     } catch (err) {
       console.error('Error rejecting vendor:', err);
+    }
+  };
+
+  const handleDismissReport = async (report) => {
+    try {
+      await updateDoc(doc(db, 'vendor_reports', report.id), {
+        status: 'dismissed',
+        reviewedAt: serverTimestamp(),
+      });
+      setReports(prev => prev.filter(r => r.id !== report.id));
+    } catch (err) {
+      console.error('Error dismissing report:', err);
+    }
+  };
+
+  const handleDeactivateFromReport = async (report) => {
+    if (!window.confirm(`Deactivate ${report.shopName} based on this report?`)) return;
+    try {
+      await updateDoc(doc(db, 'vendors', report.vendorId), { status: 'inactive' });
+      await updateDoc(doc(db, 'vendor_reports', report.id), {
+        status: 'resolved',
+        reviewedAt: serverTimestamp(),
+      });
+      setReports(prev => prev.filter(r => r.id !== report.id));
+      loadVendors();
+      alert(`✅ ${report.shopName} has been deactivated.`);
+    } catch (err) {
+      console.error('Error deactivating vendor:', err);
     }
   };
 
@@ -140,7 +172,6 @@ export default function AdminVendors() {
   });
 
   const activeCount = vendors.filter(v => v.status === 'active').length;
-  const inactiveCount = vendors.filter(v => v.status === 'inactive').length;
   const vendorUniversities = [...new Set(vendors.map(v => v.university).filter(Boolean))];
 
   return (
@@ -156,13 +187,11 @@ export default function AdminVendors() {
               </button>
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Manage Vendors</h2>
-                <p className="text-sm text-gray-500">
-                  {filteredVendors.length} of {vendors.length} vendors shown
-                </p>
+                <p className="text-sm text-gray-500">{filteredVendors.length} of {vendors.length} vendors shown</p>
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { loadVendors(); loadPendingVendors(); }}
+              <button onClick={() => { loadVendors(); loadPendingVendors(); loadReports(); }}
                 className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm">
                 Refresh
               </button>
@@ -174,14 +203,12 @@ export default function AdminVendors() {
             </div>
           </div>
 
-          {/* ✅ Tabs */}
-          <div className="mt-4 flex gap-2">
+          {/* ✅ Tabs — 3 tabs now */}
+          <div className="mt-4 flex gap-2 flex-wrap">
             <button
               onClick={() => setActiveTab('active')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                activeTab === 'active'
-                  ? 'bg-cyan-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                activeTab === 'active' ? 'bg-cyan-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               Active Vendors ({vendors.length})
@@ -189,22 +216,30 @@ export default function AdminVendors() {
             <button
               onClick={() => setActiveTab('pending')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
-                activeTab === 'pending'
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                activeTab === 'pending' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               <Clock size={14} />
-              Pending Review ({pendingVendors.length})
+              Pending ({pendingVendors.length})
               {pendingVendors.length > 0 && (
-                <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                  {pendingVendors.length}
-                </span>
+                <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingVendors.length}</span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('reports')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
+                activeTab === 'reports' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              <Flag size={14} />
+              Reports ({reports.length})
+              {reports.length > 0 && (
+                <span className="bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{reports.length}</span>
               )}
             </button>
           </div>
 
-          {/* Filters — only for active tab */}
+          {/* Filters — active tab only */}
           {activeTab === 'active' && (
             <div className="mt-4 flex flex-col sm:flex-row gap-3">
               <div className="flex-1 relative">
@@ -220,16 +255,12 @@ export default function AdminVendors() {
               <select value={filterUniversity} onChange={(e) => setFilterUniversity(e.target.value)}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
                 <option value="All">All Universities</option>
-                {vendorUniversities.map(uni => (
-                  <option key={uni} value={uni}>{uni}</option>
-                ))}
+                {vendorUniversities.map(uni => <option key={uni} value={uni}>{uni}</option>)}
               </select>
               <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
                 <option value="All">All Categories</option>
-                {VENDOR_CATEGORIES.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
+                {VENDOR_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
               </select>
               <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
@@ -258,8 +289,8 @@ export default function AdminVendors() {
               <p className="text-sm text-gray-500 mt-1">Pending Review</p>
             </div>
             <div className="bg-white rounded-xl p-4 border border-gray-200">
-              <p className="text-2xl font-bold text-purple-600">{vendorUniversities.length}</p>
-              <p className="text-sm text-gray-500 mt-1">Universities</p>
+              <p className="text-2xl font-bold text-red-500">{reports.length}</p>
+              <p className="text-sm text-gray-500 mt-1">Pending Reports</p>
             </div>
           </div>
 
@@ -267,14 +298,13 @@ export default function AdminVendors() {
             <div className="flex justify-center py-20">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
             </div>
-          ) : activeTab === 'active' ? (
 
+          ) : activeTab === 'active' ? (
             // ✅ ACTIVE VENDORS TAB
             filteredVendors.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
                 <ShoppingBag size={48} className="text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500 text-lg font-medium">No vendors found</p>
-                <p className="text-gray-400 text-sm mt-1">Add your first vendor to get started</p>
                 <button onClick={() => navigate('/admin/vendors/create')}
                   className="inline-flex items-center gap-2 mt-4 bg-cyan-500 text-white px-4 py-2 rounded-lg hover:bg-cyan-600 transition text-sm font-medium">
                   <Plus size={16} />
@@ -288,9 +318,7 @@ export default function AdminVendors() {
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
                         {['Vendor', 'Category', 'University', 'WhatsApp', 'Status', 'Actions'].map(h => (
-                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                            {h}
-                          </th>
+                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -306,7 +334,15 @@ export default function AdminVendors() {
                                 onError={(e) => e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=100'}
                               />
                               <div>
-                                <p className="font-medium text-gray-900 text-sm">{vendor.shopName}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-medium text-gray-900 text-sm">{vendor.shopName}</p>
+                                  {/* ✅ Report count badge */}
+                                  {vendor.reportCount > 0 && (
+                                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">
+                                      🚩 {vendor.reportCount}
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-gray-400 line-clamp-1">{vendor.description}</p>
                               </div>
                             </div>
@@ -316,17 +352,11 @@ export default function AdminVendors() {
                               {vendor.category}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                            🏛️ {vendor.university || '—'}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                            {vendor.whatsappNumber || '—'}
-                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">🏛️ {vendor.university || '—'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{vendor.whatsappNumber || '—'}</td>
                           <td className="px-4 py-3">
                             <span className={`text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${
-                              vendor.status === 'active'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-red-100 text-red-600'
+                              vendor.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
                             }`}>
                               {vendor.status === 'active' ? '✅ Active' : '❌ Inactive'}
                             </span>
@@ -339,11 +369,11 @@ export default function AdminVendors() {
                                 {vendor.status === 'active' ? <EyeOff size={15} /> : <Eye size={15} />}
                               </button>
                               <button onClick={() => navigate(`/admin/vendors/edit/${vendor.id}`)}
-                                className="p-1.5 hover:bg-blue-50 rounded-lg transition text-blue-600" title="Edit">
+                                className="p-1.5 hover:bg-blue-50 rounded-lg transition text-blue-600">
                                 <Edit size={15} />
                               </button>
                               <button onClick={() => handleDelete(vendor.id)}
-                                className="p-1.5 hover:bg-red-50 rounded-lg transition text-red-500" title="Delete">
+                                className="p-1.5 hover:bg-red-50 rounded-lg transition text-red-500">
                                 <Trash2 size={15} />
                               </button>
                             </div>
@@ -359,8 +389,7 @@ export default function AdminVendors() {
               </div>
             )
 
-          ) : (
-
+          ) : activeTab === 'pending' ? (
             // ✅ PENDING VENDORS TAB
             pendingVendors.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
@@ -372,8 +401,6 @@ export default function AdminVendors() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {pendingVendors.map(submission => (
                   <div key={submission.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-
-                    {/* Shop Image */}
                     <div className="relative h-40">
                       <img
                         src={submission.imageUrl || 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=400'}
@@ -382,17 +409,12 @@ export default function AdminVendors() {
                         onError={(e) => e.target.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=400'}
                       />
                       <div className="absolute top-3 left-3">
-                        <span className="bg-orange-500 text-white text-xs px-2.5 py-1 rounded-full font-medium">
-                          ⏳ Pending
-                        </span>
+                        <span className="bg-orange-500 text-white text-xs px-2.5 py-1 rounded-full font-medium">⏳ Pending</span>
                       </div>
                     </div>
-
-                    {/* Info */}
                     <div className="p-4">
                       <h3 className="font-bold text-gray-900 mb-1">{submission.shopName}</h3>
                       <p className="text-xs text-gray-500 mb-3 line-clamp-2">{submission.description}</p>
-
                       <div className="space-y-1 mb-3">
                         <div className="flex items-center gap-2 text-xs text-gray-600">
                           <span className="font-medium">Category:</span>
@@ -410,29 +432,75 @@ export default function AdminVendors() {
                           <span className="font-medium">Submitted by:</span>
                           <span>{submission.organizerEmail || submission.organizerName || '—'}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-gray-600">
-                          <span className="font-medium">Phone:</span>
-                          <span>{submission.organizerPhone || '—'}</span>
-                        </div>
                       </div>
-
-                      {/* Approve/Reject buttons */}
                       <div className="flex gap-2">
-                        <button
-                          onClick={() => handleApprove(submission)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold transition"
-                        >
+                        <button onClick={() => handleApprove(submission)}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold transition">
                           <Check size={15} />
                           Approve
                         </button>
-                        <button
-                          onClick={() => handleReject(submission)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-semibold transition"
-                        >
+                        <button onClick={() => handleReject(submission)}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-semibold transition">
                           <X size={15} />
                           Reject
                         </button>
                       </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+
+          ) : (
+            // ✅ REPORTS TAB
+            reports.length === 0 ? (
+              <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
+                <div className="text-5xl mb-4">✅</div>
+                <p className="text-gray-500 text-lg font-medium">No pending reports</p>
+                <p className="text-gray-400 text-sm mt-1">All vendor reports have been reviewed</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {reports.map(report => (
+                  <div key={report.id} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Flag size={14} className="text-red-500" />
+                          <span className="text-red-500 font-bold text-sm">Report</span>
+                          <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full font-medium">Pending Review</span>
+                        </div>
+                        <h3 className="font-bold text-gray-900">{report.shopName}</h3>
+                        <p className="text-sm text-gray-500">🏛️ {report.university}</p>
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        {report.reportedAt?.toDate
+                          ? new Date(report.reportedAt.toDate()).toLocaleDateString()
+                          : 'Just now'}
+                      </p>
+                    </div>
+
+                    <div className="bg-red-50 rounded-lg p-3 mb-4 border border-red-100">
+                      <p className="text-sm font-medium text-red-700 mb-1">Reason:</p>
+                      <p className="text-sm text-red-600">{REASON_LABELS[report.reason] || report.reason}</p>
+                      {report.details && (
+                        <p className="text-xs text-gray-600 mt-2 italic">"{report.details}"</p>
+                      )}
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => handleDeactivateFromReport(report)}
+                        className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-semibold transition"
+                      >
+                        🚫 Deactivate Vendor
+                      </button>
+                      <button
+                        onClick={() => handleDismissReport(report)}
+                        className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition"
+                      >
+                        ✅ Dismiss Report
+                      </button>
                     </div>
                   </div>
                 ))}
