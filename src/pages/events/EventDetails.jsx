@@ -53,7 +53,261 @@ const generateTicketId = () => {
   return `OS-${new Date().getFullYear()}-${random}`;
 };
 
-const getImage = (event) => event?.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80';
+// ─── Image Carousel ───────────────────────────────────────────────────────────
+
+function EventImageCarousel({ event, isPlace }) {
+  const allImages = [
+    ...(event.imageUrl ? [event.imageUrl] : []),
+    ...(event.images || []).filter(img => img && img !== event.imageUrl),
+  ].slice(0, 10);
+
+  if (allImages.length === 0) {
+    allImages.push('https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80');
+  }
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [showFullScreen, setShowFullScreen] = useState(false);
+
+  const prev = (e) => {
+    e?.stopPropagation();
+    setCurrentIndex(i => (i - 1 + allImages.length) % allImages.length);
+  };
+
+  const next = (e) => {
+    e?.stopPropagation();
+    setCurrentIndex(i => (i + 1) % allImages.length);
+  };
+
+  // ✅ Keyboard navigation
+  useEffect(() => {
+    if (!showFullScreen) return;
+    const handleKey = (e) => {
+      if (e.key === 'ArrowLeft') prev();
+      if (e.key === 'ArrowRight') next();
+      if (e.key === 'Escape') setShowFullScreen(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [showFullScreen]);
+
+  return (
+    <>
+      <div className="relative rounded-2xl overflow-hidden mb-6 shadow-lg group">
+
+        {/* ✅ Main image */}
+        <div
+          className="relative h-64 sm:h-96 cursor-zoom-in"
+          onClick={() => setShowFullScreen(true)}
+        >
+          <img
+            src={allImages[currentIndex]}
+            alt={event.title}
+            className="w-full h-full object-cover transition-all duration-500"
+            onError={(e) => {
+              e.target.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80';
+            }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent pointer-events-none" />
+
+          {/* Counter badge */}
+          {allImages.length > 1 && (
+            <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 z-10">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+              </svg>
+              {currentIndex + 1} / {allImages.length}
+            </div>
+          )}
+
+          {/* Expand hint */}
+          <div className="absolute top-4 right-28 bg-black/40 backdrop-blur-sm text-white px-2.5 py-1.5 rounded-full text-xs font-medium opacity-0 group-hover:opacity-100 transition z-10 flex items-center gap-1">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+            View
+          </div>
+
+          {/* Left arrow */}
+          {allImages.length > 1 && (
+            <button
+              onClick={prev}
+              className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2.5 rounded-full transition opacity-0 group-hover:opacity-100 z-10"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                <path d="M15 18l-6-6 6-6"/>
+              </svg>
+            </button>
+          )}
+
+          {/* Right arrow */}
+          {allImages.length > 1 && (
+            <button
+              onClick={next}
+              className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2.5 rounded-full transition opacity-0 group-hover:opacity-100 z-10"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                <path d="M9 18l6-6-6-6"/>
+              </svg>
+            </button>
+          )}
+
+          {/* Dot indicators */}
+          {allImages.length > 1 && (
+            <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 z-10 pointer-events-auto">
+              {allImages.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={(e) => { e.stopPropagation(); setCurrentIndex(i); }}
+                  className={`transition-all duration-300 rounded-full ${
+                    i === currentIndex
+                      ? 'w-5 h-2 bg-white'
+                      : 'w-2 h-2 bg-white/50 hover:bg-white/80'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Badges */}
+          <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+            {event.eventType && (
+              <span className="bg-purple-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
+                {event.eventType === 'campus' && '🎓 Campus'}
+                {event.eventType === 'webinar' && '📹 Virtual'}
+                {event.eventType === 'regular' && '🎉 Event'}
+              </span>
+            )}
+            {isPlace && (
+              <span className="bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
+                📍 PLACE
+              </span>
+            )}
+          </div>
+
+          {/* Category badge */}
+          <div className="absolute z-10" style={{ top: '1rem', left: allImages.length > 1 ? '7rem' : '1rem' }}>
+            <span className="bg-white/90 backdrop-blur-sm text-cyan-500 px-4 py-2 rounded-full text-sm font-semibold">
+              #{event.category}
+            </span>
+          </div>
+
+          {/* Free badge */}
+          {event.isFree && (
+            <div className="absolute right-4 z-10" style={{ bottom: allImages.length > 1 ? '3rem' : '1rem' }}>
+              <span className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold">
+                Free {isPlace ? 'Entry' : 'Event'}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* ✅ Thumbnail strip */}
+        {allImages.length > 1 && (
+          <div className="flex gap-2 p-3 bg-white overflow-x-auto">
+            {allImages.map((img, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrentIndex(i)}
+                className={`flex-shrink-0 w-16 h-12 rounded-lg overflow-hidden border-2 transition-all duration-200 ${
+                  i === currentIndex
+                    ? 'border-cyan-500 scale-105 shadow-md'
+                    : 'border-transparent opacity-60 hover:opacity-100 hover:border-gray-300'
+                }`}
+              >
+                <img
+                  src={img}
+                  alt={`Photo ${i + 1}`}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.target.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=200';
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ✅ Full screen lightbox */}
+      {showFullScreen && (
+        <div
+          className="fixed inset-0 bg-black/96 z-50 flex items-center justify-center"
+          onClick={() => setShowFullScreen(false)}
+        >
+          {/* Close */}
+          <button
+            onClick={() => setShowFullScreen(false)}
+            className="absolute top-4 right-4 text-white bg-white/20 hover:bg-white/30 p-3 rounded-full transition z-10"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+
+          {/* Counter */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white text-sm font-medium bg-white/20 px-4 py-2 rounded-full z-10">
+            {currentIndex + 1} / {allImages.length}
+          </div>
+
+          {/* Main image */}
+          <img
+            src={allImages[currentIndex]}
+            alt={event.title}
+            className="max-w-[90vw] max-h-[80vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            onError={(e) => {
+              e.target.src = 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80';
+            }}
+          />
+
+          {/* Prev */}
+          {allImages.length > 1 && (
+            <button
+              onClick={prev}
+              className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white p-3 rounded-full transition"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                <path d="M15 18l-6-6 6-6"/>
+              </svg>
+            </button>
+          )}
+
+          {/* Next */}
+          {allImages.length > 1 && (
+            <button
+              onClick={next}
+              className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/40 text-white p-3 rounded-full transition"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+                <path d="M9 18l6-6-6-6"/>
+              </svg>
+            </button>
+          )}
+
+          {/* Thumbnail strip in lightbox */}
+          {allImages.length > 1 && (
+            <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 px-4 overflow-x-auto py-2">
+              {allImages.map((img, i) => (
+                <button
+                  key={i}
+                  onClick={(e) => { e.stopPropagation(); setCurrentIndex(i); }}
+                  className={`flex-shrink-0 w-14 h-10 rounded-md overflow-hidden border-2 transition-all ${
+                    i === currentIndex
+                      ? 'border-cyan-400 scale-110 shadow-lg'
+                      : 'border-white/30 opacity-50 hover:opacity-100 hover:border-white/60'
+                  }`}
+                >
+                  <img src={img} alt="" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
 
 // ─── Compact Ticket Modal ─────────────────────────────────────────────────────
 
@@ -94,7 +348,8 @@ function CompactTicketModal({ ticketData, onClose }) {
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full transition">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
           </button>
         </div>
@@ -317,7 +572,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     setShowPaystackButton(true);
   };
 
-  // ✅ Short keys — event_id first to avoid truncation
   const paystackConfig = {
     reference: paymentRef.current,
     email: buyerEmail,
@@ -756,35 +1010,8 @@ export default function EventDetails() {
 
             <div className="lg:col-span-2">
 
-              <div className="relative rounded-2xl overflow-hidden mb-6 shadow-lg">
-                <img src={getImage(event)} alt={event.title} className="w-full h-64 sm:h-96 object-cover" />
-                <div className="absolute top-4 left-4">
-                  <span className="bg-white/90 backdrop-blur-sm text-cyan-500 px-4 py-2 rounded-full text-sm font-semibold">
-                    #{event.category}
-                  </span>
-                </div>
-                <div className="absolute top-4 right-4 flex flex-col gap-2">
-                  {event.eventType && (
-                    <span className="bg-purple-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
-                      {event.eventType === 'campus' && '🎓 Campus'}
-                      {event.eventType === 'webinar' && '📹 Virtual'}
-                      {event.eventType === 'regular' && '🎉 Event'}
-                    </span>
-                  )}
-                  {isPlace && (
-                    <span className="bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
-                      📍 PLACE
-                    </span>
-                  )}
-                </div>
-                {event.isFree && (
-                  <div className="absolute bottom-4 right-4">
-                    <span className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold">
-                      Free {isPlace ? 'Entry' : 'Event'}
-                    </span>
-                  </div>
-                )}
-              </div>
+              {/* ✅ Image Carousel */}
+              <EventImageCarousel event={event} isPlace={isPlace} />
 
               <div className="flex items-start justify-between mb-6">
                 <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 flex-1">{event.title}</h1>
