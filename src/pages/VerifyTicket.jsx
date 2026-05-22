@@ -4,10 +4,56 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   CheckCircle, XCircle, AlertCircle,
-  Calendar, MapPin, User, Phone, Mail, Hash, Ticket, Clock
+  Calendar, MapPin, User, Phone, Mail, Hash, Clock, CalendarX
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+
+// ✅ Parse "Saturday, May 18, 2026" → Date object
+function parseEventDate(dateStr) {
+  if (!dateStr) return null;
+  try {
+    const months = {
+      'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3,
+      'May': 4, 'Jun': 5, 'Jul': 6, 'Aug': 7,
+      'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11,
+      'January': 0, 'February': 1, 'March': 2, 'April': 3,
+      'June': 5, 'July': 6, 'August': 7, 'September': 8,
+      'October': 9, 'November': 10, 'December': 11,
+    };
+
+    const cleaned = dateStr.replace(/,/g, '').trim();
+    const parts = cleaned.split(' ').filter(p => p);
+
+    let month = null, day = null, year = null;
+
+    for (const part of parts) {
+      if (months[part] !== undefined) {
+        month = months[part];
+      } else if (!isNaN(parseInt(part))) {
+        const num = parseInt(part);
+        if (num > 1000) year = num;
+        else day = num;
+      }
+    }
+
+    if (month !== null && day !== null && year !== null) {
+      return new Date(year, month, day);
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// ✅ Check if event date has passed
+function isEventOver(eventDateStr) {
+  const eventDate = parseEventDate(eventDateStr);
+  if (!eventDate) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return eventDate < today;
+}
 
 export default function VerifyTicket() {
   const { ticketId } = useParams();
@@ -22,7 +68,6 @@ export default function VerifyTicket() {
   const loadTicket = async () => {
     try {
       setLoading(true);
-      // ✅ Ticket doc ID = ticketId (set in webhook)
       const ticketDoc = await getDoc(doc(db, 'tickets', ticketId));
       if (ticketDoc.exists()) {
         setTicket({ id: ticketDoc.id, ...ticketDoc.data() });
@@ -78,8 +123,20 @@ export default function VerifyTicket() {
     );
   }
 
+  // ✅ Determine status — event over takes priority
+  const eventOver = isEventOver(ticket.eventDate);
   const isValid = ticket.status === 'valid';
   const isUsed = ticket.status === 'used';
+
+  // ✅ Compute final status
+  const getStatus = () => {
+    if (eventOver) return 'expired'; // ✅ Event has passed
+    if (isValid) return 'valid';
+    if (isUsed) return 'used';
+    return 'invalid';
+  };
+
+  const status = getStatus();
 
   const statusConfig = {
     valid: {
@@ -89,7 +146,8 @@ export default function VerifyTicket() {
       text: 'text-emerald-700',
       icon: <CheckCircle size={52} className="text-white" />,
       label: '✅ Valid Ticket',
-      description: 'This ticket is authentic and valid for entry'
+      description: 'This ticket is authentic and valid for entry',
+      badge: 'VALID',
     },
     used: {
       bg: 'from-yellow-500 to-orange-500',
@@ -98,7 +156,18 @@ export default function VerifyTicket() {
       text: 'text-yellow-700',
       icon: <AlertCircle size={52} className="text-white" />,
       label: '⚠️ Already Used',
-      description: 'This ticket has already been scanned for entry'
+      description: 'This ticket has already been scanned for entry',
+      badge: 'USED',
+    },
+    expired: {
+      bg: 'from-gray-500 to-gray-700',
+      lightBg: 'bg-gray-50',
+      border: 'border-gray-200',
+      text: 'text-gray-600',
+      icon: <CalendarX size={52} className="text-white" />,
+      label: '🗓️ Event Has Ended',
+      description: `This event took place on ${ticket.eventDate}. The ticket is no longer valid for entry.`,
+      badge: 'EXPIRED',
     },
     invalid: {
       bg: 'from-red-500 to-red-600',
@@ -107,11 +176,11 @@ export default function VerifyTicket() {
       text: 'text-red-700',
       icon: <XCircle size={52} className="text-white" />,
       label: '❌ Invalid Ticket',
-      description: 'This ticket is not valid'
-    }
+      description: 'This ticket is not valid',
+      badge: 'INVALID',
+    },
   };
 
-  const status = isValid ? 'valid' : isUsed ? 'used' : 'invalid';
   const config = statusConfig[status];
 
   return (
@@ -133,7 +202,7 @@ export default function VerifyTicket() {
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
 
           {/* Event image */}
-          {ticket.eventImageUrl && (
+          {ticket.eventImageUrl ? (
             <div className="relative h-44">
               <img
                 src={ticket.eventImageUrl}
@@ -145,9 +214,7 @@ export default function VerifyTicket() {
                 <h2 className="text-white font-black text-xl line-clamp-2">{ticket.eventTitle}</h2>
               </div>
             </div>
-          )}
-
-          {!ticket.eventImageUrl && (
+          ) : (
             <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 p-6">
               <h2 className="text-white font-black text-xl">{ticket.eventTitle}</h2>
             </div>
@@ -190,7 +257,7 @@ export default function VerifyTicket() {
                 <p className="text-xl font-black text-cyan-700 font-mono tracking-wide">{ticket.ticketId}</p>
               </div>
               <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${config.lightBg} ${config.text} ${config.border} border`}>
-                {ticket.status?.toUpperCase()}
+                {config.badge}
               </div>
             </div>
 
@@ -224,6 +291,16 @@ export default function VerifyTicket() {
               <p className="text-xs text-gray-400 mb-1 font-semibold uppercase tracking-wide">Payment Reference</p>
               <p className="text-xs font-mono text-gray-600 break-all">{ticket.paymentReference || ticket.paymentRef}</p>
             </div>
+
+            {/* ✅ Event ended notice */}
+            {eventOver && (
+              <div className="bg-gray-100 rounded-xl p-4 mb-5 border border-gray-200">
+                <p className="text-sm text-gray-600 text-center font-medium">
+                  🗓️ This event has already taken place on <strong>{ticket.eventDate}</strong>.
+                  This ticket is no longer valid for entry.
+                </p>
+              </div>
+            )}
 
             {/* Branding */}
             <div className="text-center pt-4 border-t border-gray-100">
