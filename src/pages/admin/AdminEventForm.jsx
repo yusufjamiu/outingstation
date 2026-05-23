@@ -1,866 +1,1100 @@
-import { useState, useEffect } from 'react';
-import { Menu, Save, X, Upload, Plus, Trash2 } from 'lucide-react';
-import { AdminSidebar } from '../../components/AdminSidebar';
-import { useNavigate, useParams } from 'react-router-dom';
-import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
-import { db, auth } from '../../firebase';
-import { uploadWithProgress, compressImage } from '../../services/cloudinaryService';
-import NotifyUsersModal from '../../components/NotifyUsersModal';
-import ManageLinkModal from '../../components/ManageLinkModal';
+// COMPLETE SubmitEventPage.jsx - WITH CLOUDINARY UPLOAD + REFERRAL CODE + VENDOR + MULTI-IMAGE
+import React, { useState, useEffect } from 'react';
+import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
+import { Gift, ShoppingBag, Plus, X, Upload } from 'lucide-react';
 
-const generateManageKey = () => {
-  return Array.from({length: 32}, () =>
-    Math.floor(Math.random() * 16).toString(16)
-  ).join('');
+const VENDOR_CATEGORIES = [
+  { value: 'Food & Drinks', emoji: '🍔' },
+  { value: 'Fashion & Clothing', emoji: '👗' },
+  { value: 'Electronics & Gadgets', emoji: '📱' },
+  { value: 'Beauty & Grooming', emoji: '💄' },
+  { value: 'Books & Stationery', emoji: '📚' },
+  { value: 'Accessories', emoji: '💍' },
+];
+
+// ✅ Cloudinary upload — same as AdminEventForm
+const uploadToCloudinary = async (file, folder = 'events', onProgress = () => {}) => {
+  const data = new FormData();
+  data.append('file', file);
+  data.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const result = JSON.parse(xhr.responseText);
+        resolve(result.secure_url);
+      } else {
+        reject(new Error(`Upload failed: ${xhr.statusText}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Upload failed'));
+    xhr.send(data);
+  });
 };
 
-const generateSlug = (title) => {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .trim()
-    .substring(0, 80);
+// ✅ Simple compress before upload
+const compressImage = async (file, maxWidth = 1200, quality = 0.8) => {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((blob) => resolve(new File([blob], file.name, { type: 'image/jpeg' })), 'image/jpeg', quality);
+    };
+    img.src = url;
+  });
 };
 
-export default function AdminEventForm() {
-  const navigate = useNavigate();
-  const { id } = useParams();
-  const isEdit = Boolean(id);
+// ✅ Reusable multi-image uploader component
+function MultiImageUploader({ images, onAdd, onRemove, maxImages = 10, uploading, uploadProgress, folder = 'events', label = 'Photos' }) {
+  const [localUploading, setLocalUploading] = useState(false);
+  const [localProgress, setLocalProgress] = useState(0);
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [fetchingEvent, setFetchingEvent] = useState(isEdit);
-  const [universities, setUniversities] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [showNotifyModal, setShowNotifyModal] = useState(false);
-  const [showManageLinkModal, setShowManageLinkModal] = useState(false);
-  const [createdEvent, setCreatedEvent] = useState(null);
+  const isUploading = uploading !== undefined ? uploading : localUploading;
+  const progress = uploadProgress !== undefined ? uploadProgress : localProgress;
 
-  // ✅ Extra images state
-  const [uploadingExtra, setUploadingExtra] = useState(false);
-  const [uploadExtraProgress, setUploadExtraProgress] = useState(0);
+  const slotsLeft = maxImages - images.length;
 
-  // ✅ Ticketing state
-  const [ticketingOption, setTicketingOption] = useState('none');
-  const [ticketPrice, setTicketPrice] = useState('');
-  const [ticketsAvailable, setTicketsAvailable] = useState(100);
-  const [externalTicketLink, setExternalTicketLink] = useState('');
+  const handleFiles = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    const toUpload = files.slice(0, slotsLeft);
+    if (toUpload.length === 0) { alert(`Maximum ${maxImages} photos allowed`); return; }
 
-  // ✅ Service fee state
-  const [serviceFeeType, setServiceFeeType] = useState('fixed');
-  const [serviceFeeAmount, setServiceFeeAmount] = useState(100);
-  const [serviceFeePercentage, setServiceFeePercentage] = useState(2);
+    setLocalUploading(true);
+    const uploaded = [];
+    for (let i = 0; i < toUpload.length; i++) {
+      const file = toUpload[i];
+      if (!file.type.startsWith('image/')) continue;
+      if (file.size > 10 * 1024 * 1024) { alert(`${file.name} is too large. Max 10MB.`); continue; }
+      try {
+        setLocalProgress(Math.round(((i + 0.5) / toUpload.length) * 100));
+        const compressed = await compressImage(file, 1200, 0.8);
+        const url = await uploadToCloudinary(compressed, folder, (p) => {
+          setLocalProgress(Math.round(((i + p / 100) / toUpload.length) * 100));
+        });
+        uploaded.push(url);
+      } catch (err) {
+        console.error('Upload error:', err);
+        alert(`Failed to upload ${file.name}`);
+      }
+    }
+    onAdd(uploaded);
+    setLocalUploading(false);
+    setLocalProgress(0);
+    e.target.value = '';
+  };
 
+  return (
+    <div>
+      {/* Image Grid */}
+      {images.length > 0 && (
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
+          {images.map((img, index) => (
+            <div key={index} className="relative group">
+              <img src={img} alt={`${label} ${index + 1}`}
+                className={`w-full h-20 object-cover rounded-xl border-2 ${index === 0 ? 'border-cyan-400' : 'border-gray-200'}`}
+                onError={(e) => { e.target.src = 'https://via.placeholder.com/80'; }} />
+              {index === 0 && (
+                <div className="absolute top-1 left-1 bg-cyan-500 text-white text-xs px-1.5 py-0.5 rounded-md font-semibold leading-tight">
+                  Main
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-xl transition" />
+              <button type="button" onClick={() => onRemove(index)}
+                className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md">
+                <X size={10} />
+              </button>
+              <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-1 rounded opacity-0 group-hover:opacity-100 transition">
+                #{index + 1}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Upload area */}
+      {images.length < maxImages && (
+        <label className={`flex flex-col items-center justify-center gap-2 px-4 py-6 border-2 border-dashed rounded-2xl cursor-pointer transition ${
+          isUploading
+            ? 'border-cyan-300 bg-cyan-50 opacity-70 pointer-events-none'
+            : images.length === 0
+              ? 'border-gray-300 hover:border-cyan-400 hover:bg-cyan-50'
+              : 'border-gray-200 hover:border-cyan-400 hover:bg-cyan-50'
+        }`}>
+          {isUploading ? (
+            <>
+              <div className="w-full max-w-xs bg-gray-200 rounded-full h-2">
+                <div className="bg-cyan-500 h-2 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+              </div>
+              <span className="text-sm text-cyan-600 font-medium">Uploading {progress}%...</span>
+            </>
+          ) : images.length === 0 ? (
+            <>
+              <Upload size={32} className="text-gray-400" />
+              <div className="text-center">
+                <p className="text-sm font-semibold text-cyan-600">Click to upload {label}</p>
+                <p className="text-xs text-gray-500 mt-1">PNG, JPG, WEBP up to 10MB each</p>
+                <p className="text-xs text-gray-400 mt-1">Min 1 photo, max {maxImages} photos</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <Plus size={20} className="text-gray-400" />
+              <span className="text-sm text-gray-600 font-medium">
+                Add More Photos ({slotsLeft} slot{slotsLeft !== 1 ? 's' : ''} left)
+              </span>
+            </>
+          )}
+          <input type="file" accept="image/*" multiple disabled={isUploading} onChange={handleFiles} className="sr-only" />
+        </label>
+      )}
+
+      {images.length >= maxImages && (
+        <div className="text-center py-3 bg-gray-50 rounded-xl border border-gray-200">
+          <p className="text-sm text-gray-500">✅ Maximum {maxImages} photos reached</p>
+        </div>
+      )}
+
+      {images.length > 0 && (
+        <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          First photo is the main image shown on cards. Hover to remove any photo.
+        </p>
+      )}
+    </div>
+  );
+}
+
+const SubmitEventPage = () => {
   const [formData, setFormData] = useState({
-    title: '', description: '', category: '',
-    subCategory: 'events',
-    religionType: '', eventType: 'regular',
-    eventDuration: 'single', date: '', time: '',
-    startDate: '', endDate: '',
-    dailyStartTime: '', dailyEndTime: '',
-    recurringPattern: 'weekly', recurringDay: 'Monday', recurringTime: '',
-    location: '', address: '', mapLocation: '',
-    organizerName: '', organizerPhone: '', organizerEmail: '', organizerWebsite: '',
-    university: '', platform: '', platformLink: '',
-    price: '', isFree: false, capacity: '',
-    imageUrl: '',
-    images: [], // ✅ NEW — additional images
-    status: 'published', isFeatured: false, isTrending: false
+    organizerName: '',
+    organizerEmail: '',
+    organizerPhone: '',
+    organizationName: '',
+    referralCode: '',
+    listingType: 'event',
+    eventTitle: '',
+    eventCategory: '',
+    customCategory: '',
+    eventType: 'physical',
+    eventDescription: '',
+    startDate: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
+    operatingHours: '',
+    alwaysOpen: false,
+    city: '',
+    customCity: '',
+    venueName: '',
+    address: '',
+    mapsLink: '',
+    platform: '',
+    webinarLink: '',
+    isFree: 'yes',
+    ticketPrice: '',
+    wantOutingstationTicketing: 'no',
+    externalTicketLink: '',
+    additionalInfo: '',
+    agreedToTerms: false,
+    isUniversityEvent: false,
+    universityName: '',
+    // ✅ Vendor fields
+    shopName: '',
+    vendorCategory: '',
+    vendorUniversity: '',
+    vendorDescription: '',
+    whatsappNumber: '',
   });
 
-  const calculateServiceFee = () => {
-    const price = parseInt(ticketPrice || 0);
-    if (serviceFeeType === 'fixed') return parseInt(serviceFeeAmount || 0);
-    if (serviceFeeType === 'percentage') return Math.round(price * (parseFloat(serviceFeePercentage || 0) / 100));
-    return 0;
-  };
+  // ✅ All images for all types — first image = main image
+  const [eventImages, setEventImages] = useState([]);     // event/place images
+  const [vendorImages, setVendorImages] = useState([]);   // vendor images
 
-  const calculatePaystackFee = () => {
-    const price = parseInt(ticketPrice || 0);
-    const serviceFee = calculateServiceFee();
-    return Math.round(((price + serviceFee) * 0.015) + 100);
-  };
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [showTerms, setShowTerms] = useState(false);
+  const [universities, setUniversities] = useState([]);
 
-  const calculateTotal = () => {
-    return parseInt(ticketPrice || 0) + calculateServiceFee() + calculatePaystackFee();
-  };
+  const categories = [
+    'Business & Tech', 'Art & Culture', 'Food & Dining',
+    'Sport & Fitness', 'Education', 'Religion & Community',
+    'Nightlife & Parties', 'Family & Kids Fun', 'Networking & Social',
+    'Gaming & Esport', 'Music & Concerts', 'Cinema & Show',
+    'Other',
+  ];
 
-  useEffect(() => {
-    loadUniversities();
-  }, []);
+  const cities = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
+  const platforms = ['Zoom', 'Google Meet', 'Microsoft Teams', 'YouTube Live', 'Instagram Live', 'LinkedIn Live', 'Twitter Space', 'Other'];
+
+  useEffect(() => { loadUniversities(); }, []);
 
   const loadUniversities = async () => {
     try {
       const snapshot = await getDocs(collection(db, 'universities'));
-      setUniversities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const unis = snapshot.docs.map(doc => doc.data().name).filter(Boolean);
+      setUniversities(unis);
     } catch (err) {
       console.error('Error loading universities:', err);
       setUniversities([
-        { id: 1, name: 'University of Lagos (Unilag)' },
-        { id: 2, name: 'King Saud University (KSU)' },
-        { id: 3, name: 'University of Ibadan (UI)' },
-        { id: 4, name: 'Covenant University (CU)' },
-        { id: 5, name: 'University of Ilorin (Unilorin)' }
+        'University of Lagos (Unilag)', 'University of Ibadan (UI)',
+        'Covenant University (CU)', 'King Saud University (KSU)',
+        'University of Ilorin (Unilorin)',
       ]);
     }
   };
 
-  useEffect(() => {
-    if (isEdit) {
-      const loadEvent = async () => {
-        try {
-          const docSnap = await getDoc(doc(db, 'events', id));
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            const formattedData = { ...data };
-            if (data.date instanceof Timestamp) formattedData.date = data.date.toDate().toISOString().split('T')[0];
-            if (data.startDate instanceof Timestamp) formattedData.startDate = data.startDate.toDate().toISOString().split('T')[0];
-            if (data.endDate instanceof Timestamp) formattedData.endDate = data.endDate.toDate().toISOString().split('T')[0];
-            // ✅ Load images array
-            if (!formattedData.images) formattedData.images = [];
-            setFormData(prev => ({ ...prev, ...formattedData }));
-            if (data.ticketingOption) {
-              setTicketingOption(data.ticketingOption);
-              setTicketPrice(data.ticketPrice || '');
-              setTicketsAvailable(data.ticketsAvailable || 100);
-              setExternalTicketLink(data.externalTicketLink || '');
-              setServiceFeeType(data.serviceFeeType || 'fixed');
-              setServiceFeeAmount(data.serviceFeeAmount || 100);
-              setServiceFeePercentage(data.serviceFeePercentage || 2);
-            }
-          }
-        } catch (err) {
-          console.error('Error loading event:', err);
-        }
-        setFetchingEvent(false);
-      };
-      loadEvent();
-    }
-  }, [id, isEdit]);
-
-  const allCategories = [
-    'Business & Tech', 'Art & Culture', 'Food & Dining', 'Sport & Fitness',
-    'Education', 'Religion & Community', 'Nightlife & Parties', 'Family & Kids Fun',
-    'Networking & Social', 'Gaming & Esport', 'Music & Concerts', 'Cinema & Show'
-  ];
-
-  const platforms = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Twitter Space', 'YouTube Live', 'Facebook Live', 'Other'];
-
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
   };
 
-  // ✅ Main image upload
-  const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) { alert('Please select an image file'); return; }
-    if (file.size > 10 * 1024 * 1024) { alert('Image must be less than 10MB'); return; }
-    try {
-      setUploading(true);
-      setUploadProgress(0);
-      const compressedFile = await compressImage(file, 1200, 0.8);
-      const imageUrl = await uploadWithProgress(compressedFile, 'events', (progress) => setUploadProgress(progress));
-      setFormData(prev => ({ ...prev, imageUrl }));
-    } catch (error) {
-      alert(error.message || 'Failed to upload image. Please try again.');
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
-  };
+  const isVendor = formData.listingType === 'vendor';
+  const isEvent = formData.listingType === 'event';
+  const isPlace = formData.listingType === 'place';
+  const isVirtual = isEvent && (formData.eventType === 'webinar' || formData.eventType === 'hybrid');
+  const isPhysical = isPlace || (isEvent && (formData.eventType === 'physical' || formData.eventType === 'hybrid'));
 
-  // ✅ Additional images upload
-  const handleExtraImagesUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (!files.length) return;
+  const validate = () => {
+    const e = {};
 
-    const currentImages = formData.images || [];
-    const slotsLeft = 9 - currentImages.length;
-    const filesToUpload = files.slice(0, slotsLeft);
+    if (!formData.organizerName.trim()) e.organizerName = 'Name required';
+    if (!formData.organizerEmail.trim()) e.organizerEmail = 'Email required';
+    if (!formData.organizerPhone.trim()) e.organizerPhone = 'Phone required';
 
-    if (filesToUpload.length === 0) {
-      alert('Maximum 9 additional photos allowed (10 total including main)');
-      return;
+    if (isVendor) {
+      if (!formData.shopName.trim()) e.shopName = 'Shop name required';
+      if (!formData.vendorCategory) e.vendorCategory = 'Category required';
+      if (!formData.vendorUniversity) e.vendorUniversity = 'University required';
+      if (!formData.vendorDescription.trim()) e.vendorDescription = 'Description required';
+      if (formData.vendorDescription.trim().length < 20) e.vendorDescription = 'Min 20 characters';
+      if (!formData.whatsappNumber.trim()) e.whatsappNumber = 'WhatsApp number required';
+      if (vendorImages.length === 0) e.vendorImage = 'At least 1 shop photo required';
+      if (!formData.agreedToTerms) e.agreedToTerms = 'Please agree to terms';
+      setErrors(e);
+      return Object.keys(e).length === 0;
     }
 
-    try {
-      setUploadingExtra(true);
-      const uploadedUrls = [];
+    if (!formData.eventTitle.trim()) e.eventTitle = isPlace ? 'Place name required' : 'Event title required';
+    if (!formData.eventCategory) e.eventCategory = 'Category required';
+    if (formData.eventCategory === 'Other' && !formData.customCategory.trim()) e.customCategory = 'Please specify category';
+    if (formData.eventDescription.length < 100) e.eventDescription = 'Min 100 characters';
 
-      for (let i = 0; i < filesToUpload.length; i++) {
-        const file = filesToUpload[i];
-        if (!file.type.startsWith('image/')) continue;
-        if (file.size > 10 * 1024 * 1024) {
-          alert(`${file.name} is too large. Max 10MB per image.`);
-          continue;
-        }
-        setUploadExtraProgress(Math.round(((i + 1) / filesToUpload.length) * 100));
-        const compressed = await compressImage(file, 1200, 0.8);
-        const url = await uploadWithProgress(compressed, 'events', () => {});
-        uploadedUrls.push(url);
+    if (isEvent) {
+      if (!formData.startDate) e.startDate = 'Start date required';
+      if (!formData.startTime) e.startTime = 'Start time required';
+      if (formData.endDate && formData.startDate) {
+        const start = new Date(formData.startDate + 'T' + (formData.startTime || '00:00'));
+        const end = new Date(formData.endDate + 'T' + (formData.endTime || '23:59'));
+        if (end < start) e.endDate = 'End date cannot be before start date';
       }
-
-      setFormData(prev => ({
-        ...prev,
-        images: [...(prev.images || []), ...uploadedUrls]
-      }));
-    } catch (err) {
-      alert('Failed to upload some images: ' + err.message);
-    } finally {
-      setUploadingExtra(false);
-      setUploadExtraProgress(0);
-      e.target.value = '';
+      if (formData.eventType === 'webinar' || formData.eventType === 'hybrid') {
+        if (!formData.platform.trim()) e.platform = 'Platform required';
+        if (!formData.webinarLink.trim()) e.webinarLink = 'Registration link required';
+      }
+      if (formData.isUniversityEvent && !formData.universityName.trim()) e.universityName = 'University name required';
     }
-  };
 
-  // ✅ Remove extra image
-  const removeExtraImage = (index) => {
-    setFormData(prev => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== index)
-    }));
-  };
+    if (isPlace && !formData.alwaysOpen && !formData.operatingHours.trim()) e.operatingHours = 'Operating hours required (or check "Always Open")';
+    if (!formData.city) e.city = 'City required';
+    if (formData.city === 'Others' && !formData.customCity.trim()) e.customCity = 'Please specify city';
+    if (!formData.venueName.trim()) e.venueName = isPlace ? 'Place name required' : 'Venue required';
+    if (!formData.address.trim()) e.address = 'Address required';
 
-  const stringToTimestamp = (dateString) => {
-    if (!dateString) return null;
-    try { return Timestamp.fromDate(new Date(dateString)); }
-    catch { return null; }
+    if (formData.isFree === 'no') {
+      if (!formData.ticketPrice.trim()) e.ticketPrice = isPlace ? 'Entry fee required' : 'Price required';
+      if (formData.wantOutingstationTicketing === 'no' && !formData.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link required';
+    }
+
+    // ✅ Validate images — min 1
+    if (eventImages.length === 0) e.eventImage = 'At least 1 image required';
+    if (!formData.agreedToTerms) e.agreedToTerms = 'Please agree to terms';
+
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.category) { alert('Please select a category'); return; }
-    if (!formData.imageUrl) { alert('Please upload a main image'); return; }
-    if (ticketingOption === 'outingstation' && !ticketPrice) { alert('Please enter a ticket price'); return; }
-    if (ticketingOption === 'external' && !externalTicketLink) { alert('Please enter an external ticket link'); return; }
+    if (!validate()) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    setIsSubmitting(true);
 
-    setLoading(true);
     try {
-      const eventData = {
-        ...formData,
-        subCategory: 'events',
-        slug: generateSlug(formData.title),
-        price: formData.isFree ? 0 : Number(formData.price) || 0,
-        capacity: Number(formData.capacity) || 0,
-        date: stringToTimestamp(formData.date),
-        startDate: stringToTimestamp(formData.startDate),
-        endDate: stringToTimestamp(formData.endDate),
-        images: formData.images || [], // ✅ Save images array
-        ticketingOption,
-        ticketingEnabled: ticketingOption === 'outingstation',
-        hasOutingStationTicketing: ticketingOption === 'outingstation',
-        ticketPrice: ticketingOption === 'outingstation' ? Number(ticketPrice) : 0,
-        ticketsAvailable: ticketingOption === 'outingstation' ? Number(ticketsAvailable) : 0,
-        ticketsSold: isEdit ? formData.ticketsSold || 0 : 0,
-        ...(ticketingOption === 'outingstation' && !isEdit && { manageKey: generateManageKey() }),
-        serviceFeeType,
-        serviceFeeAmount: serviceFeeType === 'fixed' ? Number(serviceFeeAmount) : 0,
-        serviceFeePercentage: serviceFeeType === 'percentage' ? Number(serviceFeePercentage) : 0,
-        serviceFee: calculateServiceFee(),
-        externalTicketLink: ticketingOption === 'external' ? externalTicketLink : null,
-        updatedAt: serverTimestamp()
-      };
+      if (isVendor) {
+        // ✅ First image = main image, rest = additional images
+        const [imageUrl = '', ...additionalImages] = vendorImages;
 
-      if (isEdit) {
-        await updateDoc(doc(db, 'events', id), eventData);
-        setCreatedEvent({ id, ...eventData });
-      } else {
-        eventData.createdBy = auth.currentUser?.uid || 'admin';
-        eventData.createdAt = serverTimestamp();
-        eventData.savedCount = 0;
-        const docRef = await addDoc(collection(db, 'events'), eventData);
-        setCreatedEvent({ id: docRef.id, ...eventData });
+        await addDoc(collection(db, 'vendor_submissions'), {
+          organizerName: formData.organizerName,
+          organizerEmail: formData.organizerEmail,
+          organizerPhone: formData.organizerPhone,
+          shopName: formData.shopName,
+          category: formData.vendorCategory,
+          university: formData.vendorUniversity,
+          description: formData.vendorDescription,
+          whatsappNumber: formData.whatsappNumber,
+          imageUrl,
+          images: additionalImages,   // ✅ extra images
+          referralCode: formData.referralCode.trim().toUpperCase() || null,
+          status: 'pending',
+          submittedAt: serverTimestamp(),
+        });
+
+        setSubmitSuccess(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        setIsSubmitting(false);
+        return;
       }
-      setShowNotifyModal(true);
-    } catch (err) {
-      console.error('Error saving event:', err);
-      alert('❌ Error saving: ' + err.message);
+
+      // ✅ Event / Place — first image = main, rest = additional
+      const [imageUrl = '', ...additionalImages] = eventImages;
+
+      const finalCategory = formData.eventCategory === 'Other' && formData.customCategory.trim()
+        ? formData.customCategory.trim() : formData.eventCategory;
+      const finalCity = formData.city === 'Others' && formData.customCity.trim()
+        ? formData.customCity.trim() : formData.city;
+
+      await addDoc(collection(db, 'event_submissions'), {
+        organizerName: formData.organizerName,
+        organizerEmail: formData.organizerEmail,
+        organizerPhone: formData.organizerPhone,
+        organizationName: formData.organizationName || null,
+        referralCode: formData.referralCode.trim().toUpperCase() || null,
+        listingType: formData.listingType,
+        subCategory: formData.listingType === 'place' ? 'places' : (formData.isUniversityEvent ? 'campus' : 'events'),
+        eventTitle: formData.eventTitle,
+        eventCategory: finalCategory,
+        eventType: formData.listingType === 'event' ? formData.eventType : 'physical',
+        eventDescription: formData.eventDescription,
+        startDate: formData.listingType === 'event' ? formData.startDate : null,
+        startTime: formData.listingType === 'event' ? formData.startTime : null,
+        endDate: formData.listingType === 'event' ? (formData.endDate || formData.startDate) : null,
+        endTime: formData.listingType === 'event' ? (formData.endTime || formData.startTime) : null,
+        operatingHours: formData.listingType === 'place' ? (formData.alwaysOpen ? 'Always Open' : formData.operatingHours) : null,
+        alwaysOpen: formData.listingType === 'place' ? formData.alwaysOpen : false,
+        city: finalCity,
+        venueName: formData.venueName,
+        address: formData.address,
+        mapsLink: formData.mapsLink || null,
+        platform: formData.platform || null,
+        webinarLink: formData.webinarLink || null,
+        isFree: formData.isFree === 'yes',
+        ticketPrice: formData.isFree === 'yes' ? 0 : parseFloat(formData.ticketPrice) || 0,
+        wantOutingstationTicketing: formData.wantOutingstationTicketing === 'yes',
+        externalTicketLink: formData.externalTicketLink || null,
+        imageUrl,            // ✅ main image
+        images: additionalImages,  // ✅ additional images array
+        additionalInfo: formData.additionalInfo || null,
+        isUniversityEvent: formData.isUniversityEvent || false,
+        universityName: formData.universityName || null,
+        status: 'pending',
+        submittedAt: serverTimestamp(),
+      });
+
+      setSubmitSuccess(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (error) {
+      console.error('❌ SUBMISSION ERROR:', error);
+      alert('Submission failed. ' + error.message);
+    } finally {
+      setIsSubmitting(false);
     }
-    setLoading(false);
   };
 
-  const showReligionType = formData.category === 'Religion & Community';
-
-  if (fetchingEvent) {
+  if (submitSuccess) {
+    const images = isVendor ? vendorImages : eventImages;
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500"></div>
+      <div className="min-h-screen bg-gradient-to-br from-cyan-50 to-blue-50 flex items-center justify-center px-4 py-12">
+        <div className="max-w-lg w-full bg-white rounded-3xl shadow-2xl p-10 text-center">
+          <div className="w-20 h-20 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className="text-3xl font-bold text-gray-900 mb-3">
+            {isVendor ? 'Vendor' : isPlace ? 'Place' : 'Event'} Submitted! 🎉
+          </h2>
+          <p className="text-gray-600 text-lg mb-2">
+            <strong className="text-cyan-600">
+              "{isVendor ? formData.shopName : formData.eventTitle}"
+            </strong> is under review
+          </p>
+          {images.length > 1 && (
+            <p className="text-gray-500 text-sm mb-6">
+              📸 {images.length} photos submitted
+            </p>
+          )}
+          <div className="bg-cyan-50 rounded-2xl p-6 mb-8 text-left">
+            <h3 className="font-bold text-gray-900 mb-4 text-lg">📋 What Happens Next?</h3>
+            <div className="space-y-3">
+              <div className="flex items-start">
+                <span className="text-cyan-600 font-bold mr-3">•</span>
+                <span className="text-gray-700">Review within <strong>24-48 hours</strong></span>
+              </div>
+              <div className="flex items-start">
+                <span className="text-cyan-600 font-bold mr-3">•</span>
+                <span className="text-gray-700">Email updates to <strong>{formData.organizerEmail}</strong></span>
+              </div>
+              {isVendor && (
+                <div className="flex items-start">
+                  <span className="text-cyan-600 font-bold mr-3">•</span>
+                  <span className="text-gray-700">Once approved, students at <strong>{formData.vendorUniversity}</strong> can find you!</span>
+                </div>
+              )}
+              {formData.referralCode && (
+                <div className="flex items-start">
+                  <span className="text-cyan-600 font-bold mr-3">•</span>
+                  <span className="text-gray-700"><strong className="text-green-600">Get ₦100 credits</strong> when approved!</span>
+                </div>
+              )}
+              <div className="flex items-start">
+                <span className="text-cyan-600 font-bold mr-3">•</span>
+                <span className="text-gray-700">Once approved, <strong className="text-green-600">goes live!</strong></span>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <a href="/" className="block w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:from-cyan-700 hover:to-blue-700 transition shadow-lg">
+              Back to Home
+            </a>
+            <button onClick={() => window.location.reload()}
+              className="block w-full border-2 border-gray-300 text-gray-700 py-4 rounded-xl font-bold hover:bg-gray-50 transition">
+              Submit Another {isVendor ? 'Vendor' : isPlace ? 'Place' : 'Event'}
+            </button>
+          </div>
+          <p className="text-sm text-gray-500 mt-8">
+            Questions? <a href="mailto:admin@outingstation.com" className="text-cyan-600 hover:underline font-medium">admin@outingstation.com</a>
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-cyan-50 py-12 px-4">
+      <div className="max-w-4xl mx-auto">
 
-      <main className="flex-1 overflow-auto">
-        <header className="bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-4 sticky top-0 z-30">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 hover:bg-gray-100 rounded-lg">
-                <Menu size={24} />
-              </button>
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
-                {isEdit ? 'Edit Event' : 'Create New Event'}
-              </h2>
+        <div className="text-center mb-12">
+          <h1 className="text-5xl md:text-6xl font-black text-gray-900 mb-4 leading-tight">
+            List on<br/>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-blue-600">
+              OutingStation
+            </span>
+          </h1>
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            List events, venues, restaurants, campus vendors — anything worth discovering!
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-12">
+          {[
+            { icon: '📱', title: 'Massive Reach', desc: 'Thousands daily' },
+            { icon: '💰', title: '100% Free', desc: 'Zero fees' },
+            { icon: '🎫', title: 'Ticketing Help', desc: 'We can help' },
+            { icon: '⚡', title: 'Fast Approval', desc: '24-48 hours' },
+          ].map((b, i) => (
+            <div key={i} className="bg-white rounded-2xl p-4 md:p-6 shadow-lg hover:shadow-xl transition text-center">
+              <div className="text-3xl md:text-4xl mb-2 md:mb-3">{b.icon}</div>
+              <h3 className="font-bold text-gray-900 mb-1 text-sm md:text-base">{b.title}</h3>
+              <p className="text-xs md:text-sm text-gray-600">{b.desc}</p>
             </div>
-            <button onClick={() => navigate('/admin/events')} className="p-2 hover:bg-gray-100 rounded-lg">
-              <X size={24} />
-            </button>
-          </div>
-        </header>
+          ))}
+        </div>
 
-        <div className="p-4 sm:p-6 lg:p-8">
-          <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="bg-white rounded-3xl shadow-2xl p-8 md:p-12">
 
-              {/* Basic Info */}
+          {/* SECTION 1: Your Information */}
+          <div className="mb-10">
+            <div className="flex items-center mb-6">
+              <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">1</div>
+              <h2 className="text-2xl font-black text-gray-900">Your Information</h2>
+            </div>
+            <div className="grid md:grid-cols-2 gap-6">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Event Title *</label>
-                    <input
-                      type="text" name="title" value={formData.title} onChange={handleChange} required
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                      placeholder="e.g. Tech Innovation Summit 2025"
-                    />
-                  </div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Full Name <span className="text-red-500">*</span></label>
+                <input type="text" name="organizerName" value={formData.organizerName} onChange={handleChange}
+                  className={`w-full px-4 py-3 border-2 ${errors.organizerName ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                  placeholder="John Doe" />
+                {errors.organizerName && <p className="text-red-500 text-sm mt-1">{errors.organizerName}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Email <span className="text-red-500">*</span></label>
+                <input type="email" name="organizerEmail" value={formData.organizerEmail} onChange={handleChange}
+                  className={`w-full px-4 py-3 border-2 ${errors.organizerEmail ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                  placeholder="john@example.com" />
+                {errors.organizerEmail && <p className="text-red-500 text-sm mt-1">{errors.organizerEmail}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Phone Number <span className="text-red-500">*</span></label>
+                <input type="tel" name="organizerPhone" value={formData.organizerPhone} onChange={handleChange}
+                  className={`w-full px-4 py-3 border-2 ${errors.organizerPhone ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                  placeholder="+234 801 234 5678" />
+                {errors.organizerPhone && <p className="text-red-500 text-sm mt-1">{errors.organizerPhone}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Organization Name</label>
+                <input type="text" name="organizationName" value={formData.organizationName} onChange={handleChange}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-cyan-500 focus:outline-none transition"
+                  placeholder="Company Ltd (optional)" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Your Referral Code <span className="text-gray-400 text-xs">(Optional)</span>
+                </label>
+                <div className="relative">
+                  <Gift className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-500" size={20} />
+                  <input type="text" name="referralCode" value={formData.referralCode} onChange={handleChange}
+                    maxLength={12}
+                    className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition uppercase"
+                    placeholder="JOHN2024" />
+                </div>
+                <p className="text-xs text-green-600 mt-2 font-medium flex items-center gap-1">
+                  <span>💰</span><span>Earn ₦100 credits when your listing is approved!</span>
+                </p>
+              </div>
+            </div>
+          </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
-                    <textarea
-                      name="description" value={formData.description} onChange={handleChange} required rows={4}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                      placeholder="Describe your event..."
-                    />
-                  </div>
+          {/* SECTION 2: Listing Details */}
+          <div className="mb-10">
+            <div className="flex items-center mb-6">
+              <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">2</div>
+              <h2 className="text-2xl font-black text-gray-900">Listing Details</h2>
+            </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Event Type *</label>
-                    <select
-                      name="eventType" value={formData.eventType} onChange={handleChange} required
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                    >
-                      <option value="regular">🎉 Regular Event</option>
-                      <option value="campus">🎓 Campus Event</option>
-                      <option value="webinar">📹 Webinar / Virtual</option>
-                    </select>
-                  </div>
+            {/* Listing type */}
+            <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-6 border-2 border-cyan-200 mb-6">
+              <label className="block text-sm font-bold text-gray-900 mb-3">What are you listing? <span className="text-red-500">*</span></label>
+              <div className="grid md:grid-cols-3 gap-4">
+                {[
+                  { value: 'event', icon: '🎉', label: 'Event', desc: 'Concert, festival, workshop, conference' },
+                  { value: 'place', icon: '🏛️', label: 'Place/Venue', desc: 'Museum, restaurant, park, cinema' },
+                  { value: 'vendor', icon: '🛒', label: 'Campus Vendor', desc: 'Food, fashion, accessories & more' },
+                ].map(item => (
+                  <button key={item.value} type="button"
+                    onClick={() => { setFormData(prev => ({ ...prev, listingType: item.value })); setEventImages([]); setVendorImages([]); }}
+                    className={`px-6 py-4 border-2 rounded-xl text-left transition ${
+                      formData.listingType === item.value
+                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-600 shadow-lg'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-cyan-500'
+                    }`}>
+                    <div className="text-3xl mb-2">{item.icon}</div>
+                    <div className="font-bold text-lg">{item.label}</div>
+                    <div className={`text-sm ${formData.listingType === item.value ? 'text-cyan-100' : 'text-gray-500'}`}>{item.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
 
+            {/* VENDOR FIELDS */}
+            {isVendor && (
+              <div className="space-y-6">
+                <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <ShoppingBag className="text-emerald-600" size={24} />
+                    <h3 className="font-bold text-gray-900 text-lg">Campus Vendor Details</h3>
+                  </div>
+                  <p className="text-sm text-gray-600">Register your campus shop — students will find you through the OutingStation app and contact you via WhatsApp.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Shop Name <span className="text-red-500">*</span></label>
+                  <input type="text" name="shopName" value={formData.shopName} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.shopName ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                    placeholder="e.g. Mama Tee Kitchen, Jay Accessories" />
+                  {errors.shopName && <p className="text-red-500 text-sm mt-1">{errors.shopName}</p>}
+                </div>
+                <div className="grid md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-                    <select
-                      name="category" value={formData.category} onChange={handleChange} required
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                    >
-                      <option value="">Select a category</option>
-                      {allCategories.map(category => (
-                        <option key={category} value={category}>{category}</option>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Vendor Category <span className="text-red-500">*</span></label>
+                    <select name="vendorCategory" value={formData.vendorCategory} onChange={handleChange}
+                      className={`w-full px-4 py-3 border-2 ${errors.vendorCategory ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}>
+                      <option value="">Select category</option>
+                      {VENDOR_CATEGORIES.map(cat => (
+                        <option key={cat.value} value={cat.value}>{cat.emoji} {cat.value}</option>
                       ))}
                     </select>
+                    {errors.vendorCategory && <p className="text-red-500 text-sm mt-1">{errors.vendorCategory}</p>}
                   </div>
-
-                  {showReligionType && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Religion Type *</label>
-                      <select
-                        name="religionType" value={formData.religionType} onChange={handleChange} required
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                      >
-                        <option value="">Select religion type</option>
-                        <option value="Christianity">Christianity</option>
-                        <option value="Islam">Islam</option>
-                        <option value="Others">Others</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Campus Details */}
-              {formData.eventType === 'campus' && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Campus Event Details</h3>
-                  <select
-                    name="university" value={formData.university} onChange={handleChange} required
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                  >
-                    <option value="">Select university</option>
-                    {universities.map(uni => (
-                      <option key={uni.id} value={uni.name}>{uni.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Webinar Details */}
-              {formData.eventType === 'webinar' && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Webinar Details</h3>
-                  <div className="space-y-4">
-                    <select
-                      name="platform" value={formData.platform} onChange={handleChange} required
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                    >
-                      <option value="">Select platform</option>
-                      {platforms.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                    <input
-                      type="url" name="platformLink" value={formData.platformLink} onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                      placeholder="Meeting link (optional)"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Ticketing */}
-              <div>
-                <h3 className="text-lg font-bold mb-4">💳 Ticketing Options</h3>
-
-                <div className="mb-3">
-                  <label className="flex items-start gap-3 cursor-pointer p-4 border rounded-lg hover:bg-gray-50">
-                    <input type="radio" name="ticketingOption" value="none" checked={ticketingOption === 'none'} onChange={(e) => setTicketingOption(e.target.value)} className="mt-1" />
-                    <div>
-                      <p className="font-semibold">No Ticketing</p>
-                      <p className="text-sm text-gray-600">Free event or handle tickets yourself</p>
-                    </div>
-                  </label>
-                </div>
-
-                <div className="mb-3">
-                  <label className="flex items-start gap-3 cursor-pointer p-4 border rounded-lg hover:bg-gray-50">
-                    <input type="radio" name="ticketingOption" value="outingstation" checked={ticketingOption === 'outingstation'} onChange={(e) => setTicketingOption(e.target.value)} className="mt-1" />
-                    <div className="flex-1">
-                      <p className="font-semibold">OutingStation Ticketing ⭐</p>
-                      <p className="text-sm text-gray-600 mb-2">Sell tickets directly. Automatic payment, tickets, and check-in.</p>
-
-                      {ticketingOption === 'outingstation' && (
-                        <div className="mt-4 space-y-4 border-l-2 border-cyan-500 pl-4">
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Ticket Price (₦) *</label>
-                            <input type="number" value={ticketPrice} onChange={(e) => setTicketPrice(e.target.value)} placeholder="e.g., 5000" className="w-full px-3 py-2 border rounded-lg" />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Tickets Available *</label>
-                            <input type="number" value={ticketsAvailable} onChange={(e) => setTicketsAvailable(e.target.value)} placeholder="e.g., 100" className="w-full px-3 py-2 border rounded-lg" />
-                          </div>
-
-                          <div className="bg-gray-50 p-4 rounded-lg">
-                            <label className="block text-sm font-medium mb-3">Service Fee Structure</label>
-                            <div className="space-y-3">
-                              <div>
-                                <label className="flex items-center gap-2">
-                                  <input type="radio" name="serviceFeeType" value="fixed" checked={serviceFeeType === 'fixed'} onChange={(e) => setServiceFeeType(e.target.value)} />
-                                  <span className="text-sm font-medium">Fixed Amount (₦)</span>
-                                </label>
-                                {serviceFeeType === 'fixed' && (
-                                  <input type="number" value={serviceFeeAmount} onChange={(e) => setServiceFeeAmount(e.target.value)} placeholder="100" className="w-full px-3 py-2 border rounded-lg text-sm mt-2" />
-                                )}
-                              </div>
-                              <div>
-                                <label className="flex items-center gap-2">
-                                  <input type="radio" name="serviceFeeType" value="percentage" checked={serviceFeeType === 'percentage'} onChange={(e) => setServiceFeeType(e.target.value)} />
-                                  <span className="text-sm font-medium">Percentage (%)</span>
-                                </label>
-                                {serviceFeeType === 'percentage' && (
-                                  <input type="number" value={serviceFeePercentage} onChange={(e) => setServiceFeePercentage(e.target.value)} placeholder="2" step="0.1" className="w-full px-3 py-2 border rounded-lg text-sm mt-2" />
-                                )}
-                              </div>
-                              <div>
-                                <label className="flex items-center gap-2">
-                                  <input type="radio" name="serviceFeeType" value="none" checked={serviceFeeType === 'none'} onChange={(e) => setServiceFeeType(e.target.value)} />
-                                  <span className="text-sm font-medium">No Service Fee</span>
-                                </label>
-                              </div>
-                            </div>
-                          </div>
-
-                          {ticketPrice > 0 && (
-                            <div className="bg-cyan-50 p-4 rounded-lg text-sm">
-                              <p className="font-medium mb-2">💰 Pricing Breakdown:</p>
-                              <div className="space-y-1 mb-3">
-                                <div className="flex justify-between"><span>Ticket Price:</span><span>₦{parseInt(ticketPrice || 0).toLocaleString()}</span></div>
-                                <div className="flex justify-between"><span>Service Fee:</span><span>₦{calculateServiceFee().toLocaleString()}</span></div>
-                                <div className="flex justify-between"><span>Payment Processing:</span><span>₦{calculatePaystackFee().toLocaleString()}</span></div>
-                                <div className="border-t border-cyan-200 pt-2 flex justify-between font-bold">
-                                  <span>Total User Pays:</span>
-                                  <span className="text-cyan-700">₦{calculateTotal().toLocaleString()}</span>
-                                </div>
-                              </div>
-                              <div className="pt-2 border-t border-cyan-200 space-y-1 text-xs">
-                                <div className="flex justify-between"><span>💼 Organizer receives:</span><span className="font-semibold text-green-700">₦{parseInt(ticketPrice || 0).toLocaleString()}</span></div>
-                                <div className="flex justify-between"><span>🏢 OutingStation earns:</span><span className="font-semibold text-blue-700">₦{calculateServiceFee().toLocaleString()}</span></div>
-                                <div className="flex justify-between"><span>💳 Paystack gets:</span><span className="font-semibold text-gray-700">₦{calculatePaystackFee().toLocaleString()}</span></div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </label>
-                </div>
-
-                <div className="mb-3">
-                  <label className="flex items-start gap-3 cursor-pointer p-4 border rounded-lg hover:bg-gray-50">
-                    <input type="radio" name="ticketingOption" value="external" checked={ticketingOption === 'external'} onChange={(e) => setTicketingOption(e.target.value)} className="mt-1" />
-                    <div className="flex-1">
-                      <p className="font-semibold">External Ticketing Link</p>
-                      <p className="text-sm text-gray-600">Use Eventbrite or your own ticketing platform</p>
-                      {ticketingOption === 'external' && (
-                        <div className="mt-4 border-l-2 border-gray-400 pl-4">
-                          <label className="block text-sm font-medium mb-1">Ticket Link (URL) *</label>
-                          <input
-                            type="url" value={externalTicketLink} onChange={(e) => setExternalTicketLink(e.target.value)}
-                            placeholder="https://eventbrite.com/your-event"
-                            className="w-full px-3 py-2 border rounded-lg"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Schedule */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Event Schedule</h3>
-                <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Event Duration *</label>
-                    <select
-                      name="eventDuration" value={formData.eventDuration} onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                    >
-                      <option value="single">Single Day Event</option>
-                      <option value="multi">Multi-Day Event</option>
-                      <option value="recurring">Recurring Event</option>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">University / Campus <span className="text-red-500">*</span></label>
+                    <select name="vendorUniversity" value={formData.vendorUniversity} onChange={handleChange}
+                      className={`w-full px-4 py-3 border-2 ${errors.vendorUniversity ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}>
+                      <option value="">Select university</option>
+                      {universities.map(uni => <option key={uni} value={uni}>{uni}</option>)}
                     </select>
-                  </div>
-
-                  {formData.eventDuration === 'single' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Date *</label>
-                        <input type="date" name="date" value={formData.date} onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Time *</label>
-                        <input type="time" name="time" value={formData.time} onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-                      </div>
-                    </div>
-                  )}
-
-                  {formData.eventDuration === 'multi' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Start Date *</label>
-                        <input type="date" name="startDate" value={formData.startDate} onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">End Date *</label>
-                        <input type="date" name="endDate" value={formData.endDate} onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Daily Start Time *</label>
-                        <input type="time" name="dailyStartTime" value={formData.dailyStartTime} onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Daily End Time *</label>
-                        <input type="time" name="dailyEndTime" value={formData.dailyEndTime} onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-                      </div>
-                    </div>
-                  )}
-
-                  {formData.eventDuration === 'recurring' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Recurring Pattern *</label>
-                        <select name="recurringPattern" value={formData.recurringPattern} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none">
-                          <option value="daily">Daily</option>
-                          <option value="weekly">Weekly</option>
-                          <option value="weekends">Weekends Only</option>
-                          <option value="weekdays">Weekdays Only</option>
-                        </select>
-                      </div>
-                      {formData.recurringPattern === 'weekly' && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Day of Week *</label>
-                          <select name="recurringDay" value={formData.recurringDay} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none">
-                            {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d => (
-                              <option key={d} value={d}>{d}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Time *</label>
-                        <input type="time" name="recurringTime" value={formData.recurringTime} onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Organizer */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  Organizer Information <span className="text-sm font-normal text-gray-500">(Optional)</span>
-                </h3>
-                <div className="space-y-4">
-                  <input type="text" name="organizerName" value={formData.organizerName} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Organizer name" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <input type="tel" name="organizerPhone" value={formData.organizerPhone} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Phone number" />
-                    <input type="email" name="organizerEmail" value={formData.organizerEmail} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Email address" />
+                    {errors.vendorUniversity && <p className="text-red-500 text-sm mt-1">{errors.vendorUniversity}</p>}
                   </div>
                 </div>
-              </div>
-
-              {/* Location */}
-              {formData.eventType !== 'webinar' && (
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Location</h3>
-                  <div className="space-y-4">
-                    <input type="text" name="location" value={formData.location} onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="City (e.g. Lagos, Nigeria)" />
-                    <input type="text" name="address" value={formData.address} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Full venue address" />
-                    <input type="url" name="mapLocation" value={formData.mapLocation} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Google Maps link (optional)" />
-                  </div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Description <span className="text-red-500">*</span></label>
+                  <textarea name="vendorDescription" value={formData.vendorDescription} onChange={handleChange} rows={3}
+                    className={`w-full px-4 py-3 border-2 ${errors.vendorDescription ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                    placeholder="What do you sell? e.g. Best jollof rice on campus, affordable and tasty meals daily" />
+                  {errors.vendorDescription && <p className="text-red-500 text-sm mt-1">{errors.vendorDescription}</p>}
                 </div>
-              )}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">WhatsApp Number <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg">📱</span>
+                    <input type="tel" name="whatsappNumber" value={formData.whatsappNumber} onChange={handleChange}
+                      className={`w-full pl-11 pr-4 py-3 border-2 ${errors.whatsappNumber ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                      placeholder="+234 800 000 0000" />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Students will contact you directly on WhatsApp</p>
+                  {errors.whatsappNumber && <p className="text-red-500 text-sm mt-1">{errors.whatsappNumber}</p>}
+                </div>
 
-              {/* Pricing */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Pricing</h3>
-                <div className="space-y-4">
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" name="isFree" checked={formData.isFree} onChange={handleChange} className="w-4 h-4 text-cyan-500 border-gray-300 rounded" />
-                    <span className="text-sm font-medium text-gray-700">This is a free event</span>
+                {/* ✅ Vendor multi-image upload */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">
+                    Shop Photos <span className="text-red-500">*</span>
+                    <span className="text-gray-400 text-xs font-normal ml-2">Min 1, max 10</span>
                   </label>
-                  {!formData.isFree && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Display Price (shown on event card)</label>
-                      <input type="number" name="price" value={formData.price} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Price in ₦" />
-                      <p className="text-xs text-gray-500 mt-1">Actual ticket pricing is set in Ticketing Options above</p>
-                    </div>
-                  )}
-                  <input type="number" name="capacity" value={formData.capacity} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Capacity (max attendees)" />
+                  <p className="text-xs text-gray-500 mb-3">Show your products, shop interior, or menu. More photos = more trust from students!</p>
+                  <MultiImageUploader
+                    images={vendorImages}
+                    onAdd={(urls) => setVendorImages(prev => [...prev, ...urls].slice(0, 10))}
+                    onRemove={(index) => setVendorImages(prev => prev.filter((_, i) => i !== index))}
+                    maxImages={10}
+                    folder="vendors"
+                    label="Shop photos"
+                  />
+                  {errors.vendorImage && <p className="text-red-500 text-sm mt-2">{errors.vendorImage}</p>}
                 </div>
               </div>
+            )}
 
-              {/* ✅ Image Upload — Main + Additional */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                  Event Images *
-                </h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  Add up to 10 photos. Users can swipe through all photos on the event page.
-                </p>
-
-                {/* Main image */}
-                <div className="mb-4">
-                  <p className="text-sm font-medium text-gray-700 mb-2">
-                    Main Photo *
-                    <span className="text-gray-400 text-xs ml-2">(shown on event cards and as first photo)</span>
-                  </p>
-                  <div className="flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-cyan-400 transition">
-                    <div className="space-y-1 text-center w-full">
-                      {formData.imageUrl ? (
-                        <div>
-                          <img src={formData.imageUrl} alt="Preview" className="mx-auto h-48 w-auto rounded-lg object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => setFormData(prev => ({ ...prev, imageUrl: '' }))}
-                            className="mt-2 text-sm text-red-600 hover:text-red-700 font-medium"
-                          >
-                            Remove Main Photo
+            {/* EVENT / PLACE FIELDS */}
+            {!isVendor && (
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">{isPlace ? 'Place Name' : 'Event Title'} <span className="text-red-500">*</span></label>
+                  <input type="text" name="eventTitle" value={formData.eventTitle} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.eventTitle ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                    placeholder={isPlace ? 'National Museum Lagos' : 'Lagos Music Festival 2026'} />
+                  {errors.eventTitle && <p className="text-red-500 text-sm mt-1">{errors.eventTitle}</p>}
+                </div>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Category <span className="text-red-500">*</span></label>
+                    <select name="eventCategory" value={formData.eventCategory} onChange={handleChange}
+                      className={`w-full px-4 py-3 border-2 ${errors.eventCategory ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}>
+                      <option value="">Select category</option>
+                      {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                    {errors.eventCategory && <p className="text-red-500 text-sm mt-1">{errors.eventCategory}</p>}
+                    {formData.eventCategory === 'Other' && (
+                      <div className="mt-3">
+                        <input type="text" name="customCategory" value={formData.customCategory} onChange={handleChange}
+                          placeholder="Please specify category"
+                          className={`w-full px-4 py-3 border-2 ${errors.customCategory ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`} />
+                        {errors.customCategory && <p className="text-red-500 text-sm mt-1">{errors.customCategory}</p>}
+                      </div>
+                    )}
+                  </div>
+                  {isEvent && (
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">Event Type <span className="text-red-500">*</span></label>
+                      <div className="grid grid-cols-1 gap-3">
+                        {[
+                          { value: 'physical', label: 'Physical (In-Person)' },
+                          { value: 'webinar', label: 'Virtual (Online)' },
+                          { value: 'hybrid', label: 'Hybrid (Both)' }
+                        ].map(type => (
+                          <button key={type.value} type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, eventType: type.value }))}
+                            className={`px-4 py-3 border-2 rounded-xl text-sm font-bold transition ${formData.eventType === type.value ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-600' : 'bg-white text-gray-700 border-gray-200 hover:border-cyan-500'}`}>
+                            {type.label}
                           </button>
-                        </div>
-                      ) : (
-                        <>
-                          <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                          <div className="flex text-sm text-gray-600 justify-center">
-                            <label className="cursor-pointer font-medium text-cyan-600 hover:text-cyan-500">
-                              <span>Upload main photo</span>
-                              <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} className="sr-only" />
-                            </label>
-                            <p className="pl-1">or drag and drop</p>
-                          </div>
-                          <p className="text-xs text-gray-500">PNG, JPG, WEBP up to 10MB</p>
-                        </>
-                      )}
-                      {uploading && (
-                        <div className="mt-4">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div className="bg-cyan-500 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
-                          </div>
-                          <p className="text-sm text-gray-600 mt-2">
-                            {uploadProgress < 100 ? `Uploading... ${uploadProgress}%` : 'Processing...'}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Additional photos — only show after main image uploaded */}
-                {formData.imageUrl && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                      Additional Photos
-                      <span className="text-gray-400 text-xs ml-2">
-                        ({(formData.images || []).length}/9 added)
-                      </span>
-                    </p>
-
-                    {/* Existing additional images grid */}
-                    {(formData.images || []).length > 0 && (
-                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
-                        {(formData.images || []).map((img, index) => (
-                          <div key={index} className="relative group">
-                            <img
-                              src={img}
-                              alt={`Photo ${index + 1}`}
-                              className="w-full h-20 object-cover rounded-lg border border-gray-200"
-                              onError={(e) => { e.target.src = 'https://via.placeholder.com/80'; }}
-                            />
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition" />
-                            <button
-                              type="button"
-                              onClick={() => removeExtraImage(index)}
-                              className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md"
-                            >
-                              <X size={10} />
-                            </button>
-                            <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-1 rounded opacity-0 group-hover:opacity-100 transition">
-                              #{index + 2}
-                            </div>
-                          </div>
                         ))}
                       </div>
-                    )}
-
-                    {/* Upload more button */}
-                    {(formData.images || []).length < 9 && (
-                      <label className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed rounded-lg cursor-pointer transition ${
-                        uploadingExtra
-                          ? 'border-cyan-300 bg-cyan-50 opacity-70'
-                          : 'border-gray-300 hover:border-cyan-400 hover:bg-cyan-50'
-                      }`}>
-                        {uploadingExtra ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-500" />
-                            <span className="text-sm text-cyan-600 font-medium">
-                              Uploading {uploadExtraProgress}%...
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <Plus size={18} className="text-gray-400" />
-                            <span className="text-sm text-gray-600 font-medium">
-                              Add More Photos ({9 - (formData.images || []).length} slots left)
-                            </span>
-                          </>
+                      <div className="mt-4 bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
+                        <div className="flex items-start">
+                          <input type="checkbox" name="isUniversityEvent" checked={formData.isUniversityEvent} onChange={handleChange}
+                            className="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mt-0.5 mr-3" />
+                          <div className="flex-1">
+                            <label className="text-sm font-bold text-gray-900 cursor-pointer">🎓 This is a University/Campus Event</label>
+                            <p className="text-xs text-gray-600 mt-1">Check this if your event is happening at a university campus</p>
+                          </div>
+                        </div>
+                        {formData.isUniversityEvent && (
+                          <div className="mt-3">
+                            <input type="text" name="universityName" value={formData.universityName} onChange={handleChange}
+                              placeholder="Enter university name (e.g., University of Lagos)"
+                              className={`w-full px-4 py-3 border-2 ${errors.universityName ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-blue-500 focus:outline-none transition`} />
+                            {errors.universityName && <p className="text-red-500 text-sm mt-1">{errors.universityName}</p>}
+                          </div>
                         )}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          disabled={uploadingExtra}
-                          onChange={handleExtraImagesUpload}
-                          className="sr-only"
-                        />
-                      </label>
-                    )}
-
-                    {(formData.images || []).length >= 9 && (
-                      <div className="text-center py-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <p className="text-sm text-gray-500">✅ Maximum 10 photos reached (1 main + 9 additional)</p>
                       </div>
-                    )}
-
-                    <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <line x1="12" y1="8" x2="12" y2="12"/>
-                        <line x1="12" y1="16" x2="12.01" y2="16"/>
-                      </svg>
-                      Users can swipe through all photos on the event page. Hover photos to remove them.
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Description <span className="text-red-500">*</span> (min 100 characters)</label>
+                  <textarea name="eventDescription" value={formData.eventDescription} onChange={handleChange} rows={5}
+                    className={`w-full px-4 py-3 border-2 ${errors.eventDescription ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                    placeholder={isPlace ? 'Describe this place...' : 'Describe your event...'} />
+                  <div className="flex justify-between mt-1">
+                    {errors.eventDescription && <p className="text-red-500 text-sm">{errors.eventDescription}</p>}
+                    <p className={`text-sm ml-auto ${formData.eventDescription.length >= 100 ? 'text-green-600' : 'text-gray-500'}`}>
+                      {formData.eventDescription.length}/100
                     </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* SECTION 3: Date & Time (Events only) */}
+          {isEvent && (
+            <div className="mb-10">
+              <div className="flex items-center mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">3</div>
+                <h2 className="text-2xl font-black text-gray-900">Date & Time</h2>
+              </div>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Start Date <span className="text-red-500">*</span></label>
+                  <input type="date" name="startDate" value={formData.startDate} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.startDate ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`} />
+                  {errors.startDate && <p className="text-red-500 text-sm mt-1">{errors.startDate}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Start Time <span className="text-red-500">*</span></label>
+                  <input type="time" name="startTime" value={formData.startTime} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.startTime ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`} />
+                  {errors.startTime && <p className="text-red-500 text-sm mt-1">{errors.startTime}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">End Date</label>
+                  <input type="date" name="endDate" value={formData.endDate} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.endDate ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`} />
+                  {errors.endDate && <p className="text-red-500 text-sm mt-1">{errors.endDate}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">End Time</label>
+                  <input type="time" name="endTime" value={formData.endTime} onChange={handleChange}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-cyan-500 focus:outline-none transition" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 3: Operating Hours (Places only) */}
+          {isPlace && (
+            <div className="mb-10">
+              <div className="flex items-center mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">3</div>
+                <h2 className="text-2xl font-black text-gray-900">Operating Hours</h2>
+              </div>
+              <div className="space-y-4">
+                <div className="flex items-center mb-4">
+                  <input type="checkbox" name="alwaysOpen" checked={formData.alwaysOpen} onChange={handleChange}
+                    className="h-5 w-5 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500 mr-3" />
+                  <label className="text-sm font-bold text-gray-700">This place is always open (24/7)</label>
+                </div>
+                {!formData.alwaysOpen && (
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Operating Hours <span className="text-red-500">*</span></label>
+                    <textarea name="operatingHours" value={formData.operatingHours} onChange={handleChange} rows={3}
+                      className={`w-full px-4 py-3 border-2 ${errors.operatingHours ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                      placeholder="Mon-Fri: 9AM-5PM&#10;Sat-Sun: 10AM-8PM" />
+                    {errors.operatingHours && <p className="text-red-500 text-sm mt-1">{errors.operatingHours}</p>}
                   </div>
                 )}
               </div>
+            </div>
+          )}
 
-              {/* Visibility */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Visibility</h3>
-                <div className="space-y-4">
-                  <select name="status" value={formData.status} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none">
-                    <option value="published">Published</option>
-                    <option value="draft">Draft</option>
-                    <option value="pending">Pending Review</option>
+          {/* SECTION 4: Location */}
+          {isPhysical && (
+            <div className="mb-10">
+              <div className="flex items-center mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">4</div>
+                <h2 className="text-2xl font-black text-gray-900">Location</h2>
+              </div>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">City <span className="text-red-500">*</span></label>
+                  <select name="city" value={formData.city} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.city ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}>
+                    <option value="">Select city</option>
+                    {cities.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
-                  <div className="flex gap-6">
-                    <label className="flex items-center gap-2">
-                      <input type="checkbox" name="isFeatured" checked={formData.isFeatured} onChange={handleChange} className="w-4 h-4 text-cyan-500 border-gray-300 rounded" />
-                      <span className="text-sm font-medium text-gray-700">Featured</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input type="checkbox" name="isTrending" checked={formData.isTrending} onChange={handleChange} className="w-4 h-4 text-cyan-500 border-gray-300 rounded" />
-                      <span className="text-sm font-medium text-gray-700">Trending</span>
-                    </label>
-                  </div>
+                  {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
+                  {formData.city === 'Others' && (
+                    <div className="mt-3">
+                      <input type="text" name="customCity" value={formData.customCity} onChange={handleChange}
+                        placeholder="Enter your city"
+                        className={`w-full px-4 py-3 border-2 ${errors.customCity ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`} />
+                      {errors.customCity && <p className="text-red-500 text-sm mt-1">{errors.customCity}</p>}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">{isPlace ? 'Place Name' : 'Venue Name'} <span className="text-red-500">*</span></label>
+                  <input type="text" name="venueName" value={formData.venueName} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.venueName ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                    placeholder={isPlace ? 'National Museum' : 'Eko Hotel & Suites'} />
+                  {errors.venueName && <p className="text-red-500 text-sm mt-1">{errors.venueName}</p>}
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Full Address <span className="text-red-500">*</span></label>
+                  <input type="text" name="address" value={formData.address} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.address ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                    placeholder="123 Main Street, Victoria Island, Lagos" />
+                  {errors.address && <p className="text-red-500 text-sm mt-1">{errors.address}</p>}
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Google Maps Link</label>
+                  <input type="url" name="mapsLink" value={formData.mapsLink} onChange={handleChange}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-cyan-500 focus:outline-none transition"
+                    placeholder="https://maps.google.com/..." />
                 </div>
               </div>
+            </div>
+          )}
 
-              {/* Actions */}
-              <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200">
-                <button type="submit" disabled={loading || uploading || uploadingExtra}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition font-medium disabled:opacity-50"
-                >
-                  <Save size={20} />
-                  {loading ? 'Saving...' : isEdit ? 'Update Event' : 'Create Event'}
+          {/* SECTION 5: Virtual Details */}
+          {isVirtual && (
+            <div className="mb-10">
+              <div className="flex items-center mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">5</div>
+                <h2 className="text-2xl font-black text-gray-900">Virtual Event Details</h2>
+              </div>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Platform <span className="text-red-500">*</span></label>
+                  <select name="platform" value={formData.platform} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.platform ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}>
+                    <option value="">Select platform</option>
+                    {platforms.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  {errors.platform && <p className="text-red-500 text-sm mt-1">{errors.platform}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Registration Link <span className="text-red-500">*</span></label>
+                  <input type="url" name="webinarLink" value={formData.webinarLink} onChange={handleChange}
+                    className={`w-full px-4 py-3 border-2 ${errors.webinarLink ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                    placeholder="https://zoom.us/webinar/..." />
+                  {errors.webinarLink && <p className="text-red-500 text-sm mt-1">{errors.webinarLink}</p>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 6: Ticketing */}
+          {!isVendor && (
+            <div className="mb-10">
+              <div className="flex items-center mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">6</div>
+                <h2 className="text-2xl font-black text-gray-900">{isPlace ? 'Entry Fee' : 'Ticketing'}</h2>
+              </div>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-3">{isPlace ? 'Is entry free?' : 'Is this event free?'} <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-2 gap-4">
+                    {[{ value: 'yes', label: 'Free' }, { value: 'no', label: isPlace ? 'Paid Entry' : 'Paid Event' }].map(opt => (
+                      <button key={opt.value} type="button" onClick={() => setFormData(prev => ({ ...prev, isFree: opt.value }))}
+                        className={`px-6 py-3 border-2 rounded-xl font-bold transition ${formData.isFree === opt.value ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-600' : 'bg-white text-gray-700 border-gray-200 hover:border-cyan-500'}`}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {formData.isFree === 'no' && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">{isPlace ? 'Entry Fee (₦)' : 'Ticket Price (₦)'} <span className="text-red-500">*</span></label>
+                      <input type="number" name="ticketPrice" value={formData.ticketPrice} onChange={handleChange}
+                        className={`w-full px-4 py-3 border-2 ${errors.ticketPrice ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                        placeholder="5000" />
+                      {errors.ticketPrice && <p className="text-red-500 text-sm mt-1">{errors.ticketPrice}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-3">Do you want OutingStation to handle ticketing?</label>
+                      <div className="grid grid-cols-2 gap-4">
+                        {[{ value: 'yes', label: 'Yes, Please!' }, { value: 'no', label: "No, I Have My Own" }].map(opt => (
+                          <button key={opt.value} type="button" onClick={() => setFormData(prev => ({ ...prev, wantOutingstationTicketing: opt.value }))}
+                            className={`px-6 py-3 border-2 rounded-xl font-bold transition ${formData.wantOutingstationTicketing === opt.value ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-600' : 'bg-white text-gray-700 border-gray-200 hover:border-cyan-500'}`}>
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {formData.wantOutingstationTicketing === 'no' && (
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">External Ticket Link <span className="text-red-500">*</span></label>
+                        <input type="url" name="externalTicketLink" value={formData.externalTicketLink} onChange={handleChange}
+                          className={`w-full px-4 py-3 border-2 ${errors.externalTicketLink ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}
+                          placeholder="https://eventbrite.com/..." />
+                        {errors.externalTicketLink && <p className="text-red-500 text-sm mt-1">{errors.externalTicketLink}</p>}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ✅ SECTION 7: Images — Events & Places */}
+          {!isVendor && (
+            <div className="mb-10">
+              <div className="flex items-center mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">7</div>
+                <div>
+                  <h2 className="text-2xl font-black text-gray-900">{isPlace ? 'Place' : 'Event'} Photos</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">Min 1, max 10 photos. Users can swipe through all photos.</p>
+                </div>
+              </div>
+              <MultiImageUploader
+                images={eventImages}
+                onAdd={(urls) => setEventImages(prev => [...prev, ...urls].slice(0, 10))}
+                onRemove={(index) => setEventImages(prev => prev.filter((_, i) => i !== index))}
+                maxImages={10}
+                folder={isPlace ? 'places' : 'events'}
+                label={isPlace ? 'Place photos' : 'Event photos'}
+              />
+              {errors.eventImage && <p className="text-red-500 text-sm mt-2">{errors.eventImage}</p>}
+            </div>
+          )}
+
+          {/* SECTION 8: Additional Info */}
+          {!isVendor && (
+            <div className="mb-10">
+              <div className="flex items-center mb-6">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-full flex items-center justify-center text-white font-bold mr-4">8</div>
+                <h2 className="text-2xl font-black text-gray-900">Additional Information</h2>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Anything else we should know?</label>
+                <textarea name="additionalInfo" value={formData.additionalInfo} onChange={handleChange} rows={4}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-cyan-500 focus:outline-none transition"
+                  placeholder={isPlace ? 'Accessibility info, parking details...' : 'Dress code, parking, special requirements...'} />
+              </div>
+            </div>
+          )}
+
+          {/* Terms & Submit */}
+          <div className="border-t-2 border-gray-200 pt-8">
+            <div className="flex items-start mb-6">
+              <input type="checkbox" name="agreedToTerms" checked={formData.agreedToTerms} onChange={handleChange}
+                className="mt-1 h-5 w-5 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500" />
+              <label className="ml-3 text-sm text-gray-700">
+                I confirm all information is accurate and I agree to OutingStation's{' '}
+                <button type="button" onClick={() => setShowTerms(true)} className="text-cyan-600 hover:underline font-medium underline">
+                  Terms & Conditions
                 </button>
-                <button type="button" onClick={() => navigate('/admin/events')}
-                  className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
-                >
-                  Cancel
+                <span className="text-red-500"> *</span>
+              </label>
+            </div>
+            {errors.agreedToTerms && <p className="text-red-500 text-sm mb-4">{errors.agreedToTerms}</p>}
+
+            {/* ✅ Summary of photos before submit */}
+            {((isVendor && vendorImages.length > 0) || (!isVendor && eventImages.length > 0)) && (
+              <div className="mb-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3">
+                <span className="text-2xl">📸</span>
+                <p className="text-sm text-emerald-700 font-medium">
+                  {isVendor ? vendorImages.length : eventImages.length} photo{(isVendor ? vendorImages.length : eventImages.length) !== 1 ? 's' : ''} ready to submit
+                </p>
+              </div>
+            )}
+
+            <button type="submit" disabled={isSubmitting}
+              className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-5 rounded-2xl font-black text-xl hover:from-cyan-700 hover:to-blue-700 transition shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed">
+              {isSubmitting ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin h-6 w-6 mr-3" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Uploading & Submitting...
+                </span>
+              ) : (
+                `🚀 Submit ${isVendor ? 'Vendor' : isPlace ? 'Place' : 'Event'} for Review`
+              )}
+            </button>
+            <p className="text-center text-sm text-gray-500 mt-4">Review within 24-48 hours</p>
+          </div>
+        </form>
+
+        {/* Terms Modal */}
+        {showTerms && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setShowTerms(false)}>
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="sticky top-0 bg-white border-b-2 border-gray-200 p-6 flex justify-between items-center">
+                <h2 className="text-2xl font-black text-gray-900">Terms & Conditions</h2>
+                <button onClick={() => setShowTerms(false)} className="text-gray-500 hover:text-gray-700 text-3xl leading-none">×</button>
+              </div>
+              <div className="p-6 space-y-6 text-gray-700">
+                <section>
+                  <h3 className="font-bold text-lg text-gray-900 mb-3">1. Submission Guidelines</h3>
+                  <ul className="space-y-2 text-sm">
+                    <li>• All information provided must be accurate and truthful</li>
+                    <li>• You must have the legal right to use all images and content submitted</li>
+                    <li>• Events, places, and vendor listings must be real and verifiable</li>
+                    <li>• Submissions may be rejected if they violate our community standards</li>
+                  </ul>
+                </section>
+                <section>
+                  <h3 className="font-bold text-lg text-gray-900 mb-3">2. Review Process</h3>
+                  <ul className="space-y-2 text-sm">
+                    <li>• All submissions are reviewed within 24-48 hours</li>
+                    <li>• OutingStation reserves the right to approve, reject, or request modifications</li>
+                    <li>• We may contact you for verification or additional information</li>
+                    <li>• Approved listings will be published on our platform</li>
+                  </ul>
+                </section>
+                <section>
+                  <h3 className="font-bold text-lg text-gray-900 mb-3">3. Vendor Specific Terms</h3>
+                  <ul className="space-y-2 text-sm">
+                    <li>• Vendors must be active students or authorized campus traders</li>
+                    <li>• WhatsApp number must be active and reachable</li>
+                    <li>• Vendor listings are free — OutingStation takes no commission</li>
+                    <li>• OutingStation is not liable for any transactions between vendors and students</li>
+                  </ul>
+                </section>
+                <section>
+                  <h3 className="font-bold text-lg text-gray-900 mb-3">4. Content Ownership</h3>
+                  <ul className="space-y-2 text-sm">
+                    <li>• You retain ownership of all content you submit</li>
+                    <li>• By submitting, you grant OutingStation a non-exclusive license to display your content</li>
+                    <li>• You can request removal of your listing at any time</li>
+                  </ul>
+                </section>
+                <section>
+                  <h3 className="font-bold text-lg text-gray-900 mb-3">5. Contact & Support</h3>
+                  <p className="text-sm">For questions: <a href="mailto:admin@outingstation.com" className="text-cyan-600 hover:underline font-medium">admin@outingstation.com</a></p>
+                </section>
+              </div>
+              <div className="sticky bottom-0 bg-white border-t-2 border-gray-200 p-6">
+                <button onClick={() => setShowTerms(false)}
+                  className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:from-cyan-700 hover:to-blue-700 transition">
+                  Close
                 </button>
               </div>
             </div>
-          </form>
-        </div>
-      </main>
-
-      {showNotifyModal && createdEvent && (
-        <NotifyUsersModal
-          event={createdEvent}
-          notificationType={isEdit ? 'update' : 'new'}
-          onClose={() => {
-            setShowNotifyModal(false);
-            if (createdEvent.manageKey) {
-              setShowManageLinkModal(true);
-            } else {
-              navigate('/admin/events');
-            }
-          }}
-        />
-      )}
-
-      {showManageLinkModal && createdEvent?.manageKey && (
-        <ManageLinkModal
-          event={createdEvent}
-          onClose={() => {
-            setShowManageLinkModal(false);
-            navigate('/admin/events');
-          }}
-        />
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
-}
+};
+
+export default SubmitEventPage;
