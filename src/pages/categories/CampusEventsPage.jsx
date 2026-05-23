@@ -36,10 +36,7 @@ function LoginPromptModal({ action, uniName, onClose, onLogin, onSignup }) {
             }
           </p>
           <p className="text-gray-400 text-xs text-center mb-6">
-            {isFollow
-              ? 'Get notified only about events from universities you follow! 🎓'
-              : 'Never miss an event you care about! ❤️'
-            }
+            {isFollow ? 'Get notified only about events from universities you follow! 🎓' : 'Never miss an event you care about! ❤️'}
           </p>
           <div className="space-y-3">
             <button onClick={onLogin}
@@ -89,6 +86,7 @@ export default function CampusEventsPage() {
   // ✅ University follow state
   const [followedUniversities, setFollowedUniversities] = useState(new Set());
   const [followingUni, setFollowingUni] = useState(null);
+  const [followerCounts, setFollowerCounts] = useState({});
 
   // ✅ Login prompt state
   const [loginPrompt, setLoginPrompt] = useState(null);
@@ -99,41 +97,59 @@ export default function CampusEventsPage() {
     if (uniParam) setSelectedUniversity(decodeURIComponent(uniParam));
   }, [location.search]);
 
-  useEffect(() => {
-    loadData();
-  }, [currentUser]);
+  useEffect(() => { loadData(); }, [currentUser]);
 
   const loadData = async () => {
     try {
       setLoading(true);
 
+      // ✅ FIX: Load ALL universities from universities collection first
       const uniSnapshot = await getDocs(collection(db, 'universities'));
       const uniImagesMap = {};
       const uniList = ['All Universities'];
       uniSnapshot.docs.forEach(doc => {
         const data = doc.data();
         if (data.name) {
-          if (data.imageUrl) uniImagesMap[data.name] = data.imageUrl;
           uniList.push(data.name);
+          if (data.imageUrl) uniImagesMap[data.name] = data.imageUrl;
         }
       });
       setUniversityImages(uniImagesMap);
-      setUniversities(uniList);
 
+      // ✅ Load campus events
       const snapshot = await getDocs(collection(db, 'events'));
       let campusEvents = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(e => e.eventType === 'campus' && e.status === 'published');
       campusEvents = filterUpcomingEvents(campusEvents);
+
+      // ✅ Add any universities from events not already in the list
+      campusEvents.forEach(event => {
+        if (event.university && !uniList.includes(event.university)) {
+          uniList.push(event.university);
+        }
+      });
+
+      setUniversities(uniList);
       setAllEvents(campusEvents);
 
-      // ✅ Load user data — saved events + followed universities
+      // ✅ Count followers per university from all users
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const counts = {};
+      usersSnapshot.docs.forEach(doc => {
+        const followed = doc.data().followedUniversities || [];
+        followed.forEach(uni => {
+          counts[uni] = (counts[uni] || 0) + 1;
+        });
+      });
+      setFollowerCounts(counts);
+
+      // ✅ Load current user data
       if (currentUser) {
         try {
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
           if (userDoc.exists()) {
             setSavedEventIds(userDoc.data().savedEvents || []);
-            // ✅ Same field as CampusPlaces — auto-synced
             const followed = userDoc.data().followedUniversities || [];
             setFollowedUniversities(new Set(followed));
           }
@@ -148,7 +164,6 @@ export default function CampusEventsPage() {
     setLoading(false);
   };
 
-  // ✅ Follow / unfollow university — guests see login prompt
   const handleFollowUniversity = async (uniName) => {
     if (!currentUser) {
       setLoginPrompt({ action: 'follow', uniName });
@@ -165,6 +180,10 @@ export default function CampusEventsPage() {
       isFollowing ? next.delete(uniName) : next.add(uniName);
       return next;
     });
+    setFollowerCounts(prev => ({
+      ...prev,
+      [uniName]: Math.max(0, (prev[uniName] || 0) + (isFollowing ? -1 : 1))
+    }));
 
     try {
       await updateDoc(userRef, {
@@ -176,19 +195,19 @@ export default function CampusEventsPage() {
         isFollowing ? next.add(uniName) : next.delete(uniName);
         return next;
       });
+      setFollowerCounts(prev => ({
+        ...prev,
+        [uniName]: Math.max(0, (prev[uniName] || 0) + (isFollowing ? 1 : -1))
+      }));
       console.error('Follow error:', err);
     } finally {
       setFollowingUni(null);
     }
   };
 
-  // ✅ Save event — guests see login prompt
   const handleSaveClick = async (e, eventId) => {
     e.stopPropagation();
-    if (!currentUser) {
-      setLoginPrompt({ action: 'save' });
-      return;
-    }
+    if (!currentUser) { setLoginPrompt({ action: 'save' }); return; }
     try {
       const userRef = doc(db, 'users', currentUser.uid);
       const isSaved = savedEventIds.includes(eventId);
@@ -206,11 +225,9 @@ export default function CampusEventsPage() {
 
   const getFilteredEvents = () => {
     let filtered = [...allEvents];
-
     if (selectedUniversity !== 'All Universities') {
       filtered = filtered.filter(e => e.university === selectedUniversity);
     }
-
     if (dateFilter !== 'any') {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -236,10 +253,8 @@ export default function CampusEventsPage() {
         }
       });
     }
-
     if (statusFilter === 'free') filtered = filtered.filter(e => e.isFree === true);
     if (statusFilter === 'paid') filtered = filtered.filter(e => e.isFree === false);
-
     if (locationFilter === 'on-campus') {
       filtered = filtered.filter(e =>
         e.location?.toLowerCase().includes('campus') ||
@@ -253,11 +268,11 @@ export default function CampusEventsPage() {
         !e.location?.toLowerCase().includes('auditorium')
       );
     }
-
     return filtered;
   };
 
   const filteredEvents = getFilteredEvents();
+  const totalFollowers = followerCounts[selectedUniversity] || 0;
 
   const getUniversityBannerImage = () => {
     if (selectedUniversity === 'All Universities') return 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80';
@@ -283,10 +298,8 @@ export default function CampusEventsPage() {
 
           {/* University Dropdown */}
           <div className="relative">
-            <button
-              onClick={() => setShowUniversityDropdown(!showUniversityDropdown)}
-              className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white border border-gray-300 rounded-lg flex items-center justify-between sm:justify-start gap-2 hover:border-cyan-400 transition text-sm sm:text-base"
-            >
+            <button onClick={() => setShowUniversityDropdown(!showUniversityDropdown)}
+              className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white border border-gray-300 rounded-lg flex items-center justify-between sm:justify-start gap-2 hover:border-cyan-400 transition text-sm sm:text-base">
               <span className="font-medium">{selectedUniversity}</span>
               <ChevronDown size={20} className={`transition-transform ${showUniversityDropdown ? 'rotate-180' : ''}`} />
             </button>
@@ -299,12 +312,24 @@ export default function CampusEventsPage() {
                     {universities.map((uni, index) => (
                       <button key={index}
                         onClick={() => { setSelectedUniversity(uni); setShowUniversityDropdown(false); }}
-                        className={`w-full text-left px-4 py-3 hover:bg-gray-100 rounded-lg transition text-sm sm:text-base ${selectedUniversity === uni ? 'bg-cyan-50 text-cyan-600' : ''}`}>
-                        {uni}
-                        {/* ✅ Show following indicator */}
-                        {uni !== 'All Universities' && followedUniversities.has(uni) && (
-                          <span className="ml-2 text-xs text-purple-500 font-medium">✓ Following</span>
-                        )}
+                        className={`w-full text-left px-4 py-3 hover:bg-gray-100 rounded-lg transition text-sm ${selectedUniversity === uni ? 'bg-cyan-50 text-cyan-600 font-medium' : ''}`}>
+                        <div className="flex items-center justify-between">
+                          <span>
+                            {uni}
+                            {uni !== 'All Universities' && followedUniversities.has(uni) && (
+                              <span className="ml-2 text-xs text-purple-500 font-medium">✓ Following</span>
+                            )}
+                          </span>
+                          {/* ✅ Follower count in dropdown */}
+                          {uni !== 'All Universities' && followerCounts[uni] > 0 && (
+                            <span className="text-xs text-gray-400 flex items-center gap-1 flex-shrink-0">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              </svg>
+                              {followerCounts[uni]}
+                            </span>
+                          )}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -314,14 +339,11 @@ export default function CampusEventsPage() {
           </div>
         </div>
 
-        {/* ✅ Banner with Follow button */}
+        {/* ✅ Banner with Follow button + follower count */}
         <div className="relative rounded-xl sm:rounded-2xl overflow-hidden mb-6 sm:mb-8 shadow-lg">
-          <img
-            src={getUniversityBannerImage()}
-            alt={selectedUniversity}
+          <img src={getUniversityBannerImage()} alt={selectedUniversity}
             className="w-full h-48 sm:h-64 lg:h-80 object-cover"
-            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80'; }}
-          />
+            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80'; }} />
           <div className="absolute inset-0 bg-gradient-to-r from-black/70 to-transparent"></div>
 
           <div className="absolute bottom-4 sm:bottom-6 lg:bottom-8 left-4 sm:left-6 lg:left-8 right-4 sm:right-6 lg:right-8 text-white">
@@ -331,9 +353,22 @@ export default function CampusEventsPage() {
                   Featured Campus
                 </div>
                 <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-1 sm:mb-2">{selectedUniversity}</h2>
-                <p className="text-sm sm:text-base lg:text-lg">
-                  {filteredEvents.length} upcoming campus event{filteredEvents.length !== 1 ? 's' : ''}
-                </p>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <p className="text-sm sm:text-base lg:text-lg">
+                    {filteredEvents.length} upcoming event{filteredEvents.length !== 1 ? 's' : ''}
+                  </p>
+                  {/* ✅ Follower count on banner */}
+                  {selectedUniversity !== 'All Universities' && totalFollowers > 0 && (
+                    <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                      </svg>
+                      <span className="text-xs font-semibold">
+                        {totalFollowers} follower{totalFollowers !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* ✅ Follow button — guests get login prompt */}
@@ -423,7 +458,6 @@ export default function CampusEventsPage() {
                     <div className="absolute top-3 left-3">
                       <span className="bg-blue-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-full">#{event.category}</span>
                     </div>
-                    {/* ✅ Save button — guests get login prompt */}
                     <button onClick={(e) => handleSaveClick(e, event.id)}
                       className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10">
                       <Heart size={18}
@@ -458,6 +492,7 @@ export default function CampusEventsPage() {
           </div>
         ) : (
           <div className="text-center py-12">
+            <div className="text-5xl mb-4">🎓</div>
             <p className="text-gray-500 text-lg">No upcoming campus events found</p>
             <p className="text-gray-400 text-sm mt-2">
               {selectedUniversity === 'All Universities'
@@ -471,7 +506,6 @@ export default function CampusEventsPage() {
 
       <Footer />
 
-      {/* ✅ Login prompt modal */}
       {loginPrompt && (
         <LoginPromptModal
           action={loginPrompt.action}

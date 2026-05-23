@@ -24,22 +24,27 @@ export default function CampusEvents() {
   const [followedUniversities, setFollowedUniversities] = useState(new Set());
   const [followingUni, setFollowingUni] = useState(null);
 
-  useEffect(() => {
-    loadData();
-  }, [currentUser]);
+  // ✅ Follower counts per university
+  const [followerCounts, setFollowerCounts] = useState({});
+
+  useEffect(() => { loadData(); }, [currentUser]);
 
   const loadData = async () => {
     try {
       setLoading(true);
 
-      // ✅ Load universities
+      // ✅ FIX: Load ALL universities from universities collection first
       const uniSnapshot = await getDocs(collection(db, 'universities'));
       const uniImagesMap = {};
+      const uniList = ['All Universities'];
+
       uniSnapshot.docs.forEach(doc => {
         const data = doc.data();
-        if (data.name && data.imageUrl) uniImagesMap[data.name] = data.imageUrl;
+        if (data.name) {
+          uniList.push(data.name);
+          if (data.imageUrl) uniImagesMap[data.name] = data.imageUrl;
+        }
       });
-      setUniversityImages(uniImagesMap);
 
       // ✅ Load campus events
       const snapshot = await getDocs(collection(db, 'events'));
@@ -47,18 +52,34 @@ export default function CampusEvents() {
       allEvents = allEvents.filter(e => e.eventType === 'campus' && e.status === 'published');
       allEvents = filterUpcomingEvents(allEvents);
 
-      const uniSet = new Set(['All Universities']);
-      allEvents.forEach(event => { if (event.university) uniSet.add(event.university); });
-      setUniversities(Array.from(uniSet));
+      // ✅ Add any universities from events not already in the list
+      allEvents.forEach(event => {
+        if (event.university && !uniList.includes(event.university)) {
+          uniList.push(event.university);
+        }
+      });
+
+      setUniversityImages(uniImagesMap);
+      setUniversities(uniList);
       setEvents(allEvents);
 
-      // ✅ Load user data — saved events + followed universities
+      // ✅ Count followers per university from all users
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const counts = {};
+      usersSnapshot.docs.forEach(doc => {
+        const followed = doc.data().followedUniversities || [];
+        followed.forEach(uni => {
+          counts[uni] = (counts[uni] || 0) + 1;
+        });
+      });
+      setFollowerCounts(counts);
+
+      // ✅ Load current user data
       if (currentUser) {
         try {
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
           if (userDoc.exists()) {
             setSavedEventIds(userDoc.data().savedEvents || []);
-            // ✅ Load followed universities — same field as CampusPlaces
             const followed = userDoc.data().followedUniversities || [];
             setFollowedUniversities(new Set(followed));
           }
@@ -73,7 +94,6 @@ export default function CampusEvents() {
     setLoading(false);
   };
 
-  // ✅ Follow / unfollow university
   const handleFollowUniversity = async (uniName) => {
     if (!currentUser || followingUni === uniName) return;
     setFollowingUni(uniName);
@@ -81,12 +101,16 @@ export default function CampusEvents() {
     const isFollowing = followedUniversities.has(uniName);
     const userRef = doc(db, 'users', currentUser.uid);
 
-    // Optimistic update
+    // Optimistic update — also update follower count
     setFollowedUniversities(prev => {
       const next = new Set(prev);
       isFollowing ? next.delete(uniName) : next.add(uniName);
       return next;
     });
+    setFollowerCounts(prev => ({
+      ...prev,
+      [uniName]: Math.max(0, (prev[uniName] || 0) + (isFollowing ? -1 : 1))
+    }));
 
     try {
       await updateDoc(userRef, {
@@ -99,6 +123,10 @@ export default function CampusEvents() {
         isFollowing ? next.add(uniName) : next.delete(uniName);
         return next;
       });
+      setFollowerCounts(prev => ({
+        ...prev,
+        [uniName]: Math.max(0, (prev[uniName] || 0) + (isFollowing ? 1 : -1))
+      }));
       console.error('Follow error:', err);
     } finally {
       setFollowingUni(null);
@@ -147,6 +175,8 @@ export default function CampusEvents() {
     return universityImages[selectedUniversity] || 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80';
   };
 
+  const totalFollowers = followerCounts[selectedUniversity] || 0;
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
 
@@ -161,10 +191,8 @@ export default function CampusEvents() {
 
         {/* University Dropdown */}
         <div className="relative">
-          <button
-            onClick={() => setShowUniversityDropdown(!showUniversityDropdown)}
-            className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white border border-gray-300 rounded-lg flex items-center justify-between sm:justify-start gap-2 hover:border-cyan-400 transition text-sm sm:text-base"
-          >
+          <button onClick={() => setShowUniversityDropdown(!showUniversityDropdown)}
+            className="w-full sm:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white border border-gray-300 rounded-lg flex items-center justify-between sm:justify-start gap-2 hover:border-cyan-400 transition text-sm sm:text-base">
             <span className="font-medium">{selectedUniversity}</span>
             <ChevronDown size={20} className={`transition-transform ${showUniversityDropdown ? 'rotate-180' : ''}`} />
           </button>
@@ -177,12 +205,24 @@ export default function CampusEvents() {
                   {universities.map((uni, index) => (
                     <button key={index}
                       onClick={() => { setSelectedUniversity(uni); setShowUniversityDropdown(false); }}
-                      className={`w-full text-left px-4 py-3 hover:bg-gray-100 rounded-lg transition text-sm sm:text-base ${selectedUniversity === uni ? 'bg-cyan-50 text-cyan-600' : ''}`}>
-                      {uni}
-                      {/* ✅ Show following indicator in dropdown */}
-                      {uni !== 'All Universities' && followedUniversities.has(uni) && (
-                        <span className="ml-2 text-xs text-purple-500 font-medium">✓ Following</span>
-                      )}
+                      className={`w-full text-left px-4 py-3 hover:bg-gray-100 rounded-lg transition text-sm ${selectedUniversity === uni ? 'bg-cyan-50 text-cyan-600 font-medium' : ''}`}>
+                      <div className="flex items-center justify-between">
+                        <span>
+                          {uni}
+                          {uni !== 'All Universities' && followedUniversities.has(uni) && (
+                            <span className="ml-2 text-xs text-purple-500 font-medium">✓ Following</span>
+                          )}
+                        </span>
+                        {/* ✅ Show follower count in dropdown */}
+                        {uni !== 'All Universities' && followerCounts[uni] > 0 && (
+                          <span className="text-xs text-gray-400 flex items-center gap-1 flex-shrink-0">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                            </svg>
+                            {followerCounts[uni]}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -192,14 +232,11 @@ export default function CampusEvents() {
         </div>
       </div>
 
-      {/* ✅ Banner with Follow button */}
+      {/* ✅ Banner with Follow button + follower count */}
       <div className="relative rounded-xl sm:rounded-2xl overflow-hidden mb-6 sm:mb-8 shadow-lg">
-        <img
-          src={getUniversityBannerImage()}
-          alt={selectedUniversity}
+        <img src={getUniversityBannerImage()} alt={selectedUniversity}
           className="w-full h-48 sm:h-64 lg:h-80 object-cover"
-          onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80'; }}
-        />
+          onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80'; }} />
         <div className="absolute inset-0 bg-gradient-to-r from-black/70 to-transparent"></div>
 
         <div className="absolute bottom-4 sm:bottom-6 lg:bottom-8 left-4 sm:left-6 lg:left-8 right-4 sm:right-6 lg:right-8 text-white">
@@ -209,13 +246,25 @@ export default function CampusEvents() {
                 Featured Campus
               </div>
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-1 sm:mb-2">{selectedUniversity}</h2>
-              <p className="text-sm sm:text-base lg:text-lg">
-                {displayEvents.length} campus event{displayEvents.length !== 1 ? 's' : ''} available
-                {searchQuery && ` (filtered from ${filteredEvents.length} total)`}
-              </p>
+              <div className="flex items-center gap-4 flex-wrap">
+                <p className="text-sm sm:text-base lg:text-lg">
+                  {displayEvents.length} event{displayEvents.length !== 1 ? 's' : ''} available
+                </p>
+                {/* ✅ Follower count on banner */}
+                {selectedUniversity !== 'All Universities' && totalFollowers > 0 && (
+                  <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
+                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    </svg>
+                    <span className="text-xs font-semibold">
+                      {totalFollowers} follower{totalFollowers !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* ✅ Follow button — only when a uni is selected, user is logged in */}
+            {/* ✅ Follow button */}
             {selectedUniversity !== 'All Universities' && currentUser && (
               <button
                 onClick={() => handleFollowUniversity(selectedUniversity)}
@@ -269,8 +318,7 @@ export default function CampusEvents() {
                   </div>
                   <button onClick={(e) => handleSaveClick(e, event.id)}
                     className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10">
-                    <Heart size={18}
-                      className={`sm:w-5 sm:h-5 ${savedEventIds.includes(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-600'}`} />
+                    <Heart size={18} className={`sm:w-5 sm:h-5 ${savedEventIds.includes(event.id) ? 'text-red-500 fill-red-500' : 'text-gray-600'}`} />
                   </button>
                   {event.isFree && (
                     <div className="absolute bottom-3 right-3">
@@ -301,14 +349,14 @@ export default function CampusEvents() {
         </div>
       ) : (
         <div className="text-center py-20">
+          <div className="text-5xl mb-4">🎓</div>
           <p className="text-gray-500 text-lg mb-2">
-            {searchQuery ? `No campus events found for "${searchQuery}"` : 'No campus events found'}
+            {searchQuery ? `No campus events found for "${searchQuery}"` : 'No campus events yet'}
           </p>
           <p className="text-gray-400 text-sm">
-            {searchQuery ? 'Try a different search term'
-              : selectedUniversity === 'All Universities'
-                ? 'No campus events available yet'
-                : `No events for ${selectedUniversity}`}
+            {selectedUniversity !== 'All Universities'
+              ? `No events available for ${selectedUniversity} yet`
+              : 'Campus events will appear here once added'}
           </p>
         </div>
       )}
