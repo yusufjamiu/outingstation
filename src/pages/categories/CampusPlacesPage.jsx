@@ -37,7 +37,6 @@ const REPORT_REASONS = [
   { value: 'other', label: '💬 Other reason' },
 ];
 
-// ✅ Image Carousel
 function ImageCarousel({ images, alt }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showFull, setShowFull] = useState(false);
@@ -103,7 +102,7 @@ function ImageCarousel({ images, alt }) {
 }
 
 // ✅ Login Prompt Modal
-function LoginPromptModal({ vendor, action, onClose, onLogin, onSignup }) {
+function LoginPromptModal({ vendor, action, uniName, onClose, onLogin, onSignup }) {
   const isLike = action === 'like';
   const isFollow = action === 'follow';
 
@@ -111,8 +110,7 @@ function LoginPromptModal({ vendor, action, onClose, onLogin, onSignup }) {
     if (isLike) return <Heart size={32} className="text-red-400" />;
     if (isFollow) return (
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="2.5">
-        <path d="M22 10v6M19 13h6M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/>
-        <path d="M15 3l4 4-4 4"/>
+        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
       </svg>
     );
     return <Flag size={32} className="text-orange-400" />;
@@ -126,7 +124,7 @@ function LoginPromptModal({ vendor, action, onClose, onLogin, onSignup }) {
 
   const getBody = () => {
     if (isLike) return <>Sign in to like <strong>{vendor?.shopName}</strong> and help rank the best vendors on campus.</>;
-    if (isFollow) return <>Sign in to follow <strong>{vendor}</strong> and get notified about new campus events.</>;
+    if (isFollow) return <>Sign in to follow <strong>{uniName}</strong> and get notified about new campus events.</>;
     return <>Sign in to report <strong>{vendor?.shopName}</strong> and help keep the campus market trustworthy.</>;
   };
 
@@ -136,12 +134,14 @@ function LoginPromptModal({ vendor, action, onClose, onLogin, onSignup }) {
     return 'Your reports are reviewed within 24 hours. 🛡️';
   };
 
+  const accentColor = isFollow ? 'bg-gradient-to-r from-purple-400 to-purple-600' : 'bg-gradient-to-r from-cyan-400 to-cyan-600';
   const bgColor = isLike ? 'bg-red-50' : isFollow ? 'bg-purple-50' : 'bg-orange-50';
+  const btnColor = isFollow ? 'bg-gradient-to-r from-purple-500 to-purple-600' : 'bg-gradient-to-r from-cyan-500 to-cyan-600';
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
-        <div className={`h-1.5 ${isFollow ? 'bg-gradient-to-r from-purple-400 to-purple-600' : 'bg-gradient-to-r from-cyan-400 to-cyan-600'}`} />
+        <div className={`h-1.5 ${accentColor}`} />
         <div className="p-6">
           <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${bgColor}`}>
             {getIcon()}
@@ -151,7 +151,7 @@ function LoginPromptModal({ vendor, action, onClose, onLogin, onSignup }) {
           <p className="text-gray-400 text-xs text-center mb-6">{getSubtext()}</p>
           <div className="space-y-3">
             <button onClick={onLogin}
-              className={`w-full py-3 text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2 ${isFollow ? 'bg-gradient-to-r from-purple-500 to-purple-600' : 'bg-gradient-to-r from-cyan-500 to-cyan-600'}`}>
+              className={`w-full py-3 text-white rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2 ${btnColor}`}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
                 <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
                 <polyline points="10 17 15 12 10 7"/>
@@ -177,7 +177,6 @@ function LoginPromptModal({ vendor, action, onClose, onLogin, onSignup }) {
   );
 }
 
-// ✅ Report Vendor Modal
 function ReportVendorModal({ vendor, onClose }) {
   const [reason, setReason] = useState('');
   const [details, setDetails] = useState('');
@@ -278,6 +277,7 @@ export default function CampusPlacesPage() {
   // ✅ University follow state
   const [followedUniversities, setFollowedUniversities] = useState(new Set());
   const [followingUni, setFollowingUni] = useState(null);
+  const [followerCounts, setFollowerCounts] = useState({});
 
   useEffect(() => { loadCampusPlaces(); }, [currentUser]);
 
@@ -321,22 +321,33 @@ export default function CampusPlacesPage() {
       setAllPlaces(places);
       setAllVendors(vendors);
 
-      // ✅ Init local like counts
       const counts = {};
       vendors.forEach(v => { counts[v.id] = v.likeCount || 0; });
       setLocalLikeCounts(counts);
 
-      // ✅ Load user data (likes + followed universities)
+      // ✅ Count followers per university
+      try {
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const uniFollowerCounts = {};
+        usersSnapshot.docs.forEach(doc => {
+          const followed = doc.data().followedUniversities || [];
+          followed.forEach(uni => {
+            uniFollowerCounts[uni] = (uniFollowerCounts[uni] || 0) + 1;
+          });
+        });
+        setFollowerCounts(uniFollowerCounts);
+      } catch (err) {
+        console.error('Error loading follower counts:', err);
+      }
+
       if (currentUser) {
         try {
-          // Load liked vendors
           const likesSnap = await getDocs(
             query(collection(db, 'vendor_likes'), where('userId', '==', currentUser.uid))
           );
           const liked = new Set(likesSnap.docs.map(d => d.data().vendorId));
           setLikedVendorIds(liked);
 
-          // ✅ Load followed universities
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
           if (userDoc.exists()) {
             const followed = userDoc.data().followedUniversities || [];
@@ -353,7 +364,7 @@ export default function CampusPlacesPage() {
     setLoading(false);
   };
 
-  // ✅ Follow / unfollow university
+  // ✅ Follow / unfollow — guests see login prompt
   const handleFollowUniversity = async (uniName) => {
     if (!currentUser) {
       setLoginPrompt({ action: 'follow', uniName });
@@ -365,24 +376,30 @@ export default function CampusPlacesPage() {
     const isFollowing = followedUniversities.has(uniName);
     const userRef = doc(db, 'users', currentUser.uid);
 
-    // Optimistic update
     setFollowedUniversities(prev => {
       const next = new Set(prev);
       isFollowing ? next.delete(uniName) : next.add(uniName);
       return next;
     });
+    setFollowerCounts(prev => ({
+      ...prev,
+      [uniName]: Math.max(0, (prev[uniName] || 0) + (isFollowing ? -1 : 1))
+    }));
 
     try {
       await updateDoc(userRef, {
         followedUniversities: isFollowing ? arrayRemove(uniName) : arrayUnion(uniName)
       });
     } catch (err) {
-      // Rollback
       setFollowedUniversities(prev => {
         const next = new Set(prev);
         isFollowing ? next.add(uniName) : next.delete(uniName);
         return next;
       });
+      setFollowerCounts(prev => ({
+        ...prev,
+        [uniName]: Math.max(0, (prev[uniName] || 0) + (isFollowing ? 1 : -1))
+      }));
       console.error('Follow error:', err);
     } finally {
       setFollowingUni(null);
@@ -593,14 +610,10 @@ export default function CampusPlacesPage() {
                 </div>
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-2 mb-1">
-                    <h3 className="font-bold text-gray-900 text-base group-hover:text-cyan-500 transition flex-1 leading-tight">
-                      {vendor.shopName}
-                    </h3>
+                    <h3 className="font-bold text-gray-900 text-base group-hover:text-cyan-500 transition flex-1 leading-tight">{vendor.shopName}</h3>
                     <button onClick={(e) => handleLike(e, vendor)} disabled={likingVendorId === vendor.id}
                       className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold transition flex-shrink-0 border ${
-                        isLiked
-                          ? 'bg-red-50 border-red-200 text-red-500 hover:bg-red-100'
-                          : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-red-50 hover:border-red-200 hover:text-red-400'
+                        isLiked ? 'bg-red-50 border-red-200 text-red-500 hover:bg-red-100' : 'bg-gray-50 border-gray-200 text-gray-400 hover:bg-red-50 hover:border-red-200 hover:text-red-400'
                       }`}>
                       <Heart size={13} className={`transition-all duration-200 ${isLiked ? 'fill-red-500 text-red-500 scale-110' : ''}`} />
                       <span>{likeCount > 0 ? likeCount : 'Like'}</span>
@@ -610,13 +623,11 @@ export default function CampusPlacesPage() {
                   {vendor.university && <p className="text-xs text-gray-400 mb-3">🏛️ {vendor.university}</p>}
                   <button onClick={() => handleWhatsApp(vendor.whatsappNumber)}
                     className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-semibold transition mb-2">
-                    <MessageCircle size={16} />
-                    Chat on WhatsApp
+                    <MessageCircle size={16} />Chat on WhatsApp
                   </button>
                   <button onClick={(e) => handleReport(e, vendor)}
                     className="w-full flex items-center justify-center gap-1.5 py-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl text-xs font-medium transition border border-red-100 hover:border-red-200">
-                    <Flag size={12} />
-                    Report this vendor
+                    <Flag size={12} />Report this vendor
                   </button>
                 </div>
               </div>
@@ -653,11 +664,23 @@ export default function CampusPlacesPage() {
                     {universities.map((uni, index) => (
                       <button key={index} onClick={() => { setSelectedUniversity(uni); setSelectedSubCategory('All'); setShowVendorCategories(false); setSelectedVendorCategory(null); setShowUniversityDropdown(false); }}
                         className={`w-full text-left px-4 py-3 hover:bg-gray-100 rounded-lg transition text-sm ${selectedUniversity === uni ? 'bg-cyan-50 text-cyan-600 font-medium' : ''}`}>
-                        {uni}
-                        {/* ✅ Show following indicator in dropdown */}
-                        {uni !== 'All Universities' && followedUniversities.has(uni) && (
-                          <span className="ml-2 text-xs text-purple-500 font-medium">✓ Following</span>
-                        )}
+                        <div className="flex items-center justify-between">
+                          <span>
+                            {uni}
+                            {uni !== 'All Universities' && followedUniversities.has(uni) && (
+                              <span className="ml-2 text-xs text-purple-500 font-medium">✓ Following</span>
+                            )}
+                          </span>
+                          {/* ✅ Follower count in dropdown */}
+                          {uni !== 'All Universities' && (followerCounts[uni] || 0) > 0 && (
+                            <span className="text-xs text-gray-400 flex items-center gap-1 flex-shrink-0 ml-2">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                              </svg>
+                              {followerCounts[uni]}
+                            </span>
+                          )}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -667,7 +690,7 @@ export default function CampusPlacesPage() {
           </div>
         </div>
 
-        {/* ✅ Banner with Follow button */}
+        {/* ✅ Banner with Follow button + follower count */}
         <div className="relative rounded-2xl overflow-hidden mb-6 shadow-lg">
           <img src={getUniversityBannerImage()} alt={selectedUniversity} className="w-full h-48 sm:h-64 object-cover"
             onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&q=80'; }} />
@@ -679,14 +702,27 @@ export default function CampusPlacesPage() {
                 <h2 className="text-2xl sm:text-3xl font-bold mb-1">
                   {selectedUniversity === 'All Universities' ? 'Select a Campus' : selectedUniversity}
                 </h2>
-                <p className="text-sm sm:text-base text-white/80">
-                  {selectedUniversity === 'All Universities'
-                    ? 'Choose a university from the dropdown above'
-                    : `${filteredPlaces.length} place${filteredPlaces.length !== 1 ? 's' : ''} available`}
-                </p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <p className="text-sm sm:text-base text-white/80">
+                    {selectedUniversity === 'All Universities'
+                      ? 'Choose a university from the dropdown above'
+                      : `${filteredPlaces.length} place${filteredPlaces.length !== 1 ? 's' : ''} available`}
+                  </p>
+                  {/* ✅ Follower count badge */}
+                  {selectedUniversity !== 'All Universities' && (followerCounts[selectedUniversity] || 0) > 0 && (
+                    <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                      </svg>
+                      <span className="text-xs font-semibold">
+                        {followerCounts[selectedUniversity]} follower{followerCounts[selectedUniversity] !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* ✅ Follow button */}
+              {/* ✅ Follow button — guests get login prompt */}
               {selectedUniversity !== 'All Universities' && (
                 <button
                   onClick={() => handleFollowUniversity(selectedUniversity)}
@@ -701,12 +737,16 @@ export default function CampusPlacesPage() {
                     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   ) : followedUniversities.has(selectedUniversity) ? (
                     <>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                      </svg>
                       Following
                     </>
                   ) : (
                     <>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                      </svg>
                       Follow
                     </>
                   )}
@@ -787,7 +827,6 @@ export default function CampusPlacesPage() {
       </main>
       <Footer />
 
-      {/* ✅ Login prompt modal */}
       {loginPrompt && (
         <LoginPromptModal
           vendor={loginPrompt.vendor}
