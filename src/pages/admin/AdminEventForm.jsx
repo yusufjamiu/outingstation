@@ -141,19 +141,11 @@ export default function AdminEventForm() {
     }
   }, [id, isEdit]);
 
-  // ✅ Events — no Malls or Spas
-const allEventCategories = [
-  'Business & Tech', 'Art & Culture', 'Food & Dining', 'Sport & Fitness',
-  'Education', 'Religion & Community', 'Nightlife & Parties', 'Family & Kids Fun',
-  'Networking & Social', 'Gaming & Esport', 'Music & Concerts', 'Cinema & Show'
-];
-
-// ✅ Places — shared + places-only
-const allPlaceCategories = [
-  'Art & Culture', 'Food & Dining', 'Sport & Fitness',
-  'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
-  'Malls', 'Spas',
-];
+  const allCategories = [
+    'Business & Tech', 'Art & Culture', 'Food & Dining', 'Sport & Fitness',
+    'Education', 'Religion & Community', 'Nightlife & Parties', 'Family & Kids Fun',
+    'Networking & Social', 'Gaming & Esport', 'Music & Concerts', 'Cinema & Show'
+  ];
 
   const platforms = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Twitter Space', 'YouTube Live', 'Facebook Live', 'Other'];
 
@@ -368,7 +360,7 @@ const allPlaceCategories = [
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
                     >
                       <option value="">Select a category</option>
-                      {(formData.subCategory === 'places' ? allPlaceCategories : allEventCategories).map(category => (
+                      {allCategories.map(category => (
                         <option key={category} value={category}>{category}</option>
                       ))}
                     </select>
