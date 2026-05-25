@@ -231,13 +231,22 @@ const SubmitEventPage = () => {
   const [showTerms, setShowTerms] = useState(false);
   const [universities, setUniversities] = useState([]);
 
-  const categories = [
-    'Business & Tech', 'Art & Culture', 'Food & Dining',
-    'Sport & Fitness', 'Education', 'Religion & Community',
-    'Nightlife & Parties', 'Family & Kids Fun', 'Networking & Social',
-    'Gaming & Esport', 'Music & Concerts', 'Cinema & Show',
-    'Other',
-  ];
+  // ✅ Events only — no Malls or Spas
+const eventCategories = [
+  'Business & Tech', 'Art & Culture', 'Food & Dining',
+  'Sport & Fitness', 'Education', 'Religion & Community',
+  'Nightlife & Parties', 'Family & Kids Fun', 'Networking & Social',
+  'Gaming & Esport', 'Music & Concerts', 'Cinema & Show',
+  'Other',
+];
+
+// ✅ Places — shared + places-only
+const placeCategories = [
+  'Art & Culture', 'Food & Dining', 'Sport & Fitness',
+  'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
+  'Malls', 'Spas',
+  'Other',
+];
 
   const cities = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
   const platforms = ['Zoom', 'Google Meet', 'Microsoft Teams', 'YouTube Live', 'Instagram Live', 'LinkedIn Live', 'Twitter Space', 'Other'];
@@ -696,7 +705,9 @@ const SubmitEventPage = () => {
                     <select name="eventCategory" value={formData.eventCategory} onChange={handleChange}
                       className={`w-full px-4 py-3 border-2 ${errors.eventCategory ? 'border-red-500' : 'border-gray-200'} rounded-xl focus:border-cyan-500 focus:outline-none transition`}>
                       <option value="">Select category</option>
-                      {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      {(isPlace ? placeCategories : eventCategories).map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
                     </select>
                     {errors.eventCategory && <p className="text-red-500 text-sm mt-1">{errors.eventCategory}</p>}
                     {formData.eventCategory === 'Other' && (
