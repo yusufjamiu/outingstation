@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Video, Briefcase, Palette, UtensilsCrossed, Dumbbell,
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv, GraduationCap,
-  ChevronRight } from 'lucide-react';
+  ShoppingBag, Sparkles } from 'lucide-react';
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 import campusImg from '../../assets/campus1.jpg';
@@ -33,6 +33,9 @@ export default function CategoryBrowsePage() {
     { title: 'Nightlife & Parties', icon: Music, bg: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-100', link: '/category/nightlife-parties?places=true' },
     { title: 'Family & Kids Fun', icon: Baby, bg: 'bg-yellow-50', text: 'text-yellow-600', border: 'border-yellow-100', link: '/category/family-kids-fun?places=true' },
     { title: 'Cinema & Show', icon: Tv, bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-100', link: '/category/cinema-show?places=true' },
+    // ✅ Places only
+    { title: 'Malls', icon: ShoppingBag, bg: 'bg-sky-50', text: 'text-sky-600', border: 'border-sky-100', link: '/category/malls?places=true' },
+    { title: 'Spas', icon: Sparkles, bg: 'bg-pink-50', text: 'text-pink-400', border: 'border-pink-100', link: '/category/spas?places=true' },
   ];
 
   const categories = activeTab === 'events' ? eventCategories : placeCategories;
@@ -53,7 +56,7 @@ export default function CategoryBrowsePage() {
           </p>
         </div>
 
-        {/* ✅ Tab Switcher */}
+        {/* Tab Switcher */}
         <div className="flex gap-2 mb-5 sm:mb-8">
           <button
             onClick={() => setActiveTab('events')}
@@ -77,7 +80,7 @@ export default function CategoryBrowsePage() {
           </button>
         </div>
 
-        {/* ✅ Webinar Banner — Events tab only */}
+        {/* Webinar Banner — Events tab only */}
         {activeTab === 'events' && (
           <Link
             to="/webinar-events"
@@ -115,7 +118,7 @@ export default function CategoryBrowsePage() {
           </Link>
         )}
 
-        {/* ✅ Categories Grid */}
+        {/* Categories Grid */}
         <div className="mb-5 sm:mb-8">
           <h2 className="text-sm sm:text-base font-bold text-gray-700 mb-3">
             All {activeTab === 'events' ? 'Event' : 'Place'} Categories
@@ -141,36 +144,24 @@ export default function CategoryBrowsePage() {
           </div>
         </div>
 
-        {/* ✅ Campus Events Banner — bottom, events tab */}
+        {/* Campus Events Banner — events tab */}
         {activeTab === 'events' && (
           <Link
             to="/campus-events"
             className="block rounded-xl sm:rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition group"
           >
             <div className="relative w-full h-36 sm:h-52">
-              <img
-                src={campusImg}
-                alt="Campus Events"
-                className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-              />
+              <img src={campusImg} alt="Campus Events" className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
               <div className="absolute inset-0 bg-gradient-to-r from-black/80 to-black/30" />
               <div className="absolute inset-0 flex items-center justify-between px-4 sm:px-8">
                 <div className="flex-1 min-w-0 pr-3">
-                  <div className="inline-block bg-cyan-500 text-white text-xs font-bold px-2.5 py-1 rounded-full mb-1.5 sm:mb-3">
-                    🎓 Campus
-                  </div>
-                  <h3 className="text-white font-bold text-base sm:text-3xl mb-1 leading-tight">
-                    Campus Events
-                  </h3>
-                  <p className="text-white/80 text-xs sm:text-base line-clamp-1 sm:line-clamp-2">
-                    Discover events in universities and campuses around you
-                  </p>
+                  <div className="inline-block bg-cyan-500 text-white text-xs font-bold px-2.5 py-1 rounded-full mb-1.5 sm:mb-3">🎓 Campus</div>
+                  <h3 className="text-white font-bold text-base sm:text-3xl mb-1 leading-tight">Campus Events</h3>
+                  <p className="text-white/80 text-xs sm:text-base line-clamp-1 sm:line-clamp-2">Discover events in universities and campuses around you</p>
                 </div>
                 <div className="flex-shrink-0 animate-pulse">
                   <div className="flex items-center gap-1 bg-white/20 px-2.5 sm:px-5 py-1.5 sm:py-2.5 rounded-full">
-                    <span className="text-white font-semibold text-xs sm:text-sm whitespace-nowrap">
-                      Explore →
-                    </span>
+                    <span className="text-white font-semibold text-xs sm:text-sm whitespace-nowrap">Explore →</span>
                   </div>
                 </div>
               </div>
@@ -178,36 +169,24 @@ export default function CategoryBrowsePage() {
           </Link>
         )}
 
-        {/* ✅ Campus Places Banner — bottom, places tab */}
+        {/* Campus Places Banner — places tab */}
         {activeTab === 'places' && (
           <Link
             to="/campus-places"
             className="block rounded-xl sm:rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition group"
           >
             <div className="relative w-full h-36 sm:h-52">
-              <img
-                src={campusPlacesImg}
-                alt="Campus Places"
-                className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-              />
+              <img src={campusPlacesImg} alt="Campus Places" className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
               <div className="absolute inset-0 bg-gradient-to-r from-black/80 to-black/30" />
               <div className="absolute inset-0 flex items-center justify-between px-4 sm:px-8">
                 <div className="flex-1 min-w-0 pr-3">
-                  <div className="inline-block bg-purple-500 text-white text-xs font-bold px-2.5 py-1 rounded-full mb-1.5 sm:mb-3">
-                    🏛️ Campus Spots
-                  </div>
-                  <h3 className="text-white font-bold text-base sm:text-3xl mb-1 leading-tight">
-                    Campus Places
-                  </h3>
-                  <p className="text-white/80 text-xs sm:text-base line-clamp-1 sm:line-clamp-2">
-                    Libraries, auditoriums, cafeterias & more on campus
-                  </p>
+                  <div className="inline-block bg-purple-500 text-white text-xs font-bold px-2.5 py-1 rounded-full mb-1.5 sm:mb-3">🏛️ Campus Spots</div>
+                  <h3 className="text-white font-bold text-base sm:text-3xl mb-1 leading-tight">Campus Places</h3>
+                  <p className="text-white/80 text-xs sm:text-base line-clamp-1 sm:line-clamp-2">Libraries, auditoriums, cafeterias & more on campus</p>
                 </div>
                 <div className="flex-shrink-0 animate-pulse">
                   <div className="flex items-center gap-1 bg-white/20 px-2.5 sm:px-5 py-1.5 sm:py-2.5 rounded-full">
-                    <span className="text-white font-semibold text-xs sm:text-sm whitespace-nowrap">
-                      Explore →
-                    </span>
+                    <span className="text-white font-semibold text-xs sm:text-sm whitespace-nowrap">Explore →</span>
                   </div>
                 </div>
               </div>

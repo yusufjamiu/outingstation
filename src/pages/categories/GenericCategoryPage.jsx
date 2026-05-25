@@ -3,7 +3,8 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Heart, Calendar, Clock, MapPin } from 'lucide-react';
 import { 
   Briefcase, Palette, UtensilsCrossed, Dumbbell, GraduationCap, 
-  Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv 
+  Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv,
+  ShoppingBag, Sparkles
 } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { filterUpcomingEvents } from '../../utils/eventFilters';
@@ -17,7 +18,6 @@ export default function GenericCategoryPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ Read places param from URL
   const isPlacesMode = new URLSearchParams(location.search).get('places') === 'true';
 
   const [religionFilter, setReligionFilter] = useState('all');
@@ -41,11 +41,15 @@ export default function GenericCategoryPage() {
     'networking-social': { name: 'Networking & Social', icon: Users, color: 'bg-teal-500', hasPlaces: false, isReligion: false },
     'gaming-esport': { name: 'Gaming & Esport', icon: Gamepad2, color: 'bg-red-500', hasPlaces: false, isReligion: false },
     'music-concerts': { name: 'Music & Concerts', icon: Mic2, color: 'bg-pink-600', hasPlaces: false, isReligion: false },
-    'cinema-show': { name: 'Cinema & Show', icon: Tv, color: 'bg-gray-700', hasPlaces: false, isReligion: false }
+    'cinema-show': { name: 'Cinema & Show', icon: Tv, color: 'bg-gray-700', hasPlaces: true, isReligion: false },
+    // ✅ Places only
+    'malls': { name: 'Malls', icon: ShoppingBag, color: 'bg-sky-500', hasPlaces: true, isReligion: false, placesOnly: true },
+    'spas': { name: 'Spas', icon: Sparkles, color: 'bg-pink-400', hasPlaces: true, isReligion: false, placesOnly: true },
   };
 
   const currentCategory = categoryMap[slug] || categoryMap['business-tech'];
   const CategoryIcon = currentCategory.icon;
+  const showingPlaces = currentCategory.placesOnly || isPlacesMode;
 
   useEffect(() => {
     loadCategoryEvents();
@@ -55,14 +59,9 @@ export default function GenericCategoryPage() {
     try {
       setLoading(true);
       const snapshot = await getDocs(collection(db, 'events'));
-      const eventsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      const categoryName = currentCategory.name;
+      const eventsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       let categoryEvents = eventsData.filter(e =>
-        e.status === 'published' && e.category === categoryName
+        e.status === 'published' && e.category === currentCategory.name
       );
       categoryEvents = filterUpcomingEvents(categoryEvents);
       setAllEvents(categoryEvents);
@@ -75,8 +74,9 @@ export default function GenericCategoryPage() {
   const getFilteredEvents = () => {
     let filtered = [...allEvents];
 
-    // ✅ Filter by places or events based on URL param
-    if (currentCategory.hasPlaces) {
+    if (currentCategory.placesOnly) {
+      filtered = filtered.filter(e => e.subCategory === 'places');
+    } else if (currentCategory.hasPlaces) {
       filtered = filtered.filter(e =>
         isPlacesMode ? e.subCategory === 'places' : e.subCategory !== 'places'
       );
@@ -86,7 +86,7 @@ export default function GenericCategoryPage() {
       filtered = filtered.filter(e => e.religionType === religionFilter);
     }
 
-    if (!isPlacesMode && dateFilter !== 'any') {
+    if (!showingPlaces && dateFilter !== 'any') {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       filtered = filtered.filter(e => {
@@ -111,9 +111,7 @@ export default function GenericCategoryPage() {
     }
 
     if (locationFilter !== 'all') {
-      filtered = filtered.filter(e =>
-        e.location?.toLowerCase().includes(locationFilter.toLowerCase())
-      );
+      filtered = filtered.filter(e => e.location?.toLowerCase().includes(locationFilter.toLowerCase()));
     }
 
     if (priceFilter !== 'any') {
@@ -128,53 +126,39 @@ export default function GenericCategoryPage() {
 
   const handleSaveClick = (e, eventId) => {
     e.stopPropagation();
-    if (!currentUser) {
-      navigate('/login');
-    }
+    if (!currentUser) navigate('/login');
   };
 
-  const handleEventClick = (eventId) => {
-    navigate(`/event/${eventId}`);
-  };
+  const handleEventClick = (eventId) => navigate(`/event/${eventId}`);
 
   const getImage = (event) => event.imageUrl || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80';
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
 
-        {/* Header */}
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <div className={`w-14 h-14 sm:w-16 sm:h-16 ${currentCategory.color} rounded-2xl flex items-center justify-center flex-shrink-0`}>
             <CategoryIcon size={28} className="sm:w-8 sm:h-8 text-white" />
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-1">
-              {currentCategory.name} {isPlacesMode ? 'Places' : 'Events'}
+              {currentCategory.name} {showingPlaces ? 'Places' : 'Events'}
             </h1>
             <p className="text-sm sm:text-base text-gray-600">
-              Discover amazing {currentCategory.name.toLowerCase()} {isPlacesMode ? 'places' : 'events'} around you
+              Discover amazing {currentCategory.name.toLowerCase()} {showingPlaces ? 'places' : 'events'} around you
             </p>
           </div>
         </div>
 
-        {/* ✅ Religion filter */}
         {currentCategory.isReligion && (
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Religion:</label>
             <div className="flex flex-wrap gap-2">
               {['all', 'Christianity', 'Islam', 'Others'].map((religion) => (
-                <button
-                  key={religion}
-                  onClick={() => setReligionFilter(religion)}
-                  className={`px-4 py-2 rounded-lg font-medium transition ${
-                    religionFilter === religion
-                      ? 'bg-cyan-500 text-white'
-                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
+                <button key={religion} onClick={() => setReligionFilter(religion)}
+                  className={`px-4 py-2 rounded-lg font-medium transition ${religionFilter === religion ? 'bg-cyan-500 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
                   {religion === 'all' ? 'All' : religion}
                 </button>
               ))}
@@ -182,64 +166,47 @@ export default function GenericCategoryPage() {
           </div>
         )}
 
-        {/* ✅ Filters — only show for events not places */}
-        {!isPlacesMode && (
+        {!showingPlaces && (
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
             <div className="flex-1 sm:flex-initial">
               <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Date:</label>
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
-              >
+              <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
                 <option value="any">Any</option>
                 <option value="today">Today</option>
                 <option value="this-week">This Week</option>
                 <option value="this-month">This Month</option>
               </select>
             </div>
-
             <div className="flex-1 sm:flex-initial">
               <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Location:</label>
-              <select
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
-              >
+              <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}
+                className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
                 <option value="all">All Cities</option>
                 <option value="lagos">Lagos</option>
               </select>
             </div>
-
             <div className="flex-1 sm:flex-initial">
               <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Price:</label>
-              <select
-                value={priceFilter}
-                onChange={(e) => setPriceFilter(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
-              >
+              <select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}
+                className="w-full px-3 sm:px-4 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
                 <option value="any">Any Price</option>
                 <option value="free">Free</option>
                 <option value="paid">Paid</option>
               </select>
             </div>
-
             <div className="sm:ml-auto flex items-end">
-              <p className="text-sm sm:text-base text-gray-600 font-medium">
-                {events.length} Events Available
-              </p>
+              <p className="text-sm sm:text-base text-gray-600 font-medium">{events.length} Events Available</p>
             </div>
           </div>
         )}
 
-        {/* ✅ Places count */}
-        {isPlacesMode && (
+        {showingPlaces && (
           <div className="mb-6">
             <p className="text-sm text-gray-600 font-medium">{events.length} Places Available</p>
           </div>
         )}
 
-        {/* Results */}
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500"></div>
@@ -249,32 +216,24 @@ export default function GenericCategoryPage() {
             {events.map((event) => {
               const eventTime = formatEventTime(event);
               return (
-                <div
-                  key={event.id}
-                  onClick={() => handleEventClick(event.id)}
-                  className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer"
-                >
+                <div key={event.id} onClick={() => handleEventClick(event.id)}
+                  className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition group cursor-pointer">
                   <div className="relative h-48 sm:h-56">
-                    <img
-                      src={getImage(event)}
-                      alt={event.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                    />
+                    <img src={getImage(event)} alt={event.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
                     <div className="absolute top-3 left-3">
                       <span className={`${currentCategory.color} text-white text-xs px-2.5 sm:px-3 py-1 rounded-full`}>
                         #{currentCategory.name}
                       </span>
                     </div>
-                    <button
-                      onClick={(e) => handleSaveClick(e, event.id)}
-                      className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10"
-                    >
+                    <button onClick={(e) => handleSaveClick(e, event.id)}
+                      className="absolute top-3 right-3 w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition z-10">
                       <Heart size={18} className="text-gray-600" />
                     </button>
                     {event.isFree && (
                       <div className="absolute bottom-3 right-3">
                         <span className="bg-emerald-500 text-white text-xs px-2.5 sm:px-3 py-1 rounded-lg font-semibold">
-                          {isPlacesMode ? 'Free Entry' : 'Free'}
+                          {showingPlaces ? 'Free Entry' : 'Free'}
                         </span>
                       </div>
                     )}
@@ -284,19 +243,14 @@ export default function GenericCategoryPage() {
                       {event.title}
                     </h3>
                     <div className="space-y-2 text-xs sm:text-sm text-gray-600">
-                      {!isPlacesMode && (
+                      {!showingPlaces && (
                         <div className="flex items-center gap-2">
                           <Calendar size={14} />
                           <span>{formatEventDate(event)}</span>
-                          {eventTime && (
-                            <>
-                              <Clock size={14} />
-                              <span>{eventTime}</span>
-                            </>
-                          )}
+                          {eventTime && (<><Clock size={14} /><span>{eventTime}</span></>)}
                         </div>
                       )}
-                      {isPlacesMode && event.openingTime && event.closingTime && (
+                      {showingPlaces && event.openingTime && event.closingTime && (
                         <div className="flex items-center gap-2">
                           <Clock size={14} />
                           <span>{event.openingTime} - {event.closingTime}</span>
@@ -314,14 +268,11 @@ export default function GenericCategoryPage() {
           </div>
         ) : (
           <div className="text-center py-12">
-            <p className="text-gray-500 text-lg">
-              No {isPlacesMode ? 'places' : 'events'} available yet.
-            </p>
+            <p className="text-gray-500 text-lg">No {showingPlaces ? 'places' : 'events'} available yet.</p>
             <p className="text-gray-400 text-sm mt-2">Check back soon!</p>
           </div>
         )}
       </main>
-
       <Footer />
     </div>
   );
