@@ -22,6 +22,8 @@ import {
   calculateAvailableCredits,
   calculateMaxCreditUsage,
   areCreditsUsable,
+  hasUsedCreditsOnEvent,
+  canApplyCreditsToTicket,
 } from '../../utils/referralUtils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -475,35 +477,43 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketData, setTicketData] = useState(null);
 
-  // ✅ NEW — credit lock state
+  // ✅ Credit state
   const [isAmbassador, setIsAmbassador] = useState(false);
   const [creditsUnlocked, setCreditsUnlocked] = useState(false);
+  const [creditUsedOnEvents, setCreditUsedOnEvents] = useState([]);
 
   const ticketId = useRef(generateTicketId());
   const paymentRef = useRef(`OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
 
   useEffect(() => {
-    const loadUserCredits = async () => {
+    const loadUserData = async () => {
       if (!currentUser) return;
       try {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           const data = userDoc.data();
-          const creditsHistory = data.creditsHistory || [];
-          setAvailableCredits(calculateAvailableCredits(creditsHistory));
-          // ✅ NEW — load lock state
+          setAvailableCredits(calculateAvailableCredits(data.creditsHistory || []));
           setIsAmbassador(data.isAmbassador === true);
           setCreditsUnlocked(data.creditsUnlocked === true);
+          setCreditUsedOnEvents(data.creditUsedOnEvents || []);
         }
       } catch (err) {
-        console.error('Error loading credits:', err);
+        console.error('Error loading user data:', err);
       }
     };
-    loadUserCredits();
+    loadUserData();
   }, [currentUser]);
 
-  // ✅ Credits usable only if ambassador OR admin unlocked
+  // ✅ All credit conditions
   const creditsUsable = areCreditsUsable(isAmbassador, creditsUnlocked);
+  const alreadyUsedCreditsOnEvent = hasUsedCreditsOnEvent(creditUsedOnEvents, event.id);
+  const canUseCredits = canApplyCreditsToTicket(
+    isAmbassador,
+    creditsUnlocked,
+    quantity,
+    creditUsedOnEvents,
+    event.id
+  );
 
   const ticketPrice = event.ticketPrice || 0;
   const serviceFee = calculateServiceFee(event);
@@ -511,17 +521,33 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const baseTotal = calculateTotal(event);
   const totalBeforeCredits = baseTotal * quantity;
   const maxCreditsAllowed = calculateMaxCreditUsage(totalBeforeCredits, availableCredits);
-  const actualCreditsApplied = useCredits && creditsUsable
+  const actualCreditsApplied = useCredits && canUseCredits
     ? Math.min(creditsToApply || maxCreditsAllowed, maxCreditsAllowed)
     : 0;
   const finalTotal = totalBeforeCredits - actualCreditsApplied;
   const ticketsRemaining = (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
 
+  // ✅ Reset credits if quantity > 1
   useEffect(() => {
-    setCreditsToApply(useCredits && creditsUsable ? maxCreditsAllowed : 0);
-  }, [useCredits, maxCreditsAllowed, creditsUsable]);
+    if (quantity > 1) setUseCredits(false);
+  }, [quantity]);
 
-  const handlePaymentSuccess = (reference) => {
+  useEffect(() => {
+    setCreditsToApply(useCredits && canUseCredits ? maxCreditsAllowed : 0);
+  }, [useCredits, maxCreditsAllowed, canUseCredits]);
+
+  const handlePaymentSuccess = async (reference) => {
+    // ✅ Record credit usage on this event
+    if (actualCreditsApplied > 0 && currentUser) {
+      try {
+        await updateDoc(doc(db, 'users', currentUser.uid), {
+          creditUsedOnEvents: arrayUnion(event.id),
+        });
+      } catch (err) {
+        console.error('Error recording credit usage:', err);
+      }
+    }
+
     const newTicket = {
       ticketId: ticketId.current,
       eventId: event.id,
@@ -587,6 +613,17 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     },
   };
 
+  // ✅ Smart credits message logic
+  const getCreditsMessage = () => {
+    if (!currentUser || availableCredits === 0) return null;
+    if (!creditsUsable) return { type: 'locked' };
+    if (alreadyUsedCreditsOnEvent) return { type: 'used' };
+    if (quantity > 1) return { type: 'qty' };
+    return { type: 'available' };
+  };
+
+  const creditsMessage = getCreditsMessage();
+
   return (
     <>
       <div className="bg-white rounded-xl p-6 shadow-sm border-2 border-cyan-100">
@@ -635,50 +672,92 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           </div>
         </div>
 
-        {/* ✅ Credits locked message */}
-        {currentUser && availableCredits > 0 && !creditsUsable && (
-          <div className="bg-orange-50 border-2 border-orange-200 rounded-lg p-4 mb-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Lock size={16} className="text-orange-500" />
-              <p className="text-sm font-bold text-orange-800">Credits Locked 🔒</p>
-            </div>
-            <p className="text-xs text-orange-600">
-              You have {formatCredits(availableCredits)} in credits but they are pending admin approval.
-              Contact <a href="mailto:admin@outingstation.com" className="underline font-medium">admin@outingstation.com</a> to unlock your credits.
-            </p>
-          </div>
-        )}
-
-        {/* ✅ Credits usable section — only show if unlocked */}
-        {currentUser && availableCredits > 0 && creditsUsable && (
-          <div className="bg-purple-50 rounded-lg p-4 mb-4 border-2 border-purple-200">
-            <div className="flex items-start justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <CreditCard className="text-purple-600" size={20} />
-                <span className="font-semibold text-gray-900">Use Credits</span>
-                {isAmbassador && (
-                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">⭐ Ambassador</span>
-                )}
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={useCredits}
-                  onChange={(e) => setUseCredits(e.target.checked)} className="sr-only peer" />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-              </label>
-            </div>
-            <div className="text-sm">
-              <p className="text-gray-700 mb-1">
-                Available: <span className="font-bold text-purple-600">{formatCredits(availableCredits)}</span>
-              </p>
-              {useCredits && (
-                <p className="text-green-600 font-medium">
-                  ✓ Applying {formatCredits(actualCreditsApplied)} (Max 50%)
+        {/* ✅ Smart credits section */}
+        {creditsMessage && (
+          <>
+            {/* Locked */}
+            {creditsMessage.type === 'locked' && (
+              <div className="bg-orange-50 border-2 border-orange-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Lock size={16} className="text-orange-500" />
+                  <p className="text-sm font-bold text-orange-800">Credits Locked 🔒</p>
+                </div>
+                <p className="text-xs text-orange-600 mb-3">
+                  You have {formatCredits(availableCredits)} in credits but they are pending admin approval.
                 </p>
-              )}
-            </div>
-          </div>
+                
+                <a href="/credit-unlock-request"
+                  className="inline-flex items-center gap-1.5 text-xs bg-orange-500 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-orange-600 transition"
+                >
+                  🔓 Request Credit Unlock →
+                </a>
+              </div>
+            )}
+
+            {/* Already used on this event */}
+            {creditsMessage.type === 'used' && (
+              <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircle size={16} className="text-gray-400" />
+                  <p className="text-sm font-bold text-gray-600">Credits Already Used for This Event</p>
+                </div>
+                <p className="text-xs text-gray-500">
+                  You already used credits when purchasing a ticket for this event.
+                  Credits can only be used once per event.
+                </p>
+              </div>
+            )}
+
+            {/* Quantity > 1 */}
+            {creditsMessage.type === 'qty' && (
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <CreditCard size={16} className="text-blue-500" />
+                  <p className="text-sm font-bold text-blue-800">Credits Only Available for Single Ticket</p>
+                </div>
+                <p className="text-xs text-blue-600">
+                  Credits can only be applied when purchasing 1 ticket at a time.
+                  Reduce quantity to 1 to use your {formatCredits(availableCredits)} credits.
+                </p>
+              </div>
+            )}
+
+            {/* Available — show toggle */}
+            {creditsMessage.type === 'available' && (
+              <div className="bg-purple-50 rounded-lg p-4 mb-4 border-2 border-purple-200">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="text-purple-600" size={20} />
+                    <span className="font-semibold text-gray-900">Use Credits</span>
+                    {isAmbassador && (
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">⭐ Ambassador</span>
+                    )}
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={useCredits}
+                      onChange={(e) => setUseCredits(e.target.checked)} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
+                <div className="text-sm">
+                  <p className="text-gray-700 mb-1">
+                    Available: <span className="font-bold text-purple-600">{formatCredits(availableCredits)}</span>
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    💡 Credits can only be used for 1 ticket per event
+                  </p>
+                  {useCredits && (
+                    <p className="text-green-600 font-medium mt-1">
+                      ✓ Applying {formatCredits(actualCreditsApplied)} (Max 50%)
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
+        {/* Price Breakdown */}
         <div className="bg-gray-50 rounded-lg p-4 mb-4">
           <p className="text-sm font-semibold text-gray-900 mb-2">Price Breakdown:</p>
           <div className="space-y-1 text-sm">

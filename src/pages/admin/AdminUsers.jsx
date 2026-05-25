@@ -49,8 +49,8 @@ export default function AdminUsers() {
     bannedUsers: 0,
     verifiedEmails: 0,
     ambassadors: 0,
-    creditsLocked: 0,    // ✅ NEW
-    creditsUnlocked: 0,  // ✅ NEW
+    creditsLocked: 0,
+    creditsUnlocked: 0,
   });
 
   useEffect(() => { loadUsers(); }, []);
@@ -69,7 +69,6 @@ export default function AdminUsers() {
         bannedUsers: usersData.filter(u => u.banned === true).length,
         verifiedEmails: usersData.filter(u => u.emailVerified).length,
         ambassadors: usersData.filter(u => u.isAmbassador === true).length,
-        // ✅ NEW — count locked/unlocked for non-ambassadors
         creditsLocked: usersData.filter(u => !u.isAmbassador && !u.creditsUnlocked).length,
         creditsUnlocked: usersData.filter(u => !u.isAmbassador && u.creditsUnlocked === true).length,
       });
@@ -82,12 +81,13 @@ export default function AdminUsers() {
 
   const filterUsers = () => {
     let filtered = [...users];
+
     if (userFilter === 'admins') filtered = filtered.filter(u => u.role === 'admin');
     else if (userFilter === 'regular') filtered = filtered.filter(u => u.role !== 'admin' && u.banned !== true);
     else if (userFilter === 'banned') filtered = filtered.filter(u => u.banned === true);
     else if (userFilter === 'ambassadors') filtered = filtered.filter(u => u.isAmbassador === true);
-    else if (userFilter === 'credits_locked') filtered = filtered.filter(u => !u.isAmbassador && !u.creditsUnlocked); // ✅ NEW
-    else if (userFilter === 'credits_unlocked') filtered = filtered.filter(u => !u.isAmbassador && u.creditsUnlocked === true); // ✅ NEW
+    else if (userFilter === 'credits_locked') filtered = filtered.filter(u => !u.isAmbassador && !u.creditsUnlocked);
+    else if (userFilter === 'credits_unlocked') filtered = filtered.filter(u => !u.isAmbassador && u.creditsUnlocked === true);
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -106,39 +106,65 @@ export default function AdminUsers() {
     const isAdmin = currentRole === 'admin';
     if (!confirm(`Are you sure you want to ${isAdmin ? 'remove admin access from' : 'grant admin access to'} this user?`)) return;
     try {
-      await updateDoc(doc(db, 'users', userId), { role: isAdmin ? 'user' : 'admin', updatedAt: new Date() });
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: isAdmin ? 'user' : 'admin' } : u));
+      await updateDoc(doc(db, 'users', userId), {
+        role: isAdmin ? 'user' : 'admin',
+        updatedAt: new Date()
+      });
+      setUsers(prev => prev.map(u =>
+        u.id === userId ? { ...u, role: isAdmin ? 'user' : 'admin' } : u
+      ));
       toast.success(isAdmin ? '✅ Admin access removed' : '✅ Admin access granted');
     } catch (err) {
+      console.error('Error updating admin status:', err);
       toast.error('Failed to update admin status');
     }
   };
 
+  // ✅ FIXED — never pass undefined to Firestore
   const toggleAmbassador = async (userId, currentAmbassadorStatus) => {
     if (!confirm(`Are you sure you want to ${currentAmbassadorStatus ? 'remove ambassador status from' : 'make'} this user an ambassador?`)) return;
     try {
       const newStatus = !currentAmbassadorStatus;
-      await updateDoc(doc(db, 'users', userId), {
+
+      // ✅ Build update object conditionally — never pass undefined
+      const updateData = {
         isAmbassador: newStatus,
-        // ✅ Ambassadors auto-get credits unlocked; removing ambassador keeps their unlock state
-        creditsUnlocked: newStatus ? true : undefined,
         ambassadorSince: newStatus ? new Date() : null,
         updatedAt: new Date(),
-      });
+      };
+
+      // ✅ Only auto-unlock credits when MAKING ambassador
+      // When REMOVING ambassador, leave creditsUnlocked as-is
+      if (newStatus === true) {
+        updateData.creditsUnlocked = true;
+      }
+
+      await updateDoc(doc(db, 'users', userId), updateData);
+
       setUsers(prev => prev.map(u =>
-        u.id === userId ? { ...u, isAmbassador: newStatus, creditsUnlocked: newStatus ? true : u.creditsUnlocked, ambassadorSince: newStatus ? new Date() : null } : u
+        u.id === userId
+          ? {
+              ...u,
+              isAmbassador: newStatus,
+              ambassadorSince: newStatus ? new Date() : null,
+              ...(newStatus && { creditsUnlocked: true }),
+            }
+          : u
       ));
+
       setStats(prev => ({
         ...prev,
         ambassadors: newStatus ? prev.ambassadors + 1 : prev.ambassadors - 1,
       }));
+
       toast.success(currentAmbassadorStatus ? '✅ Ambassador status removed' : '⭐ User is now an Ambassador!');
     } catch (err) {
+      console.error('Error updating ambassador status:', err);
       toast.error('Failed to update ambassador status');
     }
   };
 
-  // ✅ NEW — Toggle credits unlock for regular users
+  // ✅ Toggle credits unlock for regular users
   const toggleCreditsUnlock = async (userId, currentUnlocked, isAmbassador) => {
     if (isAmbassador) {
       toast.error('Ambassador credits are always unlocked');
@@ -159,8 +185,9 @@ export default function AdminUsers() {
         creditsLocked: newState ? prev.creditsLocked - 1 : prev.creditsLocked + 1,
         creditsUnlocked: newState ? prev.creditsUnlocked + 1 : prev.creditsUnlocked - 1,
       }));
-      toast.success(newState ? '🔓 Credits unlocked for this user!' : '🔒 Credits locked');
+      toast.success(newState ? '🔓 Credits unlocked!' : '🔒 Credits locked');
     } catch (err) {
+      console.error('Error updating credits status:', err);
       toast.error('Failed to update credits status');
     }
   };
@@ -178,6 +205,7 @@ export default function AdminUsers() {
       ));
       toast.success(currentBanStatus ? '✅ User unbanned' : '✅ User banned');
     } catch (err) {
+      console.error('Error updating ban status:', err);
       toast.error('Failed to update ban status');
     }
   };
@@ -190,6 +218,7 @@ export default function AdminUsers() {
       setUsers(prev => prev.filter(u => u.id !== userId));
       toast.success('✅ User deleted');
     } catch (err) {
+      console.error('Error deleting user:', err);
       toast.error('Failed to delete user');
     }
   };
@@ -199,7 +228,11 @@ export default function AdminUsers() {
   };
 
   const exportUsersCSV = () => {
-    const headers = ['User ID', 'Name', 'Email', 'Phone', 'City', 'Role', 'Ambassador', 'Credits Unlocked', 'Referral Code', 'Total Referrals', 'Banned', 'Saved Events', 'Created At'];
+    const headers = [
+      'User ID', 'Name', 'Email', 'Phone', 'City', 'Role',
+      'Ambassador', 'Credits Unlocked', 'Referral Code',
+      'Total Referrals', 'Banned', 'Saved Events', 'Created At'
+    ];
     const rows = filteredUsers.map(user => [
       user.id,
       user.name || 'N/A',
@@ -213,7 +246,9 @@ export default function AdminUsers() {
       user.totalReferrals || 0,
       user.banned === true ? 'Yes' : 'No',
       user.savedEvents?.length || 0,
-      user.createdAt?.seconds ? new Date(user.createdAt.seconds * 1000).toLocaleDateString() : 'N/A',
+      user.createdAt?.seconds
+        ? new Date(user.createdAt.seconds * 1000).toLocaleDateString()
+        : 'N/A',
     ]);
     const csvContent = [
       headers.join(','),
@@ -232,7 +267,8 @@ export default function AdminUsers() {
   const formatDate = (timestamp) => {
     if (!timestamp?.seconds) return 'N/A';
     return new Date(timestamp.seconds * 1000).toLocaleDateString('en-US', {
-      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
     });
   };
 
@@ -252,7 +288,9 @@ export default function AdminUsers() {
                 <p className="text-sm text-gray-500">Manage users, credits and ambassador status</p>
               </div>
             </div>
-            <button onClick={loadUsers} className="text-sm text-cyan-600 hover:text-cyan-700 font-medium">↻ Refresh</button>
+            <button onClick={loadUsers} className="text-sm text-cyan-600 hover:text-cyan-700 font-medium">
+              ↻ Refresh
+            </button>
           </div>
         </header>
 
@@ -264,43 +302,87 @@ export default function AdminUsers() {
           <div className="p-4 sm:p-6 lg:p-8">
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-8">
-              {[
-                { icon: Users, color: 'text-cyan-500', label: 'Total Users', value: stats.totalUsers, border: 'border-gray-200' },
-                { icon: Shield, color: 'text-purple-500', label: 'Admins', value: stats.adminUsers, border: 'border-gray-200' },
-                { icon: UserCheck, color: 'text-green-500', label: 'Regular', value: stats.regularUsers, border: 'border-gray-200' },
-                { icon: Ban, color: 'text-red-500', label: 'Banned', value: stats.bannedUsers, border: 'border-gray-200' },
-                { icon: Mail, color: 'text-blue-500', label: 'Verified', value: stats.verifiedEmails, border: 'border-gray-200' },
-                { icon: Star, color: 'text-yellow-500', label: 'Ambassadors', value: stats.ambassadors, border: 'border-yellow-200' },
-                { icon: Lock, color: 'text-orange-500', label: 'Credits Locked', value: stats.creditsLocked, border: 'border-orange-200' },
-                { icon: Unlock, color: 'text-emerald-500', label: 'Credits Unlocked', value: stats.creditsUnlocked, border: 'border-emerald-200' },
-              ].map((stat, i) => {
-                const Icon = stat.icon;
-                return (
-                  <div key={i} className={`bg-white rounded-xl p-4 shadow-sm border ${stat.border}`}>
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <Icon className={stat.color} size={16} />
-                      <p className="text-xs text-gray-600 leading-tight">{stat.label}</p>
-                    </div>
-                    <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                  </div>
-                );
-              })}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Users className="text-cyan-500" size={18} />
+                  <p className="text-xs text-gray-600">Total Users</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.totalUsers}</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="text-purple-500" size={18} />
+                  <p className="text-xs text-gray-600">Admins</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.adminUsers}</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <UserCheck className="text-green-500" size={18} />
+                  <p className="text-xs text-gray-600">Regular</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.regularUsers}</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Ban className="text-red-500" size={18} />
+                  <p className="text-xs text-gray-600">Banned</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.bannedUsers}</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Mail className="text-blue-500" size={18} />
+                  <p className="text-xs text-gray-600">Verified</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.verifiedEmails}</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-yellow-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Star className="text-yellow-500" size={18} />
+                  <p className="text-xs text-gray-600">Ambassadors</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.ambassadors}</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-orange-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Lock className="text-orange-500" size={18} />
+                  <p className="text-xs text-gray-600">Credits Locked</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.creditsLocked}</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-emerald-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Unlock className="text-emerald-500" size={18} />
+                  <p className="text-xs text-gray-600">Credits Unlocked</p>
+                </div>
+                <p className="text-3xl font-bold text-gray-900">{stats.creditsUnlocked}</p>
+              </div>
             </div>
 
             {/* Filters */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
               <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by name, email, referral code or ID..."
-                    className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm" />
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by name, email, referral code or ID..."
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Filter size={18} className="text-gray-400" />
-                  <select value={userFilter} onChange={(e) => setUserFilter(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm">
+                  <select
+                    value={userFilter}
+                    onChange={(e) => setUserFilter(e.target.value)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+                  >
                     <option value="all">👥 All Users</option>
                     <option value="admins">🛡️ Admins Only</option>
                     <option value="ambassadors">⭐ Ambassadors</option>
@@ -310,12 +392,17 @@ export default function AdminUsers() {
                     <option value="credits_unlocked">🔓 Credits Unlocked</option>
                   </select>
                 </div>
-                <button onClick={exportUsersCSV}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm">
-                  <Download size={16} />Export CSV
+                <button
+                  onClick={exportUsersCSV}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm"
+                >
+                  <Download size={16} />
+                  Export CSV
                 </button>
               </div>
-              <p className="text-sm text-gray-500 mt-3">Showing {filteredUsers.length} of {stats.totalUsers} users</p>
+              <p className="text-sm text-gray-500 mt-3">
+                Showing {filteredUsers.length} of {stats.totalUsers} users
+              </p>
             </div>
 
             {/* Users List */}
@@ -344,12 +431,33 @@ export default function AdminUsers() {
                         <div className="px-6 py-4">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4 flex-1">
-                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-                                {user.name?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase() || '?'}
+
+                              {/* ✅ Photo with gradient fallback */}
+                              <div className="relative flex-shrink-0">
+                                {(user.avatar || user.photoURL) && (
+                                  <img
+                                    src={user.avatar || user.photoURL}
+                                    alt={user.name}
+                                    className="w-12 h-12 rounded-full object-cover"
+                                    onError={(e) => {
+                                      e.target.style.display = 'none';
+                                      e.target.nextSibling.style.display = 'flex';
+                                    }}
+                                  />
+                                )}
+                                <div
+                                  className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 items-center justify-center text-white font-bold text-lg"
+                                  style={{ display: (user.avatar || user.photoURL) ? 'none' : 'flex' }}
+                                >
+                                  {user.name?.charAt(0)?.toUpperCase() || user.email?.charAt(0)?.toUpperCase() || '?'}
+                                </div>
                               </div>
+
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                  <h3 className="text-base font-semibold text-gray-900">{user.name || 'No name'}</h3>
+                                  <h3 className="text-base font-semibold text-gray-900">
+                                    {user.name || 'No name'}
+                                  </h3>
                                   {user.role === 'admin' && (
                                     <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium">ADMIN</span>
                                   )}
@@ -359,7 +467,6 @@ export default function AdminUsers() {
                                   {user.banned === true && (
                                     <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-medium">BANNED</span>
                                   )}
-                                  {/* ✅ Credits status badge */}
                                   {!isAmbassador && (
                                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                                       creditsUnlocked
@@ -370,10 +477,12 @@ export default function AdminUsers() {
                                     </span>
                                   )}
                                   {user.city && (
-                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">📍 {user.city}</span>
+                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                                      📍 {user.city}
+                                    </span>
                                   )}
                                 </div>
-                                <div className="flex flex-wrap gap-3 text-sm text-gray-500">
+                                <div className="flex flex-wrap gap-3 text-sm text-gray-600">
                                   <span className="flex items-center gap-1">
                                     <Mail size={13} />{user.email || 'No email'}
                                   </span>
@@ -381,32 +490,45 @@ export default function AdminUsers() {
                                     <Calendar size={13} />Joined {formatDate(user.createdAt)}
                                   </span>
                                   {availableCredits > 0 && (
-                                    <span className={`font-semibold ${creditsUsable ? 'text-cyan-600' : 'text-orange-500'}`}>
-                                      {formatCredits(availableCredits)} credits {creditsUsable ? '' : '(locked)'}
+                                    <span className={`font-semibold text-xs ${creditsUsable ? 'text-cyan-600' : 'text-orange-500'}`}>
+                                      {formatCredits(availableCredits)} {creditsUsable ? 'credits' : 'credits (locked)'}
                                     </span>
                                   )}
-                                  <span className="text-gray-400">{referrals}/{limit} referrals</span>
+                                  <span className="text-gray-400 text-xs">
+                                    {referrals}/{limit} referrals
+                                  </span>
                                 </div>
                               </div>
                             </div>
 
-                            {/* ✅ Quick unlock button in row */}
-                            {!isAmbassador && (
-                              <button
-                                onClick={() => toggleCreditsUnlock(user.id, creditsUnlocked, isAmbassador)}
-                                className={`mr-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
-                                  creditsUnlocked
-                                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                                    : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                                }`}
-                              >
-                                {creditsUnlocked ? <><Unlock size={12} /> Unlock</> : <><Lock size={12} /> Locked</>}
-                              </button>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {/* ✅ Quick unlock/lock button */}
+                              {!isAmbassador && (
+                                <button
+                                  onClick={() => toggleCreditsUnlock(user.id, creditsUnlocked, isAmbassador)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+                                    creditsUnlocked
+                                      ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                      : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                                  }`}
+                                >
+                                  {creditsUnlocked
+                                    ? <><Unlock size={11} /> Unlocked</>
+                                    : <><Lock size={11} /> Locked</>
+                                  }
+                                </button>
+                              )}
 
-                            <button onClick={() => toggleUserDetails(user.id)} className="p-2 hover:bg-gray-100 rounded-lg transition">
-                              {expandedUser === user.id ? <ChevronUp size={20} className="text-gray-600" /> : <ChevronDown size={20} className="text-gray-600" />}
-                            </button>
+                              <button
+                                onClick={() => toggleUserDetails(user.id)}
+                                className="p-2 hover:bg-gray-100 rounded-lg transition"
+                              >
+                                {expandedUser === user.id
+                                  ? <ChevronUp size={20} className="text-gray-600" />
+                                  : <ChevronDown size={20} className="text-gray-600" />
+                                }
+                              </button>
+                            </div>
                           </div>
                         </div>
 
@@ -414,24 +536,56 @@ export default function AdminUsers() {
                         {expandedUser === user.id && (
                           <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
                               <div className="bg-white rounded-lg p-4 shadow-sm">
                                 <h4 className="font-semibold text-gray-900 mb-3">Account Details</h4>
                                 <div className="space-y-2 text-sm">
-                                  <div className="flex justify-between"><span className="text-gray-600">User ID:</span><span className="font-mono text-gray-900 text-xs">{user.id}</span></div>
-                                  <div className="flex justify-between"><span className="text-gray-600">Name:</span><span>{user.name || 'N/A'}</span></div>
-                                  <div className="flex justify-between"><span className="text-gray-600">Email:</span><span>{user.email || 'N/A'}</span></div>
-                                  <div className="flex justify-between"><span className="text-gray-600">Phone:</span><span>{user.phone || 'N/A'}</span></div>
-                                  <div className="flex justify-between"><span className="text-gray-600">City:</span><span>{user.city || 'N/A'}</span></div>
-                                  <div className="flex justify-between"><span className="text-gray-600">Role:</span>
-                                    <span className={`font-semibold ${user.role === 'admin' ? 'text-purple-600' : 'text-gray-900'}`}>{user.role || 'user'}</span>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">User ID:</span>
+                                    <span className="font-mono text-gray-900 text-xs truncate max-w-[160px]">{user.id}</span>
                                   </div>
-                                  <div className="flex justify-between"><span className="text-gray-600">Ambassador:</span>
-                                    <span className={`font-semibold ${isAmbassador ? 'text-yellow-600' : 'text-gray-400'}`}>{isAmbassador ? '⭐ Yes' : 'No'}</span>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Name:</span>
+                                    <span className="text-gray-900">{user.name || 'N/A'}</span>
                                   </div>
-                                  <div className="flex justify-between"><span className="text-gray-600">Referral Code:</span>
-                                    <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{user.referralCode || 'N/A'}</span>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Email:</span>
+                                    <span className="text-gray-900 truncate max-w-[160px]">{user.email || 'N/A'}</span>
                                   </div>
-                                  <div className="flex justify-between"><span className="text-gray-600">Referrals:</span>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Phone:</span>
+                                    <span className="text-gray-900">{user.phone || 'N/A'}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">City:</span>
+                                    <span className="text-gray-900">{user.city || 'N/A'}</span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Role:</span>
+                                    <span className={`font-semibold ${user.role === 'admin' ? 'text-purple-600' : 'text-gray-900'}`}>
+                                      {user.role || 'user'}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Ambassador:</span>
+                                    <span className={`font-semibold ${isAmbassador ? 'text-yellow-600' : 'text-gray-400'}`}>
+                                      {isAmbassador ? '⭐ Yes' : 'No'}
+                                    </span>
+                                  </div>
+                                  {isAmbassador && user.ambassadorSince && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Ambassador Since:</span>
+                                      <span className="text-gray-900">{formatDate(user.ambassadorSince)}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Referral Code:</span>
+                                    <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">
+                                      {user.referralCode || 'N/A'}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Referrals:</span>
                                     <span className="font-semibold">{referrals} / {limit}</span>
                                   </div>
                                 </div>
@@ -440,107 +594,155 @@ export default function AdminUsers() {
                               <div className="bg-white rounded-lg p-4 shadow-sm">
                                 <h4 className="font-semibold text-gray-900 mb-3">Credits & Activity</h4>
                                 <div className="space-y-2 text-sm">
-                                  <div className="flex justify-between"><span className="text-gray-600">Available Credits:</span>
-                                    <span className={`font-semibold ${availableCredits > 0 ? 'text-cyan-600' : 'text-gray-400'}`}>{formatCredits(availableCredits)}</span>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Available Credits:</span>
+                                    <span className={`font-semibold ${availableCredits > 0 ? 'text-cyan-600' : 'text-gray-400'}`}>
+                                      {formatCredits(availableCredits)}
+                                    </span>
                                   </div>
-                                  {/* ✅ Credits unlock status */}
                                   <div className="flex justify-between items-center">
                                     <span className="text-gray-600">Credits Status:</span>
                                     {isAmbassador ? (
-                                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-semibold">Auto-unlocked (Ambassador)</span>
+                                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-semibold">
+                                        Auto-unlocked (Ambassador)
+                                      </span>
                                     ) : (
-                                      <span className={`text-xs px-2 py-0.5 rounded font-semibold ${creditsUnlocked ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                                      <span className={`text-xs px-2 py-0.5 rounded font-semibold ${
+                                        creditsUnlocked
+                                          ? 'bg-emerald-100 text-emerald-700'
+                                          : 'bg-orange-100 text-orange-700'
+                                      }`}>
                                         {creditsUnlocked ? '🔓 Unlocked' : '🔒 Locked'}
                                       </span>
                                     )}
                                   </div>
                                   {user.creditsUnlockedAt && !isAmbassador && (
-                                    <div className="flex justify-between"><span className="text-gray-600">Unlocked At:</span>
-                                      <span>{formatDate(user.creditsUnlockedAt)}</span>
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Unlocked At:</span>
+                                      <span className="text-gray-900">{formatDate(user.creditsUnlockedAt)}</span>
                                     </div>
                                   )}
-                                  <div className="flex justify-between"><span className="text-gray-600">Saved Events:</span>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Saved Events:</span>
                                     <span className="font-semibold">{user.savedEvents?.length || 0}</span>
                                   </div>
-                                  <div className="flex justify-between"><span className="text-gray-600">Created:</span>
-                                    <span>{formatDate(user.createdAt)}</span>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Created:</span>
+                                    <span className="text-gray-900">{formatDate(user.createdAt)}</span>
                                   </div>
-                                  <div className="flex justify-between"><span className="text-gray-600">Last Login:</span>
-                                    <span>{formatDate(user.lastLoginAt)}</span>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Last Login:</span>
+                                    <span className="text-gray-900">{formatDate(user.lastLoginAt)}</span>
                                   </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-gray-600">Last Updated:</span>
+                                    <span className="text-gray-900">{formatDate(user.updatedAt)}</span>
+                                  </div>
+                                  {user.banned === true && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Banned At:</span>
+                                      <span className="text-red-600">{formatDate(user.bannedAt)}</span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
 
                             {/* Action Buttons */}
                             <div className="flex items-center gap-3 flex-wrap">
-                              <button onClick={() => toggleAdmin(user.id, user.role)}
+                              <button
+                                onClick={() => toggleAdmin(user.id, user.role)}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition text-sm ${
                                   user.role === 'admin'
                                     ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
                                     : 'bg-purple-500 text-white hover:bg-purple-600'
-                                }`}>
+                                }`}
+                              >
                                 <Shield size={16} />
                                 {user.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
                               </button>
 
-                              <button onClick={() => toggleAmbassador(user.id, isAmbassador)}
+                              {/* ✅ FIXED Ambassador button */}
+                              <button
+                                onClick={() => toggleAmbassador(user.id, isAmbassador)}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition text-sm ${
                                   isAmbassador
                                     ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
                                     : 'bg-yellow-500 text-white hover:bg-yellow-600'
-                                }`}>
+                                }`}
+                              >
                                 <Star size={16} />
                                 {isAmbassador ? 'Remove Ambassador' : 'Make Ambassador'}
                               </button>
 
-                              {/* ✅ Credits unlock button in expanded view */}
+                              {/* ✅ Credits unlock/lock button */}
                               {!isAmbassador && (
-                                <button onClick={() => toggleCreditsUnlock(user.id, creditsUnlocked, isAmbassador)}
+                                <button
+                                  onClick={() => toggleCreditsUnlock(user.id, creditsUnlocked, isAmbassador)}
                                   className={`flex items-center gap-2 px-4 py-2 rounded-lg transition text-sm ${
                                     creditsUnlocked
                                       ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
                                       : 'bg-emerald-500 text-white hover:bg-emerald-600'
-                                  }`}>
-                                  {creditsUnlocked ? <><Lock size={16} /> Lock Credits</> : <><Unlock size={16} /> Unlock Credits</>}
+                                  }`}
+                                >
+                                  {creditsUnlocked
+                                    ? <><Lock size={16} /> Lock Credits</>
+                                    : <><Unlock size={16} /> Unlock Credits</>
+                                  }
                                 </button>
                               )}
 
-                              <button onClick={() => toggleBan(user.id, user.banned)}
+                              <button
+                                onClick={() => toggleBan(user.id, user.banned)}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition text-sm ${
                                   user.banned
                                     ? 'bg-green-500 text-white hover:bg-green-600'
                                     : 'bg-red-100 text-red-700 hover:bg-red-200'
-                                }`}>
-                                {user.banned ? <><UserCheck size={16} /> Unban User</> : <><Ban size={16} /> Ban User</>}
+                                }`}
+                              >
+                                {user.banned
+                                  ? <><UserCheck size={16} /> Unban User</>
+                                  : <><Ban size={16} /> Ban User</>
+                                }
                               </button>
 
-                              <button onClick={() => deleteUser(user.id)}
-                                className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm">
-                                <Trash2 size={16} />Delete User
+                              <button
+                                onClick={() => deleteUser(user.id)}
+                                className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition text-sm"
+                              >
+                                <Trash2 size={16} />
+                                Delete User
                               </button>
                             </div>
 
-                            {user.banned && (
+                            {/* Status banners */}
+                            {user.banned === true && (
                               <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                                <p className="text-sm text-red-700">⚠️ This user is currently banned and cannot access the platform.</p>
+                                <p className="text-sm text-red-700">
+                                  ⚠️ This user is currently banned and cannot access the platform.
+                                </p>
                               </div>
                             )}
 
                             {isAmbassador && (
                               <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                <p className="text-sm text-yellow-700">⭐ Ambassador — can refer up to {REFERRAL_LIMIT_AMBASSADOR} users. Credits always unlocked.</p>
+                                <p className="text-sm text-yellow-700">
+                                  ⭐ Ambassador — can refer up to {REFERRAL_LIMIT_AMBASSADOR} users. Credits always unlocked automatically.
+                                </p>
                               </div>
                             )}
 
-                            {/* ✅ Credits locked warning */}
+                            {/* ✅ Credits locked warning with quick unlock */}
                             {!isAmbassador && !creditsUnlocked && availableCredits > 0 && (
                               <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg flex items-start justify-between gap-3">
                                 <p className="text-sm text-orange-700">
-                                  🔒 This user has {formatCredits(availableCredits)} in credits but they are locked. Click "Unlock Credits" to allow usage.
+                                  🔒 This user has {formatCredits(availableCredits)} in credits but they are locked.
+                                  Click "Unlock Credits" to allow this user to use their credits.
                                 </p>
-                                <button onClick={() => toggleCreditsUnlock(user.id, false, false)}
-                                  className="flex-shrink-0 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-semibold hover:bg-emerald-600 transition">
+                                <button
+                                  onClick={() => toggleCreditsUnlock(user.id, false, false)}
+                                  className="flex-shrink-0 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-semibold hover:bg-emerald-600 transition"
+                                >
                                   Unlock Now
                                 </button>
                               </div>

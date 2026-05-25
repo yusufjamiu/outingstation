@@ -92,7 +92,14 @@ export default function ReferralCard({
                 ? availableCredits > 0
                   ? `You have ${formatCredits(availableCredits)} ready to use on ticket purchases`
                   : 'Your credits are active and ready to use'
-                : 'Your credits are pending admin approval before use. Contact admin@outingstation.com'}
+                  : (
+                   <span>
+                     Your credits are pending admin approval.{' '}
+                    <a href="/credit-unlock-request" className="underline font-semibold">
+                     Click here to request unlock →
+                    </a>
+                  </span>
+                )}
             </p>
           </div>
           {!creditsUsable && availableCredits > 0 && (

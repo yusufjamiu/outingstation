@@ -1,4 +1,4 @@
-import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, LogOut, X, FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag } from 'lucide-react';
+import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, Unlock, LogOut, X, FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export function AdminSidebar({ isOpen, onClose }) {
@@ -20,6 +20,7 @@ export function AdminSidebar({ isOpen, onClose }) {
     { icon: Users, label: 'Users', path: '/admin/users' },
     { icon: Grid, label: 'Categories', path: '/admin/categories' },
     { icon: GraduationCap, label: 'Universities', path: '/admin/universities' },
+    { icon: Unlock, label: 'Credit Requests', path: '/admin/credit-requests'  },
     { icon: BarChart3, label: 'Analytics', path: '/admin/saved-events-analytics' },
     { icon: Bell, label: 'Send Notification', path: '/admin/notifications' },
     { icon: Mail, label: 'Early Access', path: '/admin/early-access' },

@@ -38,6 +38,7 @@ import SubmitEventPage from './pages/SubmitEventPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import AmbassadorPage from './pages/AmbassadorPage';
 import VerifyTicket from './pages/VerifyTicket';
+import CreditUnlockRequestPage from './pages/CreditUnlockRequestPage';
 
 // User Dashboard Pages
 import UserDashboard from './pages/dashboard/UserDashboard';
@@ -68,8 +69,10 @@ import EventSubmissionsPage from './pages/admin/EventSubmissionsPage';
 import AdminEarlyAccess from './pages/admin/AdminEarlyAccess';
 import AdminNotifications from './pages/admin/AdminNotifications';
 import AdminAmbassadors from './pages/admin/AdminAmbassadors';
-import AdminVendors from './pages/admin/AdminVendors'; // ✅ NEW
-import AdminVendorForm from './pages/admin/AdminVendorForm'; // ✅ NEW
+import AdminVendors from './pages/admin/AdminVendors'; // 
+import AdminVendorForm from './pages/admin/AdminVendorForm'; // 
+import AdminCreditRequests from './pages/admin/AdminCreditRequests';
+
 
 // ✅ FUNCTION STARTS HERE
 function App() {
@@ -87,6 +90,7 @@ function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/forgot-password" element={<ResetPasswordPage />} />
+              <Route path="/credit-unlock-request" element={<CreditUnlockRequestPage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/category/:slug" element={<GenericCategoryPage />} />
               <Route path="/categories" element={<CategoryBrowsePage />} />
@@ -238,6 +242,13 @@ function App() {
                   <AdminAmbassadors />
                 </AdminRoute>
               } />
+
+              <Route path="/admin/credit-requests" element={
+                <AdminRoute> 
+                  <AdminCreditRequests /> 
+                </AdminRoute>
+              } />
+
 
             </Routes>
           </div>

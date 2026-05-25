@@ -117,3 +117,31 @@ export function areCreditsUsable(isAmbassador, creditsUnlocked) {
   if (isAmbassador) return true;
   return creditsUnlocked === true;
 }
+
+/**
+ * Check if user already used credits on a specific event
+ */
+export function hasUsedCreditsOnEvent(creditUsedOnEvents, eventId) {
+  if (!creditUsedOnEvents || !Array.isArray(creditUsedOnEvents)) return false;
+  return creditUsedOnEvents.includes(eventId);
+}
+
+/**
+ * Check if credits can be applied to this purchase
+ * Rules:
+ * 1. Credits must be usable (unlocked)
+ * 2. Quantity must be exactly 1
+ * 3. User must not have already used credits on this event
+ */
+export function canApplyCreditsToTicket(
+  isAmbassador,
+  creditsUnlocked,
+  quantity,
+  creditUsedOnEvents,
+  eventId
+) {
+  if (!areCreditsUsable(isAmbassador, creditsUnlocked)) return false;
+  if (quantity !== 1) return false;
+  if (hasUsedCreditsOnEvent(creditUsedOnEvents, eventId)) return false;
+  return true;
+}
