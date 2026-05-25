@@ -1,6 +1,5 @@
-// src/components/ReferralCard.jsx
 import React, { useState } from 'react';
-import { Copy, Share2, MessageCircle, Mail, Check, Lock, Unlock, Star } from 'lucide-react';
+import { Copy, Share2, MessageCircle, Mail, Check, Lock, Unlock } from 'lucide-react';
 import {
   canStillRefer,
   getReferralSlotsLeft,
@@ -59,57 +58,43 @@ export default function ReferralCard({
   return (
     <div className="space-y-4">
 
-      {/* ✅ Ambassador badge */}
-      {isAmbassador && (
-        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-          <Star size={18} className="text-amber-500 fill-amber-500 flex-shrink-0" />
-          <div>
-            <p className="text-sm font-bold text-amber-800">Ambassador Account ⭐</p>
-            <p className="text-xs text-amber-600">
-              Up to {REFERRAL_LIMIT_AMBASSADOR} referrals · Credits always active
-            </p>
-          </div>
+      {/* ✅ Credits lock status — show for everyone */}
+      {/* Ambassadors: always unlocked. Regular users: depends on admin */}
+      <div className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${
+        creditsUsable
+          ? 'bg-emerald-50 border-emerald-200'
+          : 'bg-orange-50 border-orange-200'
+      }`}>
+        {creditsUsable
+          ? <Unlock size={18} className="text-emerald-500 flex-shrink-0" />
+          : <Lock size={18} className="text-orange-500 flex-shrink-0" />
+        }
+        <div className="flex-1">
+          <p className={`text-sm font-bold ${creditsUsable ? 'text-emerald-800' : 'text-orange-800'}`}>
+            Credits {creditsUsable ? 'Unlocked ✅' : 'Locked 🔒'}
+          </p>
+          <p className={`text-xs ${creditsUsable ? 'text-emerald-600' : 'text-orange-600'}`}>
+            {creditsUsable
+              ? availableCredits > 0
+                ? `You have ${formatCredits(availableCredits)} ready to use on ticket purchases`
+                : 'Your credits are active and ready to use'
+              : (
+                <span>
+                  Your credits are pending admin approval.{' '}
+                  <a href="/credit-unlock-request" className="underline font-semibold">
+                    Click here to request unlock →
+                  </a>
+                </span>
+              )}
+          </p>
         </div>
-      )}
-
-      {/* ✅ Credits lock status — only for non-ambassadors */}
-      {!isAmbassador && (
-        <div className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${
-          creditsUsable
-            ? 'bg-emerald-50 border-emerald-200'
-            : 'bg-orange-50 border-orange-200'
-        }`}>
-          {creditsUsable
-            ? <Unlock size={18} className="text-emerald-500 flex-shrink-0" />
-            : <Lock size={18} className="text-orange-500 flex-shrink-0" />
-          }
-          <div className="flex-1">
-            <p className={`text-sm font-bold ${creditsUsable ? 'text-emerald-800' : 'text-orange-800'}`}>
-              Credits {creditsUsable ? 'Unlocked ✅' : 'Locked 🔒'}
-            </p>
-            <p className={`text-xs ${creditsUsable ? 'text-emerald-600' : 'text-orange-600'}`}>
-              {creditsUsable
-                ? availableCredits > 0
-                  ? `You have ${formatCredits(availableCredits)} ready to use on ticket purchases`
-                  : 'Your credits are active and ready to use'
-                  : (
-                   <span>
-                     Your credits are pending admin approval.{' '}
-                    <a href="/credit-unlock-request" className="underline font-semibold">
-                     Click here to request unlock →
-                    </a>
-                  </span>
-                )}
-            </p>
+        {!creditsUsable && availableCredits > 0 && (
+          <div className="text-right flex-shrink-0">
+            <p className="text-sm text-orange-600 font-bold">{formatCredits(availableCredits)}</p>
+            <p className="text-xs text-orange-400">pending</p>
           </div>
-          {!creditsUsable && availableCredits > 0 && (
-            <div className="text-right flex-shrink-0">
-              <p className="text-sm text-orange-600 font-bold">{formatCredits(availableCredits)}</p>
-              <p className="text-xs text-orange-400">pending</p>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Main referral card */}
       <div className="bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl p-6 text-white">
@@ -131,7 +116,7 @@ export default function ReferralCard({
             </div>
           </div>
 
-          {/* ✅ Progress bar */}
+          {/* Progress bar */}
           <div className="mt-3">
             <div className="w-full bg-white/20 rounded-full h-2">
               <div
@@ -180,7 +165,7 @@ export default function ReferralCard({
           </div>
         )}
 
-        {/* Share Buttons — only show if can still refer */}
+        {/* Share Buttons */}
         {canRefer && (
           <div className="grid grid-cols-3 gap-2">
             <button

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useOutletContext } from 'react-router-dom';
 import { X, Pencil, MapPin, User, Mail, Calendar, Bookmark, LogOut, Phone, Camera, CreditCard, Clock, Star } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import ReferralCard from '../../components/ReferralCard';
 import { 
@@ -174,7 +174,9 @@ export default function Settings() {
 
   const availableCredits = calculateAvailableCredits(userData?.creditsHistory || []);
   const activeCredits = getActiveCredits(userData?.creditsHistory || []);
+  // ✅ Read all ambassador/credits fields from userData
   const isAmbassador = userData?.isAmbassador === true;
+  const creditsUnlocked = userData?.creditsUnlocked === true;
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
@@ -202,28 +204,18 @@ export default function Settings() {
 
       {!isEditing ? (
         <>
-          {/* ✅ AMBASSADOR BANNER */}
-          {isAmbassador && (
-            <div className="bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-xl p-4 mb-4 sm:mb-6 flex items-center gap-4">
-              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
-                <Star className="text-white" size={24} fill="white" />
-              </div>
-              <div className="flex-1">
-                <p className="font-bold text-white text-base sm:text-lg">⭐ OutingStation Ambassador</p>
-                <p className="text-yellow-50 text-xs sm:text-sm">
-                  You earn <strong>₦500</strong> per referral instead of ₦300. Keep sharing and earning!
-                </p>
-              </div>
-            </div>
-          )}
+          {/* ✅ AMBASSADOR BANNER REMOVED — only badge on username stays */}
 
           {/* REFERRAL & CREDITS SECTION */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
-            {/* Referral Card */}
+            {/* ✅ ReferralCard — now with all required props */}
             {userData?.referralCode ? (
               <ReferralCard 
                 referralCode={userData.referralCode} 
                 totalReferrals={userData.totalReferrals || 0}
+                isAmbassador={isAmbassador}           // ✅ FIXED — was missing
+                creditsUnlocked={creditsUnlocked}     // ✅ FIXED — was missing
+                creditsHistory={userData.creditsHistory || []}  // ✅ FIXED — was missing
               />
             ) : (
               <div className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm">
@@ -316,7 +308,7 @@ export default function Settings() {
                     alt={displayName} 
                     className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover" 
                   />
-                  {/* ✅ Ambassador star on avatar */}
+                  {/* ✅ Ambassador star on avatar stays */}
                   {isAmbassador && (
                     <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-yellow-400 rounded-full flex items-center justify-center border-2 border-white">
                       <Star size={14} className="text-white" fill="white" />
@@ -326,7 +318,7 @@ export default function Settings() {
                 <div className="text-center sm:text-left">
                   <div className="flex items-center gap-2 justify-center sm:justify-start mb-1">
                     <h2 className="text-xl sm:text-2xl font-bold text-gray-900">{displayName}</h2>
-                    {/* ✅ Ambassador badge next to name */}
+                    {/* ✅ Ambassador badge next to name stays */}
                     {isAmbassador && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-semibold">
                         <Star size={10} fill="currentColor" />
@@ -435,6 +427,7 @@ export default function Settings() {
             <div className="text-center sm:text-left flex-1">
               <div className="flex items-center gap-2 justify-center sm:justify-start">
                 <h3 className="text-lg sm:text-xl font-bold text-gray-900">{displayName}</h3>
+                {/* ✅ Ambassador badge stays in edit mode too */}
                 {isAmbassador && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-semibold">
                     <Star size={10} fill="currentColor" />
