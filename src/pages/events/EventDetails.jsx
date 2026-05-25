@@ -729,9 +729,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
                   <div className="flex items-center gap-2">
                     <CreditCard className="text-purple-600" size={20} />
                     <span className="font-semibold text-gray-900">Use Credits</span>
-                    {isAmbassador && (
-                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">⭐ Ambassador</span>
-                    )}
+                    
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" checked={useCredits}
