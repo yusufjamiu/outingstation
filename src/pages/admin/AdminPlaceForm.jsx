@@ -15,7 +15,8 @@ const campusSubCategories = [
 // ✅ Main categories that support places
 const categoryOptions = [
   'Art & Culture', 'Food & Dining', 'Sport & Fitness',
-  'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show'
+  'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
+  'Malls', 'Spas', // ✅ Places-only categories
 ];
 
 export default function AdminPlaceForm() {
