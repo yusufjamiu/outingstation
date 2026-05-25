@@ -5,7 +5,7 @@ import SEO from '../../components/SEO';
 import {
   Calendar, Clock, MapPin, DollarSign, Users, Share2, Heart,
   ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft,
-  CheckCircle, Navigation, Ticket, CreditCard
+  CheckCircle, Navigation, Ticket, CreditCard, Lock
 } from 'lucide-react';
 import {
   doc, getDoc, collection, getDocs,
@@ -20,7 +20,8 @@ import { PaystackButton } from 'react-paystack';
 import {
   formatCredits,
   calculateAvailableCredits,
-  calculateMaxCreditUsage
+  calculateMaxCreditUsage,
+  areCreditsUsable,
 } from '../../utils/referralUtils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -78,7 +79,6 @@ function EventImageCarousel({ event, isPlace }) {
     setCurrentIndex(i => (i + 1) % allImages.length);
   };
 
-  // ✅ Keyboard navigation
   useEffect(() => {
     if (!showFullScreen) return;
     const handleKey = (e) => {
@@ -93,8 +93,6 @@ function EventImageCarousel({ event, isPlace }) {
   return (
     <>
       <div className="relative rounded-2xl overflow-hidden mb-6 shadow-lg group">
-
-        {/* ✅ Main image */}
         <div
           className="relative h-64 sm:h-96 cursor-zoom-in"
           onClick={() => setShowFullScreen(true)}
@@ -109,7 +107,6 @@ function EventImageCarousel({ event, isPlace }) {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent pointer-events-none" />
 
-          {/* Counter badge */}
           {allImages.length > 1 && (
             <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 z-10">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
@@ -119,7 +116,6 @@ function EventImageCarousel({ event, isPlace }) {
             </div>
           )}
 
-          {/* Expand hint */}
           <div className="absolute top-4 right-28 bg-black/40 backdrop-blur-sm text-white px-2.5 py-1.5 rounded-full text-xs font-medium opacity-0 group-hover:opacity-100 transition z-10 flex items-center gap-1">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
               <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
@@ -127,7 +123,6 @@ function EventImageCarousel({ event, isPlace }) {
             View
           </div>
 
-          {/* Left arrow */}
           {allImages.length > 1 && (
             <button
               onClick={prev}
@@ -139,7 +134,6 @@ function EventImageCarousel({ event, isPlace }) {
             </button>
           )}
 
-          {/* Right arrow */}
           {allImages.length > 1 && (
             <button
               onClick={next}
@@ -151,7 +145,6 @@ function EventImageCarousel({ event, isPlace }) {
             </button>
           )}
 
-          {/* Dot indicators */}
           {allImages.length > 1 && (
             <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1.5 z-10 pointer-events-auto">
               {allImages.map((_, i) => (
@@ -159,16 +152,13 @@ function EventImageCarousel({ event, isPlace }) {
                   key={i}
                   onClick={(e) => { e.stopPropagation(); setCurrentIndex(i); }}
                   className={`transition-all duration-300 rounded-full ${
-                    i === currentIndex
-                      ? 'w-5 h-2 bg-white'
-                      : 'w-2 h-2 bg-white/50 hover:bg-white/80'
+                    i === currentIndex ? 'w-5 h-2 bg-white' : 'w-2 h-2 bg-white/50 hover:bg-white/80'
                   }`}
                 />
               ))}
             </div>
           )}
 
-          {/* Badges */}
           <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
             {event.eventType && (
               <span className="bg-purple-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
@@ -184,14 +174,12 @@ function EventImageCarousel({ event, isPlace }) {
             )}
           </div>
 
-          {/* Category badge */}
           <div className="absolute z-10" style={{ top: '1rem', left: allImages.length > 1 ? '7rem' : '1rem' }}>
             <span className="bg-white/90 backdrop-blur-sm text-cyan-500 px-4 py-2 rounded-full text-sm font-semibold">
               #{event.category}
             </span>
           </div>
 
-          {/* Free badge */}
           {event.isFree && (
             <div className="absolute right-4 z-10" style={{ bottom: allImages.length > 1 ? '3rem' : '1rem' }}>
               <span className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-semibold">
@@ -201,7 +189,6 @@ function EventImageCarousel({ event, isPlace }) {
           )}
         </div>
 
-        {/* ✅ Thumbnail strip */}
         {allImages.length > 1 && (
           <div className="flex gap-2 p-3 bg-white overflow-x-auto">
             {allImages.map((img, i) => (
@@ -228,13 +215,11 @@ function EventImageCarousel({ event, isPlace }) {
         )}
       </div>
 
-      {/* ✅ Full screen lightbox */}
       {showFullScreen && (
         <div
           className="fixed inset-0 bg-black/96 z-50 flex items-center justify-center"
           onClick={() => setShowFullScreen(false)}
         >
-          {/* Close */}
           <button
             onClick={() => setShowFullScreen(false)}
             className="absolute top-4 right-4 text-white bg-white/20 hover:bg-white/30 p-3 rounded-full transition z-10"
@@ -245,12 +230,10 @@ function EventImageCarousel({ event, isPlace }) {
             </svg>
           </button>
 
-          {/* Counter */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white text-sm font-medium bg-white/20 px-4 py-2 rounded-full z-10">
             {currentIndex + 1} / {allImages.length}
           </div>
 
-          {/* Main image */}
           <img
             src={allImages[currentIndex]}
             alt={event.title}
@@ -261,7 +244,6 @@ function EventImageCarousel({ event, isPlace }) {
             }}
           />
 
-          {/* Prev */}
           {allImages.length > 1 && (
             <button
               onClick={prev}
@@ -273,7 +255,6 @@ function EventImageCarousel({ event, isPlace }) {
             </button>
           )}
 
-          {/* Next */}
           {allImages.length > 1 && (
             <button
               onClick={next}
@@ -285,7 +266,6 @@ function EventImageCarousel({ event, isPlace }) {
             </button>
           )}
 
-          {/* Thumbnail strip in lightbox */}
           {allImages.length > 1 && (
             <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 px-4 overflow-x-auto py-2">
               {allImages.map((img, i) => (
@@ -495,6 +475,10 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketData, setTicketData] = useState(null);
 
+  // ✅ NEW — credit lock state
+  const [isAmbassador, setIsAmbassador] = useState(false);
+  const [creditsUnlocked, setCreditsUnlocked] = useState(false);
+
   const ticketId = useRef(generateTicketId());
   const paymentRef = useRef(`OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
 
@@ -504,8 +488,12 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       try {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
-          const creditsHistory = userDoc.data().creditsHistory || [];
+          const data = userDoc.data();
+          const creditsHistory = data.creditsHistory || [];
           setAvailableCredits(calculateAvailableCredits(creditsHistory));
+          // ✅ NEW — load lock state
+          setIsAmbassador(data.isAmbassador === true);
+          setCreditsUnlocked(data.creditsUnlocked === true);
         }
       } catch (err) {
         console.error('Error loading credits:', err);
@@ -514,21 +502,24 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     loadUserCredits();
   }, [currentUser]);
 
+  // ✅ Credits usable only if ambassador OR admin unlocked
+  const creditsUsable = areCreditsUsable(isAmbassador, creditsUnlocked);
+
   const ticketPrice = event.ticketPrice || 0;
   const serviceFee = calculateServiceFee(event);
   const paystackFee = calculatePaystackFee(event);
   const baseTotal = calculateTotal(event);
   const totalBeforeCredits = baseTotal * quantity;
   const maxCreditsAllowed = calculateMaxCreditUsage(totalBeforeCredits, availableCredits);
-  const actualCreditsApplied = useCredits
+  const actualCreditsApplied = useCredits && creditsUsable
     ? Math.min(creditsToApply || maxCreditsAllowed, maxCreditsAllowed)
     : 0;
   const finalTotal = totalBeforeCredits - actualCreditsApplied;
   const ticketsRemaining = (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
 
   useEffect(() => {
-    setCreditsToApply(useCredits ? maxCreditsAllowed : 0);
-  }, [useCredits, maxCreditsAllowed]);
+    setCreditsToApply(useCredits && creditsUsable ? maxCreditsAllowed : 0);
+  }, [useCredits, maxCreditsAllowed, creditsUsable]);
 
   const handlePaymentSuccess = (reference) => {
     const newTicket = {
@@ -644,12 +635,30 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
           </div>
         </div>
 
-        {currentUser && availableCredits > 0 && (
+        {/* ✅ Credits locked message */}
+        {currentUser && availableCredits > 0 && !creditsUsable && (
+          <div className="bg-orange-50 border-2 border-orange-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Lock size={16} className="text-orange-500" />
+              <p className="text-sm font-bold text-orange-800">Credits Locked 🔒</p>
+            </div>
+            <p className="text-xs text-orange-600">
+              You have {formatCredits(availableCredits)} in credits but they are pending admin approval.
+              Contact <a href="mailto:admin@outingstation.com" className="underline font-medium">admin@outingstation.com</a> to unlock your credits.
+            </p>
+          </div>
+        )}
+
+        {/* ✅ Credits usable section — only show if unlocked */}
+        {currentUser && availableCredits > 0 && creditsUsable && (
           <div className="bg-purple-50 rounded-lg p-4 mb-4 border-2 border-purple-200">
             <div className="flex items-start justify-between mb-2">
               <div className="flex items-center gap-2">
                 <CreditCard className="text-purple-600" size={20} />
                 <span className="font-semibold text-gray-900">Use Credits</span>
+                {isAmbassador && (
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">⭐ Ambassador</span>
+                )}
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" checked={useCredits}
@@ -1009,8 +1018,6 @@ export default function EventDetails() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
             <div className="lg:col-span-2">
-
-              {/* ✅ Image Carousel */}
               <EventImageCarousel event={event} isPlace={isPlace} />
 
               <div className="flex items-start justify-between mb-6">

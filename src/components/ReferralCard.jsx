@@ -1,6 +1,6 @@
 // src/components/ReferralCard.jsx
 import React, { useState } from 'react';
-import { Copy, Share2, MessageCircle, Mail, Check, Lock, Star } from 'lucide-react';
+import { Copy, Share2, MessageCircle, Mail, Check, Lock, Unlock, Star } from 'lucide-react';
 import {
   canStillRefer,
   getReferralSlotsLeft,
@@ -13,7 +13,7 @@ import {
 
 export default function ReferralCard({
   referralCode,
-  totalReferrals,
+  totalReferrals = 0,
   isAmbassador = false,
   creditsUnlocked = false,
   creditsHistory = [],
@@ -61,36 +61,43 @@ export default function ReferralCard({
 
       {/* ✅ Ambassador badge */}
       {isAmbassador && (
-        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-          <Star size={18} className="text-amber-500 fill-amber-500" />
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <Star size={18} className="text-amber-500 fill-amber-500 flex-shrink-0" />
           <div>
-            <p className="text-sm font-bold text-amber-800">Ambassador Account</p>
-            <p className="text-xs text-amber-600">Up to {REFERRAL_LIMIT_AMBASSADOR} referrals · Credits always active</p>
+            <p className="text-sm font-bold text-amber-800">Ambassador Account ⭐</p>
+            <p className="text-xs text-amber-600">
+              Up to {REFERRAL_LIMIT_AMBASSADOR} referrals · Credits always active
+            </p>
           </div>
         </div>
       )}
 
-      {/* ✅ Credits lock status for regular users */}
+      {/* ✅ Credits lock status — only for non-ambassadors */}
       {!isAmbassador && (
         <div className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${
           creditsUsable
             ? 'bg-emerald-50 border-emerald-200'
             : 'bg-orange-50 border-orange-200'
         }`}>
-          <Lock size={18} className={creditsUsable ? 'text-emerald-500' : 'text-orange-500'} />
+          {creditsUsable
+            ? <Unlock size={18} className="text-emerald-500 flex-shrink-0" />
+            : <Lock size={18} className="text-orange-500 flex-shrink-0" />
+          }
           <div className="flex-1">
             <p className={`text-sm font-bold ${creditsUsable ? 'text-emerald-800' : 'text-orange-800'}`}>
               Credits {creditsUsable ? 'Unlocked ✅' : 'Locked 🔒'}
             </p>
             <p className={`text-xs ${creditsUsable ? 'text-emerald-600' : 'text-orange-600'}`}>
               {creditsUsable
-                ? `You have ${formatCredits(availableCredits)} ready to use`
-                : 'Your credits are pending admin approval before use'}
+                ? availableCredits > 0
+                  ? `You have ${formatCredits(availableCredits)} ready to use on ticket purchases`
+                  : 'Your credits are active and ready to use'
+                : 'Your credits are pending admin approval before use. Contact admin@outingstation.com'}
             </p>
           </div>
           {!creditsUsable && availableCredits > 0 && (
-            <div className="text-right">
-              <p className="text-xs text-orange-500 font-semibold">{formatCredits(availableCredits)}</p>
+            <div className="text-right flex-shrink-0">
+              <p className="text-sm text-orange-600 font-bold">{formatCredits(availableCredits)}</p>
               <p className="text-xs text-orange-400">pending</p>
             </div>
           )}
@@ -109,11 +116,11 @@ export default function ReferralCard({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs text-cyan-100">Your Referral Code</p>
-              <p className="text-2xl font-bold">{referralCode}</p>
+              <p className="text-2xl font-bold tracking-wider">{referralCode}</p>
             </div>
             <div className="text-right">
               <p className="text-xs text-cyan-100">Referrals</p>
-              <p className="text-2xl font-bold">{totalReferrals || 0} / {limit}</p>
+              <p className="text-2xl font-bold">{totalReferrals} / {limit}</p>
             </div>
           </div>
 
@@ -122,7 +129,7 @@ export default function ReferralCard({
             <div className="w-full bg-white/20 rounded-full h-2">
               <div
                 className="bg-white h-2 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, ((totalReferrals || 0) / limit) * 100)}%` }}
+                style={{ width: `${Math.min(100, (totalReferrals / limit) * 100)}%` }}
               />
             </div>
             <p className="text-xs text-cyan-100 mt-1">
@@ -142,23 +149,26 @@ export default function ReferralCard({
                 type="text"
                 value={referralLink}
                 readOnly
-                className="flex-1 bg-white/30 px-3 py-2 rounded-lg text-white text-sm outline-none"
+                className="flex-1 bg-white/30 px-3 py-2 rounded-lg text-white text-sm outline-none truncate"
               />
               <button
                 onClick={handleCopy}
-                className="bg-white text-cyan-600 p-2 rounded-lg hover:bg-cyan-50 transition"
+                className="bg-white text-cyan-600 p-2 rounded-lg hover:bg-cyan-50 transition flex-shrink-0"
               >
                 {copied ? <Check size={20} /> : <Copy size={20} />}
               </button>
             </div>
+            {copied && (
+              <p className="text-xs text-cyan-200 mt-1.5">✓ Link copied to clipboard!</p>
+            )}
           </div>
         ) : (
           <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 mb-4 text-center">
             <p className="text-sm font-semibold">🎉 You've reached your referral limit!</p>
             <p className="text-xs text-cyan-100 mt-1">
               {isAmbassador
-                ? `Ambassador limit of ${REFERRAL_LIMIT_AMBASSADOR} reached`
-                : `Contact support to become an Ambassador and refer up to ${REFERRAL_LIMIT_AMBASSADOR} people`}
+                ? `You've maxed out the ambassador limit of ${REFERRAL_LIMIT_AMBASSADOR} referrals.`
+                : `Want to refer more? Contact us to become an Ambassador and refer up to ${REFERRAL_LIMIT_AMBASSADOR} people.`}
             </p>
           </div>
         )}
@@ -193,7 +203,7 @@ export default function ReferralCard({
         {/* Info */}
         <div className="mt-4 pt-4 border-t border-white/20">
           <p className="text-xs text-cyan-100">
-            💡 Both you and your friend get ₦300 credits when they sign up!
+            💡 Both you and your friend get ₦300 credits when they sign up and are approved!
           </p>
         </div>
       </div>
