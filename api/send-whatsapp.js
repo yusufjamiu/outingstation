@@ -2,7 +2,7 @@ const WHATSCHIMP_API_TOKEN = process.env.WHATSCHIMP_API_KEY;
 const WHATSCHIMP_PHONE_NUMBER_ID = process.env.WHATSCHIMP_PHONE_NUMBER_ID;
 
 const TEMPLATE_IDS = {
-  welcome_new_user: '356582',
+  welcome_new_use: '381227',
   resending_ticket: '356578',
   event_reminder: '356563',
   ticket_confimation: '356557'
