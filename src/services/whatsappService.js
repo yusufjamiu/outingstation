@@ -40,7 +40,7 @@ export async function sendWelcomeMessage(userData) {
 
   const firstName = name?.split(' ')[0] || 'there';
 
-  return await sendWhatsAppViaAPI(phone, 'welcome_new_user', {
+  return await sendWhatsAppViaAPI(phone, 'welcome_new_use', {
     '1': firstName
   });
 }
