@@ -266,7 +266,7 @@ export default function EventsPage() {
                 </p>
               </div>
               <Link
-                to="/submit-event"
+                to="/create"
                 className="bg-white text-cyan-600 px-6 py-3 rounded-xl font-bold hover:bg-gray-100 transition shadow-lg whitespace-nowrap flex items-center gap-2"
               >
                 <span className="text-xl">📝</span>

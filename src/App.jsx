@@ -107,7 +107,7 @@ function App() {
               <Route path="/faqs" element={<FAQ />} />
               <Route path="/about" element={<AboutUs />} />
               <Route path="/how-it-works" element={<HowItWorks />} />
-              <Route path="/submit-event" element={<SubmitEventPage />} />
+              <Route path="/create" element={<SubmitEventPage />} />
               <Route path="/manage/:manageKey" element={<ManageEvent />} />
               <Route path="/ambassador" element={<AmbassadorPage />} />
               <Route path="/verify-ticket/:ticketId" element={<VerifyTicket />} />
