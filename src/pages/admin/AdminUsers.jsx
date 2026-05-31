@@ -133,10 +133,14 @@ export default function AdminUsers() {
         updatedAt: new Date(),
       };
 
-      // ✅ Only auto-unlock credits when MAKING ambassador
-      // When REMOVING ambassador, leave creditsUnlocked as-is
       if (newStatus === true) {
+        // Making an ambassador → unlock their credits
         updateData.creditsUnlocked = true;
+      } else {
+        // Removing the reward also removes any campus-ambassador role,
+        // so the Users page and Campus Ambassadors page never get out of sync.
+        updateData.isCampusAmbassador = false;
+        updateData.assignedCampuses = [];
       }
 
       await updateDoc(doc(db, 'users', userId), updateData);
@@ -147,7 +151,9 @@ export default function AdminUsers() {
               ...u,
               isAmbassador: newStatus,
               ambassadorSince: newStatus ? new Date() : null,
-              ...(newStatus && { creditsUnlocked: true }),
+              ...(newStatus
+                ? { creditsUnlocked: true }
+                : { isCampusAmbassador: false, assignedCampuses: [] }),
             }
           : u
       ));
@@ -464,6 +470,9 @@ export default function AdminUsers() {
                                   {isAmbassador && (
                                     <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs font-medium">⭐ AMBASSADOR</span>
                                   )}
+                                  {user.isCampusAmbassador === true && (
+                                    <span className="px-2 py-0.5 bg-teal-100 text-teal-700 rounded text-xs font-medium">🎓 CAMPUS</span>
+                                  )}
                                   {user.banned === true && (
                                     <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-medium">BANNED</span>
                                   )}
@@ -572,6 +581,14 @@ export default function AdminUsers() {
                                       {isAmbassador ? '⭐ Yes' : 'No'}
                                     </span>
                                   </div>
+                                  {user.isCampusAmbassador === true && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-600">Campus Ambassador:</span>
+                                      <span className="font-semibold text-teal-600">
+                                        🎓 Yes ({(user.assignedCampuses || []).length} campus)
+                                      </span>
+                                    </div>
+                                  )}
                                   {isAmbassador && user.ambassadorSince && (
                                     <div className="flex justify-between">
                                       <span className="text-gray-600">Ambassador Since:</span>
@@ -720,6 +737,15 @@ export default function AdminUsers() {
                               <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
                                 <p className="text-sm text-red-700">
                                   ⚠️ This user is currently banned and cannot access the platform.
+                                </p>
+                              </div>
+                            )}
+
+                            {user.isCampusAmbassador === true && (
+                              <div className="mt-4 p-3 bg-teal-50 border border-teal-200 rounded-lg">
+                                <p className="text-sm text-teal-700">
+                                  🎓 Campus Ambassador — manage their assigned campuses on the <strong>Campus Ambassadors</strong> page.
+                                  Removing their ⭐ here will also remove their campus role.
                                 </p>
                               </div>
                             )}

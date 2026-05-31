@@ -12,6 +12,7 @@ import UserLayout from './layouts/UserLayout';
 import ScrollToTop from './components/ScrollToTop';
 import ProtectedAdminRoute from './components/ProtectedAdminRoute';
 import AdminRoute from './components/AdminRoute';
+import AmbassadorRoute from './components/AmbassadorRoute';
 
 // Public Pages
 import ComingSoon from './pages/ComingSoon';
@@ -36,7 +37,6 @@ import AboutUs from './pages/AboutUs';
 import HowItWorks from './pages/HowItWorks';
 import SubmitEventPage from './pages/SubmitEventPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
-import AmbassadorPage from './pages/AmbassadorPage';
 import VerifyTicket from './pages/VerifyTicket';
 import CreditUnlockRequestPage from './pages/CreditUnlockRequestPage';
 
@@ -49,6 +49,14 @@ import WebinarEvents from './pages/dashboard/WebinarEvents';
 import CategoryBrowse from './pages/dashboard/CategoryBrowse';
 import CampusEvents from './pages/dashboard/CampusEvents';
 import CampusPlaces from './pages/dashboard/CampusPlaces';
+
+// Ambassador Dashboard Pages
+import AmbassadorDashboard from './pages/ambassador/AmbassadorDashboard';
+import AmbassadorEventForm from './pages/ambassador/AmbassadorEventForm';
+import AmbassadorEvents from './pages/ambassador/AmbassadorEvents';
+import AmbassadorVendors from './pages/ambassador/AmbassadorVendors';
+import AmbassadorVendorForm from './pages/ambassador/AmbassadorVendorForm';
+import AmbassadorNotifications from './pages/ambassador/AmbassadorNotifications';
 
 // Event Management
 import ManageEvent from './pages/EventManage/ManageEvent';
@@ -109,7 +117,6 @@ function App() {
               <Route path="/how-it-works" element={<HowItWorks />} />
               <Route path="/create" element={<SubmitEventPage />} />
               <Route path="/manage/:manageKey" element={<ManageEvent />} />
-              <Route path="/ambassador" element={<AmbassadorPage />} />
               <Route path="/verify-ticket/:ticketId" element={<VerifyTicket />} />
 
               {/* USER DASHBOARD ROUTES */}
@@ -124,6 +131,56 @@ function App() {
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/notifications" element={<NotificationsPage />} />
               </Route>
+
+              {/* AMBASSADOR ROUTES - PROTECTED (campus ambassadors only) */}
+              <Route path="/ambassador" element={
+                <AmbassadorRoute>
+                  <AmbassadorDashboard />
+                </AmbassadorRoute>
+              } />
+
+              <Route path="/ambassador/events" element={
+                <AmbassadorRoute>
+                  <AmbassadorEvents />
+                </AmbassadorRoute>
+              } />
+
+              <Route path="/ambassador/events/create" element={
+                <AmbassadorRoute>
+                  <AmbassadorEventForm />
+                </AmbassadorRoute>
+              } />
+              
+              <Route path="/ambassador/events/edit/:id" element={
+                <AmbassadorRoute>
+                  <AmbassadorEventForm />
+                </AmbassadorRoute>
+              } />
+              <Route path="/ambassador/vendors" element={
+                <AmbassadorRoute>
+                  <AmbassadorVendors />
+                </AmbassadorRoute>
+              } />
+
+              <Route path="/ambassador/vendors/create" element={
+                <AmbassadorRoute>
+                  <AmbassadorVendorForm />
+                </AmbassadorRoute>
+              } />
+              
+              <Route path="/ambassador/vendors/edit/:id" element={
+                <AmbassadorRoute>
+                  <AmbassadorVendorForm />
+                </AmbassadorRoute>
+              } />
+
+              <Route path="/ambassador/notifications" element={
+                <AmbassadorRoute>
+                  <AmbassadorNotifications />
+                </AmbassadorRoute>
+              } />
+
+              {/* Events / Vendors / Notifications pages get added here in Step 4 */}
 
               {/* ADMIN ROUTES - PROTECTED */}
               <Route path="/admin/login" element={<AdminLogin />} />

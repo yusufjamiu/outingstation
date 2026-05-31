@@ -162,6 +162,8 @@ export function AuthProvider({ children }) {
           role: 'user',
           status: 'active',
           isNewUser: true,
+          assignedCampuses: [],          // 🆕 campuses a campus-ambassador is scoped to
+          isCampusAmbassador: false,     // 🆕 new campus-admin role (separate from reward badge below)
           isAmbassador: false,
           ambassadorSince: null,
           createdAt: serverTimestamp(),
@@ -231,6 +233,14 @@ export function AuthProvider({ children }) {
         if (!existingData.hasOwnProperty('isAmbassador')) {
           updates.isAmbassador = false;
           console.log('🔧 Adding isAmbassador field');
+        }
+        if (!existingData.hasOwnProperty('assignedCampuses')) {
+          updates.assignedCampuses = [];
+          console.log('🔧 Adding assignedCampuses field');
+        }
+        if (!existingData.hasOwnProperty('isCampusAmbassador')) {
+          updates.isCampusAmbassador = false;
+          console.log('🔧 Adding isCampusAmbassador field');
         }
         if (!existingData.email && user.email) {
           updates.email = user.email;

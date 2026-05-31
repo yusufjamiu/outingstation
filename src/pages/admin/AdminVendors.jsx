@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Menu, Plus, Edit, Trash2, Eye, EyeOff, ShoppingBag, Search, Check, X, Clock, Flag, Gift, ChevronLeft, ChevronRight, Image } from 'lucide-react';
+import { Menu, Plus, Edit, Trash2, Eye, EyeOff, ShoppingBag, Search, Check, X, Clock, Flag, Gift, ChevronLeft, ChevronRight, Image, ShieldCheck, ShieldOff } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { collection, getDocs, deleteDoc, doc, updateDoc, addDoc, serverTimestamp, query, where, increment } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -19,7 +19,8 @@ const REASON_LABELS = {
   other: '💬 Other reason',
 };
 
-// ✅ Reusable image carousel for vendor photos
+// ─── Image carousel (card size) ───────────────────────────────────────────────
+
 function VendorImageCarousel({ images, height = 'h-40' }) {
   const [index, setIndex] = useState(0);
   if (!images || images.length === 0) return (
@@ -56,6 +57,107 @@ function VendorImageCarousel({ images, height = 'h-40' }) {
   );
 }
 
+// ─── Detail modal carousel (large with thumbnails) ───────────────────────────
+
+function VendorDetailCarousel({ images }) {
+  const [index, setIndex] = useState(0);
+  if (!images.length) return null;
+  return (
+    <div>
+      <div className="relative rounded-xl overflow-hidden bg-gray-100">
+        <img src={images[index]} alt={`Photo ${index + 1}`}
+          className="w-full h-64 object-cover"
+          onError={(e) => { e.target.src = 'https://via.placeholder.com/800x400'; }} />
+        {index === 0 && (
+          <div className="absolute top-3 left-3 bg-cyan-500 text-white text-xs px-2.5 py-1 rounded-lg font-semibold">
+            Main Photo
+          </div>
+        )}
+        {images.length > 1 && (
+          <>
+            <button onClick={() => setIndex(i => (i - 1 + images.length) % images.length)}
+              className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition">
+              <ChevronLeft size={18} />
+            </button>
+            <button onClick={() => setIndex(i => (i + 1) % images.length)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition">
+              <ChevronRight size={18} />
+            </button>
+            <div className="absolute bottom-3 right-3 bg-black/50 text-white text-xs px-2 py-1 rounded-full">
+              {index + 1} / {images.length}
+            </div>
+          </>
+        )}
+      </div>
+      {images.length > 1 && (
+        <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
+          {images.map((img, i) => (
+            <button key={i} onClick={() => setIndex(i)}
+              className={`flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition ${i === index ? 'border-cyan-400 scale-105' : 'border-gray-200 opacity-60 hover:opacity-100'}`}>
+              <img src={img} alt="" className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── School ID viewer ─────────────────────────────────────────────────────────
+
+function SchoolIdViewer({ url }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!url) return (
+    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-3">
+      <span className="text-2xl">🪪</span>
+      <p className="text-sm text-gray-500 italic">No school ID was uploaded with this submission.</p>
+    </div>
+  );
+  return (
+    <div>
+      <div className="bg-amber-50 border-2 border-amber-200 rounded-xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-amber-200">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🪪</span>
+            <div>
+              <p className="text-sm font-bold text-amber-800">School ID / Matric Card</p>
+              <p className="text-xs text-amber-600">Verify this is a valid student ID before approving</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="text-xs font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition"
+          >
+            {expanded ? 'Collapse' : 'View ID'}
+          </button>
+        </div>
+
+        {/* ID image */}
+        {expanded && (
+          <div className="p-3">
+            <img
+              src={url}
+              alt="School ID"
+              className="w-full rounded-lg object-contain max-h-64 bg-white border border-amber-200"
+              onError={(e) => { e.target.src = 'https://via.placeholder.com/400x200?text=ID+Not+Found'; }}
+            />
+            <div className="flex justify-between items-center mt-2">
+              <p className="text-xs text-amber-700">✅ Confirm the name, photo, and university match the submission</p>
+              <a href={url} target="_blank" rel="noopener noreferrer"
+                className="text-xs text-cyan-600 hover:underline font-medium">
+                Open full size ↗
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function AdminVendors() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -68,10 +170,9 @@ export default function AdminVendors() {
   const [filterUniversity, setFilterUniversity] = useState('All');
   const [filterCategory, setFilterCategory] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
-
-  // ✅ Detail modal for pending vendor
   const [selectedPending, setSelectedPending] = useState(null);
   const [approving, setApproving] = useState(false);
+  const [viewIdVendor, setViewIdVendor] = useState(null); // for viewing school ID of approved vendor
 
   useEffect(() => {
     loadVendors();
@@ -114,7 +215,6 @@ export default function AdminVendors() {
     }
   };
 
-  // ✅ Award ₦100 referral credit
   const awardReferralCredit = async (referralCode) => {
     if (!referralCode) return null;
     try {
@@ -129,12 +229,12 @@ export default function AdminVendors() {
         reason: 'Vendor listing reward',
         earnedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-        status: 'active', usedAmount: 0
+        status: 'active', usedAmount: 0,
       };
       await updateDoc(doc(db, 'users', userDoc.id), {
         creditsHistory: [...(userDoc.data().creditsHistory || []), newCredit],
         totalCredits: increment(100),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       });
       return userName;
     } catch (err) {
@@ -143,7 +243,6 @@ export default function AdminVendors() {
     }
   };
 
-  // ✅ Get all images from a submission/vendor (main + additional)
   const getAllImages = (item) => {
     const all = [];
     if (item.imageUrl) all.push(item.imageUrl);
@@ -151,7 +250,8 @@ export default function AdminVendors() {
     return all;
   };
 
-  // ✅ Approve vendor — saves imageUrl + images[] + referral credit
+  // ─── Approve ────────────────────────────────────────────────────────────────
+
   const handleApprove = async (submission) => {
     setApproving(true);
     try {
@@ -166,6 +266,7 @@ export default function AdminVendors() {
         whatsappNumber: submission.whatsappNumber,
         imageUrl: mainImage,
         images: additionalImages,
+        schoolIdImageUrl: submission.schoolIdImageUrl || null,
         likeCount: 0,
         reportCount: 0,
         status: 'active',
@@ -183,7 +284,6 @@ export default function AdminVendors() {
         approvedAt: serverTimestamp(),
       });
 
-      // ✅ Award referral credit
       let creditMsg = '';
       if (submission.referralCode) {
         const awardedTo = await awardReferralCredit(submission.referralCode);
@@ -235,6 +335,18 @@ export default function AdminVendors() {
       setVendors(prev => prev.map(v => v.id === vendor.id ? { ...v, status: newStatus } : v));
     } catch (err) {
       console.error('Error updating vendor status:', err);
+    }
+  };
+
+  // ✅ Clear red flag — reset reportCount to 0
+  const handleClearFlags = async (vendor) => {
+    if (!window.confirm(`Clear all ${vendor.reportCount} report flag${vendor.reportCount !== 1 ? 's' : ''} from "${vendor.shopName}"? This will reset the flag count to 0.`)) return;
+    try {
+      await updateDoc(doc(db, 'vendors', vendor.id), { reportCount: 0 });
+      setVendors(prev => prev.map(v => v.id === vendor.id ? { ...v, reportCount: 0 } : v));
+    } catch (err) {
+      console.error('Error clearing flags:', err);
+      alert('Failed to clear flags: ' + err.message);
     }
   };
 
@@ -336,7 +448,7 @@ export default function AdminVendors() {
             </button>
           </div>
 
-          {/* Filters — active tab only */}
+          {/* Filters */}
           {activeTab === 'active' && (
             <div className="mt-4 flex flex-col sm:flex-row gap-3">
               <div className="flex-1 relative">
@@ -393,7 +505,7 @@ export default function AdminVendors() {
             </div>
 
           ) : activeTab === 'active' ? (
-            // ── ACTIVE VENDORS TAB ──────────────────────────────────────
+            // ── ACTIVE VENDORS TAB ──────────────────────────────────────────
             filteredVendors.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
                 <ShoppingBag size={48} className="text-gray-300 mx-auto mb-4" />
@@ -421,7 +533,6 @@ export default function AdminVendors() {
                           <tr key={vendor.id} className="hover:bg-gray-50 transition">
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-3">
-                                {/* ✅ Show main image with photo count */}
                                 <div className="relative flex-shrink-0">
                                   <img
                                     src={vendor.imageUrl || 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=100'}
@@ -461,7 +572,6 @@ export default function AdminVendors() {
                             <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                               🏛️ {vendor.university || '—'}
                             </td>
-                            {/* ✅ Photos column */}
                             <td className="px-4 py-3">
                               <span className="text-xs text-gray-500 flex items-center gap-1">
                                 <Image size={12} />{allImages.length} photo{allImages.length !== 1 ? 's' : ''}
@@ -487,6 +597,26 @@ export default function AdminVendors() {
                                   title={vendor.status === 'active' ? 'Deactivate' : 'Activate'}>
                                   {vendor.status === 'active' ? <EyeOff size={15} /> : <Eye size={15} />}
                                 </button>
+                                {/* ✅ Clear flags button — only shown when reportCount > 0 */}
+                                {vendor.reportCount > 0 && (
+                                  <button
+                                    onClick={() => handleClearFlags(vendor)}
+                                    className="p-1.5 hover:bg-green-50 rounded-lg transition text-green-600"
+                                    title={`Clear ${vendor.reportCount} flag${vendor.reportCount !== 1 ? 's' : ''}`}
+                                  >
+                                    <ShieldCheck size={15} />
+                                  </button>
+                                )}
+                                {/* ✅ View School ID button — always shown if ID exists */}
+                                {vendor.schoolIdImageUrl && (
+                                  <button
+                                    onClick={() => setViewIdVendor(vendor)}
+                                    className="p-1.5 hover:bg-amber-50 rounded-lg transition text-amber-600"
+                                    title="View School ID"
+                                  >
+                                    <span className="text-sm leading-none">🪪</span>
+                                  </button>
+                                )}
                                 <button onClick={() => navigate(`/admin/vendors/edit/${vendor.id}`)}
                                   className="p-1.5 hover:bg-blue-50 rounded-lg transition text-blue-600">
                                   <Edit size={15} />
@@ -510,7 +640,7 @@ export default function AdminVendors() {
             )
 
           ) : activeTab === 'pending' ? (
-            // ── PENDING VENDORS TAB ────────────────────────────────────
+            // ── PENDING VENDORS TAB ────────────────────────────────────────
             pendingVendors.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
                 <Clock size={48} className="text-gray-300 mx-auto mb-4" />
@@ -523,16 +653,20 @@ export default function AdminVendors() {
                   const allImages = getAllImages(submission);
                   return (
                     <div key={submission.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition">
-                      {/* ✅ Multi-image carousel on card */}
                       <div className="relative">
                         <VendorImageCarousel images={allImages} height="h-44" />
                         <div className="absolute top-3 left-3 z-10">
                           <span className="bg-orange-500 text-white text-xs px-2.5 py-1 rounded-full font-medium">⏳ Pending</span>
                         </div>
-                        {/* ✅ Photo count badge */}
                         {allImages.length > 0 && (
                           <div className="absolute top-3 right-3 z-10 bg-black/50 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
                             <Image size={10} />{allImages.length} photo{allImages.length !== 1 ? 's' : ''}
+                          </div>
+                        )}
+                        {/* ✅ School ID badge on card */}
+                        {submission.schoolIdImageUrl && (
+                          <div className="absolute bottom-3 left-3 z-10 bg-amber-500 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1 font-medium">
+                            🪪 ID uploaded
                           </div>
                         )}
                       </div>
@@ -593,7 +727,7 @@ export default function AdminVendors() {
             )
 
           ) : (
-            // ── REPORTS TAB ────────────────────────────────────────────
+            // ── REPORTS TAB ──────────────────────────────────────────────
             reports.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
                 <div className="text-5xl mb-4">✅</div>
@@ -643,6 +777,51 @@ export default function AdminVendors() {
         </div>
       </main>
 
+      {/* ✅ School ID Modal — for approved vendors */}
+      {viewIdVendor && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+          onClick={() => setViewIdVendor(null)}>
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h3 className="font-bold text-gray-900">School ID — {viewIdVendor.shopName}</h3>
+                <p className="text-xs text-gray-500 mt-0.5">🏛️ {viewIdVendor.university}</p>
+              </div>
+              <button onClick={() => setViewIdVendor(null)}
+                className="p-2 hover:bg-gray-100 rounded-full transition">
+                <X size={18} />
+              </button>
+            </div>
+            {/* ID image */}
+            <div className="p-5">
+              <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-3">
+                <img
+                  src={viewIdVendor.schoolIdImageUrl}
+                  alt="School ID"
+                  className="w-full rounded-lg object-contain max-h-72 bg-white border border-amber-100"
+                  onError={(e) => { e.target.src = 'https://via.placeholder.com/400x200?text=ID+Not+Found'; }}
+                />
+                <div className="flex justify-between items-center mt-3">
+                  <p className="text-xs text-amber-700">Submitted during vendor registration</p>
+                  <a href={viewIdVendor.schoolIdImageUrl} target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-cyan-600 hover:underline font-medium">
+                    Open full size ↗
+                  </a>
+                </div>
+              </div>
+            </div>
+            <div className="px-5 pb-5">
+              <button onClick={() => setViewIdVendor(null)}
+                className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ✅ Pending Vendor Detail Modal */}
       {selectedPending && (() => {
         const allImages = getAllImages(selectedPending);
@@ -663,17 +842,21 @@ export default function AdminVendors() {
 
               <div className="p-6 space-y-5">
 
-                {/* ✅ Image carousel */}
+                {/* Shop photos */}
                 {allImages.length > 0 && (
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-semibold text-gray-700">Shop Photos ({allImages.length})</h3>
-                    </div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Shop Photos ({allImages.length})</h3>
                     <VendorDetailCarousel images={allImages} />
                   </div>
                 )}
 
-                {/* ✅ Referral code */}
+                {/* ✅ School ID viewer */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Identity Verification</h3>
+                  <SchoolIdViewer url={selectedPending.schoolIdImageUrl} />
+                </div>
+
+                {/* Referral code */}
                 {selectedPending.referralCode && (
                   <div className="flex items-center gap-3 bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
                     <Gift size={18} className="text-purple-500 flex-shrink-0" />
@@ -684,32 +867,33 @@ export default function AdminVendors() {
                   </div>
                 )}
 
-                {/* Details */}
+                {/* Description */}
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-2">Description</h3>
                   <p className="text-gray-700 text-sm whitespace-pre-wrap bg-gray-50 rounded-xl p-4">{selectedPending.description}</p>
                 </div>
 
+                {/* Vendor + submitter info */}
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="bg-gray-50 rounded-xl p-4">
                     <h4 className="font-semibold text-gray-700 mb-3">Vendor Info</h4>
                     <div className="space-y-2 text-gray-600">
-                      <div><span className="font-medium text-gray-800">Category:</span><br/>{selectedPending.category}</div>
-                      <div><span className="font-medium text-gray-800">University:</span><br/>🏛️ {selectedPending.university}</div>
-                      <div><span className="font-medium text-gray-800">WhatsApp:</span><br/>📱 {selectedPending.whatsappNumber}</div>
+                      <div><span className="font-medium text-gray-800">Category:</span><br />{selectedPending.category}</div>
+                      <div><span className="font-medium text-gray-800">University:</span><br />🏛️ {selectedPending.university}</div>
+                      <div><span className="font-medium text-gray-800">WhatsApp:</span><br />📱 {selectedPending.whatsappNumber}</div>
                     </div>
                   </div>
                   <div className="bg-gray-50 rounded-xl p-4">
                     <h4 className="font-semibold text-gray-700 mb-3">Submitted By</h4>
                     <div className="space-y-2 text-gray-600">
-                      <div><span className="font-medium text-gray-800">Name:</span><br/>{selectedPending.organizerName || '—'}</div>
-                      <div><span className="font-medium text-gray-800">Email:</span><br/>
+                      <div><span className="font-medium text-gray-800">Name:</span><br />{selectedPending.organizerName || '—'}</div>
+                      <div><span className="font-medium text-gray-800">Email:</span><br />
                         <a href={`mailto:${selectedPending.organizerEmail}`} className="text-cyan-600 hover:underline text-xs">{selectedPending.organizerEmail || '—'}</a>
                       </div>
-                      <div><span className="font-medium text-gray-800">Phone:</span><br/>
+                      <div><span className="font-medium text-gray-800">Phone:</span><br />
                         <a href={`tel:${selectedPending.organizerPhone}`} className="text-cyan-600 hover:underline">{selectedPending.organizerPhone || '—'}</a>
                       </div>
-                      <div><span className="font-medium text-gray-800">Submitted:</span><br/>{formatDate(selectedPending.submittedAt)}</div>
+                      <div><span className="font-medium text-gray-800">Submitted:</span><br />{formatDate(selectedPending.submittedAt)}</div>
                     </div>
                   </div>
                 </div>
@@ -733,53 +917,6 @@ export default function AdminVendors() {
           </div>
         );
       })()}
-    </div>
-  );
-}
-
-// ✅ Separate carousel for the detail modal — larger with thumbnails
-function VendorDetailCarousel({ images }) {
-  const [index, setIndex] = useState(0);
-  if (!images.length) return null;
-
-  return (
-    <div>
-      <div className="relative rounded-xl overflow-hidden bg-gray-100">
-        <img src={images[index]} alt={`Photo ${index + 1}`}
-          className="w-full h-64 object-cover"
-          onError={(e) => { e.target.src = 'https://via.placeholder.com/800x400'; }} />
-        {index === 0 && (
-          <div className="absolute top-3 left-3 bg-cyan-500 text-white text-xs px-2.5 py-1 rounded-lg font-semibold">
-            Main Photo
-          </div>
-        )}
-        {images.length > 1 && (
-          <>
-            <button onClick={() => setIndex(i => (i - 1 + images.length) % images.length)}
-              className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition">
-              <ChevronLeft size={18} />
-            </button>
-            <button onClick={() => setIndex(i => (i + 1) % images.length)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition">
-              <ChevronRight size={18} />
-            </button>
-            <div className="absolute bottom-3 right-3 bg-black/50 text-white text-xs px-2 py-1 rounded-full">
-              {index + 1} / {images.length}
-            </div>
-          </>
-        )}
-      </div>
-      {/* Thumbnails */}
-      {images.length > 1 && (
-        <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
-          {images.map((img, i) => (
-            <button key={i} onClick={() => setIndex(i)}
-              className={`flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition ${i === index ? 'border-cyan-400 scale-105' : 'border-gray-200 opacity-60 hover:opacity-100'}`}>
-              <img src={img} alt="" className="w-full h-full object-cover" />
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
