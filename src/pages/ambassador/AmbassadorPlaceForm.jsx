@@ -13,13 +13,6 @@ const campusSubCategories = [
   'Shortlets', 'Chapel / Mosque', 'Gym', 'Computer Lab'
 ];
 
-// ✅ Main categories that support places
-const categoryOptions = [
-  'Art & Culture', 'Food & Dining', 'Sport & Fitness',
-  'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
-  'Malls', 'Spas',
-];
-
 export default function AmbassadorPlaceForm() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -41,7 +34,7 @@ export default function AmbassadorPlaceForm() {
     description: '',
     imageUrl: '',
     images: [],
-    category: 'Food & Dining',
+    category: 'Campus',          // 🔒 campus places use a fixed "Campus" category (never shows on main category pages)
     campusSubCategory: 'Library',
     eventType: 'campus',   // 🔒 always a campus place
     subCategory: 'places',
@@ -92,7 +85,7 @@ export default function AmbassadorPlaceForm() {
           description: data.description || '',
           imageUrl: data.imageUrl || '',
           images: data.images || [],
-          category: data.category || 'Food & Dining',
+          category: 'Campus',      // 🔒 force "Campus" for campus places
           campusSubCategory: data.campusSubCategory || 'Library',
           eventType: 'campus',
           subCategory: 'places',
@@ -203,6 +196,7 @@ export default function AmbassadorPlaceForm() {
       setSaving(true);
       const placeData = {
         ...form,
+        category: 'Campus',        // 🔒 always "Campus" — keeps campus places off main category pages
         eventType: 'campus',       // 🔒 always a campus place
         subCategory: 'places',
         images: form.images || [],
@@ -452,9 +446,9 @@ export default function AmbassadorPlaceForm() {
                 )}
               </div>
 
-              {/* Campus & Category (campus locked) */}
+              {/* Campus & Type (campus locked, NO main category) */}
               <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-base font-bold text-gray-900 mb-4">Campus & Category</h3>
+                <h3 className="text-base font-bold text-gray-900 mb-4">Campus & Type</h3>
                 <div className="space-y-4">
 
                   {/* Campus (locked) */}
@@ -483,23 +477,6 @@ export default function AmbassadorPlaceForm() {
                     )}
                   </div>
 
-                  {/* Main Category */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Main Category *</label>
-                    <select
-                      value={form.category}
-                      onChange={(e) => handleChange('category', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
-                    >
-                      {categoryOptions.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Determines which category page the place appears under
-                    </p>
-                  </div>
-
                   {/* Campus place type */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Campus Place Type *</label>
@@ -512,6 +489,9 @@ export default function AmbassadorPlaceForm() {
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      This is where the place appears under Campus Places (Library, Gym, etc.)
+                    </p>
                   </div>
                 </div>
               </div>

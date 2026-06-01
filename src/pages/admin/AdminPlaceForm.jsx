@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Menu, ArrowLeft, Save, Upload, Plus, X } from 'lucide-react';
@@ -12,7 +13,7 @@ const campusSubCategories = [
   'Shortlets', 'Chapel / Mosque', 'Gym', 'Computer Lab'
 ];
 
-// ✅ Main categories that support places
+// ✅ Main categories that support places (REGULAR places only)
 const categoryOptions = [
   'Art & Culture', 'Food & Dining', 'Sport & Fitness',
   'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
@@ -42,7 +43,7 @@ export default function AdminPlaceForm() {
     description: '',
     imageUrl: '',
     images: [], // ✅ NEW
-    category: 'Food & Dining',
+    category: 'Food & Dining',   // used for REGULAR places only
     campusSubCategory: 'Library',
     eventType: 'campus',
     subCategory: 'places',
@@ -81,14 +82,16 @@ export default function AdminPlaceForm() {
       const placeDoc = await getDoc(doc(db, 'events', id));
       if (placeDoc.exists()) {
         const data = placeDoc.data();
+        const loadedType = data.eventType || 'campus';
         setForm({
           title: data.title || '',
           description: data.description || '',
           imageUrl: data.imageUrl || '',
           images: data.images || [], // ✅ Load existing images
-          category: data.category || 'Food & Dining',
+          // for campus places category is irrelevant; default the dropdown for regular
+          category: loadedType === 'regular' ? (data.category || 'Food & Dining') : 'Food & Dining',
           campusSubCategory: data.campusSubCategory || 'Library',
-          eventType: data.eventType || 'campus',
+          eventType: loadedType,
           subCategory: 'places',
           status: data.status || 'published',
           location: data.location || '',
@@ -198,12 +201,15 @@ export default function AdminPlaceForm() {
 
     try {
       setSaving(true);
+      const isCampus = form.eventType === 'campus';
       const placeData = {
         ...form,
         subCategory: 'places',
         images: form.images || [], // ✅ Save images array
-        campusSubCategory: form.eventType === 'campus' ? form.campusSubCategory : null,
-        university: form.eventType === 'campus' ? form.university : null,
+        // 🔒 campus places get the fixed "Campus" category so they never show on main category pages
+        category: isCampus ? 'Campus' : form.category,
+        campusSubCategory: isCampus ? form.campusSubCategory : null,
+        university: isCampus ? form.university : null,
         price: form.isFree ? 0 : Number(form.price) || 0,
         updatedAt: serverTimestamp(),
       };
@@ -489,22 +495,24 @@ export default function AdminPlaceForm() {
                     </p>
                   </div>
 
-                  {/* Main Category */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Main Category *</label>
-                    <select
-                      value={form.category}
-                      onChange={(e) => handleChange('category', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
-                    >
-                      {categoryOptions.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Determines which category page the place appears under
-                    </p>
-                  </div>
+                  {/* Main Category — ONLY for REGULAR places */}
+                  {form.eventType === 'regular' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Main Category *</label>
+                      <select
+                        value={form.category}
+                        onChange={(e) => handleChange('category', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+                      >
+                        {categoryOptions.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Determines which category page the place appears under
+                      </p>
+                    </div>
+                  )}
 
                   {/* Campus SubCategory */}
                   {form.eventType === 'campus' && (

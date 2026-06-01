@@ -46,10 +46,10 @@ export default function CampusEvents() {
         }
       });
 
-      // ✅ Load campus events
+      // ✅ Load campus events — exclude places (places live in events collection too)
       const snapshot = await getDocs(collection(db, 'events'));
       let allEvents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      allEvents = allEvents.filter(e => e.eventType === 'campus' && e.status === 'published');
+      allEvents = allEvents.filter(e => e.eventType === 'campus' && e.status === 'published' && e.subCategory !== 'places');
       allEvents = filterUpcomingEvents(allEvents);
 
       // ✅ Add any universities from events not already in the list
