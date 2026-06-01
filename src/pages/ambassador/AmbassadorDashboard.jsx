@@ -4,7 +4,7 @@ import { db } from '../../firebase';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { AmbassadorSidebar } from '../../components/AmbassadorSidebar';
-import { Menu, Calendar, ShoppingBag, Bell, MapPin, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Menu, Calendar, MapPin, ShoppingBag, Bell, AlertTriangle, ArrowRight } from 'lucide-react';
 
 export default function AmbassadorDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -30,6 +30,7 @@ export default function AmbassadorDashboard() {
 
   const cards = [
     { icon: Calendar, label: 'Events', desc: 'Create and manage events for your campus', to: '/ambassador/events', color: 'from-cyan-500 to-blue-500' },
+    { icon: MapPin, label: 'Places', desc: 'Add and manage campus places (library, gym, etc.)', to: '/ambassador/places', color: 'from-purple-500 to-violet-500' },
     { icon: ShoppingBag, label: 'Vendors', desc: 'Review and accept vendors for your campus', to: '/ambassador/vendors', color: 'from-teal-500 to-emerald-500' },
     { icon: Bell, label: 'Notifications', desc: 'Message people who follow your campus', to: '/ambassador/notifications', color: 'from-amber-500 to-orange-500' },
   ];
@@ -82,7 +83,7 @@ export default function AmbassadorDashboard() {
           </div>
 
           {/* Action cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {cards.map(card => {
               const Icon = card.icon;
               return (

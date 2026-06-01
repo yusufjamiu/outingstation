@@ -1,5 +1,5 @@
 import {
-  Home, Calendar, ShoppingBag, Bell, LogOut, X, GraduationCap,
+  Home, Calendar, ShoppingBag, Bell, LogOut, X, GraduationCap, MapPin,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,7 @@ export function AmbassadorSidebar({ isOpen, onClose }) {
   const menuItems = [
     { icon: Home, label: 'Dashboard', path: '/ambassador' },
     { icon: Calendar, label: 'Events', path: '/ambassador/events' },
+    { icon: MapPin, label: 'Places', path: '/ambassador/places' },
     { icon: ShoppingBag, label: 'Vendors', path: '/ambassador/vendors' },
     { icon: Bell, label: 'Notifications', path: '/ambassador/notifications' },
   ];

@@ -54,6 +54,8 @@ import CampusPlaces from './pages/dashboard/CampusPlaces';
 import AmbassadorDashboard from './pages/ambassador/AmbassadorDashboard';
 import AmbassadorEventForm from './pages/ambassador/AmbassadorEventForm';
 import AmbassadorEvents from './pages/ambassador/AmbassadorEvents';
+import AmbassadorPlaces from './pages/ambassador/AmbassadorPlaces';
+import AmbassadorPlaceForm from './pages/ambassador/AmbassadorPlaceForm';
 import AmbassadorVendors from './pages/ambassador/AmbassadorVendors';
 import AmbassadorVendorForm from './pages/ambassador/AmbassadorVendorForm';
 import AmbassadorNotifications from './pages/ambassador/AmbassadorNotifications';
@@ -156,6 +158,25 @@ function App() {
                   <AmbassadorEventForm />
                 </AmbassadorRoute>
               } />
+
+              <Route path="/ambassador/places" element={
+                <AmbassadorRoute>
+                  <AmbassadorPlaces />
+                </AmbassadorRoute>
+              } />
+
+              <Route path="/ambassador/places/create" element={
+                <AmbassadorRoute>
+                    <AmbassadorPlaceForm />
+                  </AmbassadorRoute>
+                } />
+
+                <Route path="/ambassador/places/edit/:id" element={
+                  <AmbassadorRoute>
+                    <AmbassadorPlaceForm />
+                  </AmbassadorRoute>
+                } />
+
               <Route path="/ambassador/vendors" element={
                 <AmbassadorRoute>
                   <AmbassadorVendors />
