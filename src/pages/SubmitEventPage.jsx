@@ -1,8 +1,8 @@
-// SubmitEventPage.jsx — Multi-step wizard with Cloudinary upload
+// SubmitEventPage.jsx — Multi-step wizard with Cloudinary upload + Ticket Tiers
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Gift, X, Upload, Plus, ChevronRight, ChevronLeft, Check } from 'lucide-react';
+import { Gift, X, Upload, Plus, ChevronRight, ChevronLeft, Check, Ticket, Trash2 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -39,6 +39,16 @@ const DEFAULT_UNIS = [
   'Covenant University (CU)', 'Ahmadu Bello University (ABU)',
   'University of Benin (Uniben)', 'Obafemi Awolowo University (OAU)',
   'University of Ilorin (Unilorin)', 'Lagos State University (LASU)',
+];
+
+const TIER_PRESETS = [
+  { name: 'Regular', emoji: '🎫' },
+  { name: 'Early Bird', emoji: '🐦' },
+  { name: 'VIP', emoji: '⭐' },
+  { name: 'VVIP', emoji: '👑' },
+  { name: 'Table of 5', emoji: '🪑' },
+  { name: 'Student', emoji: '🎓' },
+  { name: 'Couple', emoji: '💑' },
 ];
 
 // ─── Cloudinary helpers ───────────────────────────────────────────────────────
@@ -193,6 +203,197 @@ function MultiImageUploader({ images, onAdd, onRemove, maxImages = 10, folder = 
   );
 }
 
+// ─── Ticket Tier Builder ──────────────────────────────────────────────────────
+
+function TicketTierBuilder({ tiers, onChange, errors }) {
+  const addTier = () => {
+    if (tiers.length >= 5) return;
+    onChange([...tiers, {
+      id: `tier_${Date.now()}`,
+      name: '',
+      price: '',
+      benefits: '',
+      quantity: '',
+      saleEndDate: '',
+    }]);
+  };
+
+  const removeTier = (index) => {
+    onChange(tiers.filter((_, i) => i !== index));
+  };
+
+  const updateTier = (index, field, value) => {
+    const updated = tiers.map((t, i) => i === index ? { ...t, [field]: value } : t);
+    onChange(updated);
+  };
+
+  const applyPreset = (index, preset) => {
+    updateTier(index, 'name', preset.name);
+  };
+
+  return (
+    <div className="space-y-4">
+      {tiers.length === 0 && (
+        <div className="text-center py-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+          <div className="text-4xl mb-3">🎟️</div>
+          <p className="text-sm font-bold text-gray-700 mb-1">No ticket tiers yet</p>
+          <p className="text-xs text-gray-400 mb-4">Add tiers like Regular, VIP, Early Bird, Table of 5</p>
+          <button
+            type="button"
+            onClick={addTier}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl text-sm font-bold hover:from-cyan-700 hover:to-blue-700 transition shadow-md"
+          >
+            <Plus size={16} /> Add First Tier
+          </button>
+        </div>
+      )}
+
+      {tiers.map((tier, index) => (
+        <div key={tier.id} className="border-2 border-gray-100 rounded-2xl p-5 bg-white shadow-sm">
+          {/* Tier header */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white text-xs font-black">
+                {index + 1}
+              </div>
+              <span className="text-sm font-black text-gray-800">
+                {tier.name || `Tier ${index + 1}`}
+              </span>
+              {index === 0 && (
+                <span className="text-xs bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded-full font-semibold">Default</span>
+              )}
+            </div>
+            {tiers.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeTier(index)}
+                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
+          </div>
+
+          {/* Quick presets */}
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            {TIER_PRESETS.map(p => (
+              <button
+                key={p.name}
+                type="button"
+                onClick={() => applyPreset(index, p)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                  tier.name === p.name
+                    ? 'bg-cyan-600 text-white border-cyan-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-cyan-400'
+                }`}
+              >
+                {p.emoji} {p.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {/* Tier Name */}
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Tier Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={tier.name}
+                onChange={(e) => updateTier(index, 'name', e.target.value)}
+                placeholder="e.g. Regular, VIP, Early Bird"
+                className={`w-full px-3 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition ${
+                  errors?.[`tier_${index}_name`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-cyan-500'
+                }`}
+              />
+              {errors?.[`tier_${index}_name`] && (
+                <p className="text-xs text-red-500 mt-1">{errors[`tier_${index}_name`]}</p>
+              )}
+            </div>
+
+            {/* Price */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Price (₦) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                value={tier.price}
+                onChange={(e) => updateTier(index, 'price', e.target.value)}
+                placeholder="5000"
+                min="0"
+                className={`w-full px-3 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition ${
+                  errors?.[`tier_${index}_price`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-cyan-500'
+                }`}
+              />
+              {errors?.[`tier_${index}_price`] && (
+                <p className="text-xs text-red-500 mt-1">{errors[`tier_${index}_price`]}</p>
+              )}
+            </div>
+
+            {/* Quantity */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Quantity <span className="text-gray-400">(optional)</span>
+              </label>
+              <input
+                type="number"
+                value={tier.quantity}
+                onChange={(e) => updateTier(index, 'quantity', e.target.value)}
+                placeholder="e.g. 100"
+                min="1"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition"
+              />
+            </div>
+
+            {/* Benefits */}
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Benefits / Description <span className="text-gray-400">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={tier.benefits}
+                onChange={(e) => updateTier(index, 'benefits', e.target.value)}
+                placeholder="e.g. General admission + free drink"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition"
+              />
+            </div>
+
+            {/* Sale End Date */}
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Sale Ends <span className="text-gray-400">(optional — for Early Bird deadlines)</span>
+              </label>
+              <input
+                type="date"
+                value={tier.saleEndDate}
+                onChange={(e) => updateTier(index, 'saleEndDate', e.target.value)}
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition"
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {tiers.length > 0 && tiers.length < 5 && (
+        <button
+          type="button"
+          onClick={addTier}
+          className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-cyan-300 rounded-2xl text-sm font-bold text-cyan-600 hover:bg-cyan-50 hover:border-cyan-500 transition"
+        >
+          <Plus size={16} /> Add Another Tier ({tiers.length}/5)
+        </button>
+      )}
+
+      {tiers.length >= 5 && (
+        <p className="text-center text-xs text-gray-400 py-2">Maximum 5 tiers reached</p>
+      )}
+    </div>
+  );
+}
+
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
 function ProgressBar({ current, total }) {
@@ -327,6 +528,9 @@ const SubmitEventPage = () => {
   const [vendorImages, setVendorImages] = useState([]);
   const [schoolIdImage, setSchoolIdImage] = useState([]);
 
+  // ✅ Ticket tiers state
+  const [ticketTiers, setTicketTiers] = useState([]);
+
   const [form, setForm] = useState({
     organizerName: '', organizerEmail: '', organizerPhone: '',
     organizationName: '', referralCode: '',
@@ -339,6 +543,7 @@ const SubmitEventPage = () => {
     platform: '', webinarLink: '',
     isFree: 'yes', ticketPrice: '',
     wantOutingstationTicketing: 'no', externalTicketLink: '',
+    useTicketTiers: false,
     additionalInfo: '', agreedToTerms: false,
     shopName: '', vendorCategory: '',
     vendorUniversity: '', vendorUniversityOther: '',
@@ -370,20 +575,10 @@ const SubmitEventPage = () => {
   const isEvent  = listingType === 'event';
   const isPlace  = listingType === 'place';
 
-  // Event type flags
   const isPureVirtual = isEvent && form.eventType === 'webinar';
   const isHybrid      = isEvent && form.eventType === 'hybrid';
-  const isVirtual     = isPureVirtual || isHybrid;  // has online component
-  const isPhysical    = isPlace || (isEvent && (form.eventType === 'physical' || isHybrid)); // has physical location
-
-  // ─── Step numbers — defined once, used everywhere ─────────────────────────
-  //
-  // Vendor:       1=Info 2=Shop 3=Uni+ID 4=Photos 5=Review
-  // Place:        1=Info 2=Details 3=Hours 4=Location 5=EntryFee 6=Photos 7=Review
-  // Physical evt: 1=Info 2=Details 3=DateTime 4=Location 5=Ticketing 6=Photos 7=Review
-  // Hybrid evt:   1=Info 2=Details 3=DateTime 4=Location 5=Virtual 6=Ticketing 7=Photos 8=Review
-  // PureVirtual:  1=Info 2=Details 3=DateTime 4=Virtual 5=Ticketing 6=Photos 7=Review
-  //                                            ^ no Location step
+  const isVirtual     = isPureVirtual || isHybrid;
+  const isPhysical    = isPlace || (isEvent && (form.eventType === 'physical' || isHybrid));
 
   const S = (() => {
     if (isVendor) {
@@ -393,20 +588,16 @@ const SubmitEventPage = () => {
       return { info:1, details:2, hours:3, location:4, ticket:5, photos:6, review:7, total:7 };
     }
     if (isPureVirtual) {
-      // No location step
       return { info:1, details:2, datetime:3, virtual:4, ticket:5, photos:6, review:7, total:7 };
     }
     if (isHybrid) {
-      // Has both location AND virtual
       return { info:1, details:2, datetime:3, location:4, virtual:5, ticket:6, photos:7, review:8, total:8 };
     }
-    // Physical event (default)
     return { info:1, details:2, datetime:3, location:4, ticket:5, photos:6, review:7, total:7 };
   })();
 
   const totalSteps = S.total;
 
-  // Step name for header
   const stepNames = (() => {
     if (isVendor) return { 1:'Your Info', 2:'Shop Details', 3:'University & ID', 4:'Shop Photos', 5:'Review & Submit' };
     if (isPlace)  return { 1:'Your Info', 2:'Place Details', 3:'Operating Hours', 4:'Location', 5:'Entry Fee', 6:'Photos', 7:'Review & Submit' };
@@ -427,7 +618,6 @@ const SubmitEventPage = () => {
       if (!form.organizerPhone.trim()) e.organizerPhone = 'Phone number is required';
     }
 
-    // Shop details (vendor)
     if (isVendor && s === S.shop) {
       if (!form.shopName.trim()) e.shopName = 'Shop name is required';
       if (!form.vendorCategory) e.vendorCategory = 'Select a category';
@@ -436,19 +626,16 @@ const SubmitEventPage = () => {
       if (!form.whatsappNumber.trim()) e.whatsappNumber = 'WhatsApp number is required';
     }
 
-    // University + ID (vendor)
     if (isVendor && s === S.uniId) {
       if (!form.vendorUniversity) e.vendorUniversity = 'Select your university';
       if (form.vendorUniversity === 'Other' && !form.vendorUniversityOther.trim()) e.vendorUniversityOther = 'Enter your university name';
       if (schoolIdImage.length === 0) e.schoolId = 'School ID / matric card photo is required';
     }
 
-    // Vendor photos
     if (isVendor && s === S.photos) {
       if (vendorImages.length === 0) e.vendorImage = 'At least 1 shop photo is required';
     }
 
-    // Event/Place details
     if (!isVendor && s === S.details) {
       if (!form.eventTitle.trim()) e.eventTitle = isPlace ? 'Place name is required' : 'Event title is required';
       if (!form.eventCategory) e.eventCategory = 'Select a category';
@@ -457,7 +644,6 @@ const SubmitEventPage = () => {
       if (isEvent && form.isUniversityEvent && !form.universityName.trim()) e.universityName = 'Enter the university name';
     }
 
-    // Date & time (event)
     if (isEvent && s === S.datetime) {
       if (!form.startDate) e.startDate = 'Start date is required';
       if (!form.startTime) e.startTime = 'Start time is required';
@@ -468,12 +654,10 @@ const SubmitEventPage = () => {
       }
     }
 
-    // Operating hours (place)
     if (isPlace && s === S.hours) {
       if (!form.alwaysOpen && !form.operatingHours.trim()) e.operatingHours = 'Enter operating hours or check "Always Open"';
     }
 
-    // Location (place, physical event, hybrid event — NOT pure virtual)
     if (!isVendor && S.location && s === S.location) {
       if (!form.city) e.city = 'City is required';
       if (form.city === 'Others' && !form.customCity.trim()) e.customCity = 'Enter your city';
@@ -481,25 +665,34 @@ const SubmitEventPage = () => {
       if (!form.address.trim()) e.address = 'Address is required';
     }
 
-    // Virtual details
     if (isVirtual && S.virtual && s === S.virtual) {
       if (!form.platform) e.platform = 'Select a platform';
       if (!form.webinarLink.trim()) e.webinarLink = 'Registration link is required';
     }
 
-    // Ticketing
+    // ✅ Ticketing validation — supports tiers
     if (!isVendor && s === S.ticket && form.isFree === 'no') {
-      if (!form.ticketPrice.trim()) e.ticketPrice = isPlace ? 'Enter the entry fee' : 'Enter ticket price';
-      if (isEvent && form.wantOutingstationTicketing === 'no' && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
-      if (isPlace && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
+      if (isEvent && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers) {
+        // Validate tiers
+        if (ticketTiers.length === 0) {
+          e.ticketTiers = 'Add at least 1 ticket tier';
+        } else {
+          ticketTiers.forEach((tier, i) => {
+            if (!tier.name.trim()) e[`tier_${i}_name`] = 'Tier name is required';
+            if (!tier.price || isNaN(tier.price) || Number(tier.price) < 0) e[`tier_${i}_price`] = 'Valid price is required';
+          });
+        }
+      } else {
+        if (!form.ticketPrice.trim()) e.ticketPrice = isPlace ? 'Enter the entry fee' : 'Enter ticket price';
+        if (isEvent && form.wantOutingstationTicketing === 'no' && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
+        if (isPlace && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
+      }
     }
 
-    // Photos
     if (!isVendor && s === S.photos) {
       if (eventImages.length === 0) e.eventImage = 'At least 1 image is required';
     }
 
-    // Review / terms
     if (s === S.review) {
       if (!form.agreedToTerms) e.agreedToTerms = 'Please agree to the terms to submit';
     }
@@ -552,6 +745,19 @@ const SubmitEventPage = () => {
           ? form.customCategory.trim() : form.eventCategory;
         const finalCity = form.city === 'Others' && form.customCity.trim()
           ? form.customCity.trim() : form.city;
+
+        // ✅ Build ticket tiers data
+        const hasTiers = isEvent && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers && ticketTiers.length > 0;
+        const tiersData = hasTiers ? ticketTiers.map((t, i) => ({
+          id: `tier_${i + 1}`,
+          name: t.name.trim(),
+          price: parseFloat(t.price) || 0,
+          benefits: t.benefits.trim() || null,
+          quantity: t.quantity ? parseInt(t.quantity) : null,
+          sold: 0,
+          saleEndDate: t.saleEndDate || null,
+        })) : [];
+
         await addDoc(collection(db, 'event_submissions'), {
           organizerName: form.organizerName,
           organizerEmail: form.organizerEmail,
@@ -577,9 +783,15 @@ const SubmitEventPage = () => {
           platform: form.platform || null,
           webinarLink: form.webinarLink || null,
           isFree: form.isFree === 'yes',
-          ticketPrice: form.isFree === 'yes' ? 0 : parseFloat(form.ticketPrice) || 0,
+          // ✅ If tiers exist, use lowest tier price as base price
+          ticketPrice: hasTiers
+            ? Math.min(...tiersData.map(t => t.price))
+            : (form.isFree === 'yes' ? 0 : parseFloat(form.ticketPrice) || 0),
           wantOutingstationTicketing: form.wantOutingstationTicketing === 'yes',
           externalTicketLink: form.externalTicketLink || null,
+          // ✅ Ticket tiers
+          ticketTiers: tiersData,
+          hasTicketTiers: hasTiers,
           imageUrl,
           images: additionalImages,
           additionalInfo: form.additionalInfo || null,
@@ -640,7 +852,8 @@ const SubmitEventPage = () => {
                 setEventImages([]);
                 setVendorImages([]);
                 setSchoolIdImage([]);
-                setForm(f => ({ ...f, agreedToTerms: false }));
+                setTicketTiers([]);
+                setForm(f => ({ ...f, agreedToTerms: false, useTicketTiers: false }));
               }}
               className="w-full border-2 border-gray-200 text-gray-700 py-4 rounded-2xl font-bold hover:bg-gray-50 transition"
             >
@@ -685,6 +898,7 @@ const SubmitEventPage = () => {
                   setEventImages([]);
                   setVendorImages([]);
                   setSchoolIdImage([]);
+                  setTicketTiers([]);
                   setStep(1);
                   scrollTop();
                 }}
@@ -750,7 +964,7 @@ const SubmitEventPage = () => {
         {/* Card */}
         <div className="bg-white rounded-3xl border-2 border-gray-100 shadow-xl p-6 sm:p-8">
 
-          {/* ══ STEP 1: Your Info (all types) ══ */}
+          {/* ══ STEP 1: Your Info ══ */}
           {step === S.info && (
             <div className="space-y-5">
               <div className="mb-2">
@@ -1013,7 +1227,7 @@ const SubmitEventPage = () => {
             </div>
           )}
 
-          {/* ══ Location (Place, Physical event, Hybrid event — NOT pure virtual) ══ */}
+          {/* ══ Location ══ */}
           {!isVendor && S.location && step === S.location && (
             <div className="space-y-5">
               <div className="mb-2">
@@ -1048,7 +1262,7 @@ const SubmitEventPage = () => {
             </div>
           )}
 
-          {/* ══ Virtual Details (virtual & hybrid events) ══ */}
+          {/* ══ Virtual Details ══ */}
           {isVirtual && S.virtual && step === S.virtual && (
             <div className="space-y-5">
               <div className="mb-2">
@@ -1068,13 +1282,14 @@ const SubmitEventPage = () => {
             </div>
           )}
 
-          {/* ══ Ticketing ══ */}
+          {/* ══ Ticketing — WITH TIERS SUPPORT ══ */}
           {!isVendor && step === S.ticket && (
             <div className="space-y-5">
               <div className="mb-2">
                 <h2 className="text-xl font-black text-gray-900">{isPlace ? 'Entry Fee' : 'Ticketing'}</h2>
                 <p className="text-sm text-gray-400 mt-1">How much does it cost to {isPlace ? 'enter' : 'attend'}?</p>
               </div>
+
               <FormField label={isPlace ? 'Is entry free?' : 'Is this event free?'} required>
                 <div className="grid grid-cols-2 gap-3">
                   <ToggleButton selected={form.isFree === 'yes'} onClick={() => set('isFree', 'yes')}>✅ Free</ToggleButton>
@@ -1083,12 +1298,10 @@ const SubmitEventPage = () => {
                   </ToggleButton>
                 </div>
               </FormField>
+
               {form.isFree === 'no' && (
                 <>
-                  <FormField label={isPlace ? 'Entry Fee (₦)' : 'Ticket Price (₦)'} required error={errors.ticketPrice}>
-                    <StyledInput type="number" name="ticketPrice" value={form.ticketPrice} onChange={handle}
-                      error={errors.ticketPrice} placeholder="5000" />
-                  </FormField>
+                  {/* OutingStation ticketing toggle */}
                   {isEvent && (
                     <FormField label="Should OutingStation handle ticketing?">
                       <div className="grid grid-cols-2 gap-3">
@@ -1103,6 +1316,72 @@ const SubmitEventPage = () => {
                       </div>
                     </FormField>
                   )}
+
+                  {/* ✅ TICKET TIERS SECTION — only for OutingStation ticketing */}
+                  {isEvent && form.wantOutingstationTicketing === 'yes' && (
+                    <div className="border-2 border-cyan-100 rounded-2xl p-5 bg-gradient-to-br from-cyan-50/50 to-blue-50/50">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <Ticket size={18} className="text-cyan-600" />
+                          <div>
+                            <p className="text-sm font-black text-gray-900">Multiple Ticket Tiers</p>
+                            <p className="text-xs text-gray-500">Regular, VIP, Early Bird, Table of 5...</p>
+                          </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={form.useTicketTiers}
+                            onChange={(e) => {
+                              set('useTicketTiers', e.target.checked);
+                              if (e.target.checked && ticketTiers.length === 0) {
+                                setTicketTiers([{
+                                  id: `tier_${Date.now()}`,
+                                  name: 'Regular',
+                                  price: '',
+                                  benefits: '',
+                                  quantity: '',
+                                  saleEndDate: '',
+                                }]);
+                              }
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                        </label>
+                      </div>
+
+                      {form.useTicketTiers ? (
+                        <>
+                          <TicketTierBuilder
+                            tiers={ticketTiers}
+                            onChange={setTicketTiers}
+                            errors={errors}
+                          />
+                          {errors.ticketTiers && (
+                            <p className="text-xs text-red-500 mt-2 font-semibold">{errors.ticketTiers}</p>
+                          )}
+                        </>
+                      ) : (
+                        <div className="space-y-3">
+                          <FormField label="Ticket Price (₦)" required error={errors.ticketPrice}>
+                            <StyledInput type="number" name="ticketPrice" value={form.ticketPrice} onChange={handle}
+                              error={errors.ticketPrice} placeholder="5000" />
+                          </FormField>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Single price for non-OutingStation or place */}
+                  {(!isEvent || form.wantOutingstationTicketing === 'no') && (
+                    <FormField label={isPlace ? 'Entry Fee (₦)' : 'Ticket Price (₦)'} required error={errors.ticketPrice}>
+                      <StyledInput type="number" name="ticketPrice" value={form.ticketPrice} onChange={handle}
+                        error={errors.ticketPrice} placeholder="5000" />
+                    </FormField>
+                  )}
+
+                  {/* External link */}
                   {(isEvent ? form.wantOutingstationTicketing === 'no' : true) && (
                     <FormField label="External Ticket Link" required error={errors.externalTicketLink}>
                       <StyledInput type="url" name="externalTicketLink" value={form.externalTicketLink} onChange={handle}
@@ -1163,6 +1442,12 @@ const SubmitEventPage = () => {
                       ? `${vendorImages.length} shop photo${vendorImages.length !== 1 ? 's' : ''}`
                       : `${eventImages.length} photo${eventImages.length !== 1 ? 's' : ''}`,
                   },
+                  // ✅ Show ticket tiers summary
+                  isEvent && form.isFree === 'no' && form.useTicketTiers && ticketTiers.length > 0
+                    ? { label: '🎟️ Ticket Tiers', value: `${ticketTiers.length} tier${ticketTiers.length !== 1 ? 's' : ''}: ${ticketTiers.map(t => t.name).join(', ')}` }
+                    : isEvent && form.isFree === 'no' && form.ticketPrice
+                    ? { label: '💰 Ticket Price', value: `₦${Number(form.ticketPrice).toLocaleString()}` }
+                    : null,
                   isVendor && schoolIdImage.length > 0 ? { label: '🪪 School ID', value: 'Uploaded ✅' } : null,
                   form.referralCode ? { label: '🎁 Referral', value: form.referralCode.toUpperCase() } : null,
                 ].filter(Boolean).map(({ label, value }, i) => (
@@ -1172,6 +1457,29 @@ const SubmitEventPage = () => {
                   </div>
                 ))}
               </div>
+
+              {/* ✅ Ticket tiers preview in review */}
+              {isEvent && form.isFree === 'no' && form.useTicketTiers && ticketTiers.length > 0 && (
+                <div className="border-2 border-cyan-100 rounded-2xl p-4">
+                  <p className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                    <Ticket size={16} className="text-cyan-600" /> Ticket Tiers
+                  </p>
+                  <div className="space-y-2">
+                    {ticketTiers.map((tier, i) => (
+                      <div key={i} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-xl">
+                        <div>
+                          <p className="text-sm font-bold text-gray-800">{tier.name}</p>
+                          {tier.benefits && <p className="text-xs text-gray-500">{tier.benefits}</p>}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black text-cyan-600">₦{Number(tier.price).toLocaleString()}</p>
+                          {tier.quantity && <p className="text-xs text-gray-400">{tier.quantity} available</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className={`border-2 rounded-2xl p-4 transition ${errors.agreedToTerms ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}>
                 <label className="flex items-start gap-3 cursor-pointer" onClick={() => set('agreedToTerms', !form.agreedToTerms)}>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Menu, Save, X, Upload, Plus, Trash2 } from 'lucide-react';
+import { Menu, Save, X, Upload, Plus, Trash2, Layers } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
@@ -23,6 +23,125 @@ const generateSlug = (title) => {
     .trim()
     .substring(0, 80);
 };
+
+// ✅ Tier presets for quick selection
+const TIER_PRESETS = [
+  { name: 'Regular', emoji: '🎫' },
+  { name: 'Early Bird', emoji: '🐦' },
+  { name: 'VIP', emoji: '⭐' },
+  { name: 'VVIP', emoji: '👑' },
+  { name: 'Table of 5', emoji: '🪑' },
+  { name: 'Student', emoji: '🎓' },
+  { name: 'Couple', emoji: '💑' },
+];
+
+// ✅ Ticket Tier Builder component
+function TicketTierBuilder({ tiers, onChange }) {
+  const addTier = () => {
+    if (tiers.length >= 5) return;
+    onChange([...tiers, {
+      id: `tier_${Date.now()}`,
+      name: '',
+      price: '',
+      benefits: '',
+      quantity: '',
+      saleEndDate: '',
+    }]);
+  };
+
+  const removeTier = (index) => {
+    if (tiers.length <= 1) return;
+    onChange(tiers.filter((_, i) => i !== index));
+  };
+
+  const updateTier = (index, field, value) => {
+    onChange(tiers.map((t, i) => i === index ? { ...t, [field]: value } : t));
+  };
+
+  return (
+    <div className="space-y-3">
+      {tiers.map((tier, index) => (
+        <div key={tier.id || index} className="border-2 border-gray-100 rounded-xl p-4 bg-gray-50">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-cyan-500 text-white text-xs flex items-center justify-center font-bold">{index + 1}</span>
+              <span className="text-sm font-bold text-gray-700">{tier.name || `Tier ${index + 1}`}</span>
+              {index === 0 && <span className="text-xs bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded-full font-semibold">Default</span>}
+            </div>
+            {tiers.length > 1 && (
+              <button type="button" onClick={() => removeTier(index)}
+                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Quick presets */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {TIER_PRESETS.map(p => (
+              <button key={p.name} type="button"
+                onClick={() => updateTier(index, 'name', p.name)}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold border transition ${
+                  tier.name === p.name
+                    ? 'bg-cyan-500 text-white border-cyan-500'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-cyan-400'
+                }`}>
+                {p.emoji} {p.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Tier Name *</label>
+              <input type="text" value={tier.name}
+                onChange={(e) => updateTier(index, 'name', e.target.value)}
+                placeholder="e.g. Regular, VIP, Early Bird"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Price (₦) *</label>
+              <input type="number" value={tier.price}
+                onChange={(e) => updateTier(index, 'price', e.target.value)}
+                placeholder="5000" min="0"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Quantity <span className="text-gray-400">(optional)</span></label>
+              <input type="number" value={tier.quantity}
+                onChange={(e) => updateTier(index, 'quantity', e.target.value)}
+                placeholder="e.g. 100" min="1"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Benefits <span className="text-gray-400">(optional)</span></label>
+              <input type="text" value={tier.benefits}
+                onChange={(e) => updateTier(index, 'benefits', e.target.value)}
+                placeholder="e.g. General admission + free drink"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Sale Ends <span className="text-gray-400">(optional — for Early Bird deadlines)</span></label>
+              <input type="date" value={tier.saleEndDate}
+                onChange={(e) => updateTier(index, 'saleEndDate', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {tiers.length < 5 && (
+        <button type="button" onClick={addTier}
+          className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-cyan-300 rounded-xl text-sm font-semibold text-cyan-600 hover:bg-cyan-50 hover:border-cyan-500 transition">
+          <Plus size={16} /> Add Tier ({tiers.length}/5)
+        </button>
+      )}
+      {tiers.length >= 5 && (
+        <p className="text-center text-xs text-gray-400 py-1">Maximum 5 tiers reached</p>
+      )}
+    </div>
+  );
+}
 
 export default function AdminEventForm() {
   const navigate = useNavigate();
@@ -54,6 +173,17 @@ export default function AdminEventForm() {
   const [serviceFeeAmount, setServiceFeeAmount] = useState(100);
   const [serviceFeePercentage, setServiceFeePercentage] = useState(2);
 
+  // ✅ Ticket tiers state
+  const [useTicketTiers, setUseTicketTiers] = useState(false);
+  const [ticketTiers, setTicketTiers] = useState([{
+    id: `tier_${Date.now()}`,
+    name: 'Regular',
+    price: '',
+    benefits: '',
+    quantity: '',
+    saleEndDate: '',
+  }]);
+
   const [formData, setFormData] = useState({
     title: '', description: '', category: '',
     subCategory: 'events',
@@ -67,7 +197,7 @@ export default function AdminEventForm() {
     university: '', platform: '', platformLink: '',
     price: '', isFree: false, capacity: '',
     imageUrl: '',
-    images: [], // ✅ NEW — additional images
+    images: [],
     status: 'published', isFeatured: false, isTrending: false
   });
 
@@ -119,7 +249,6 @@ export default function AdminEventForm() {
             if (data.date instanceof Timestamp) formattedData.date = data.date.toDate().toISOString().split('T')[0];
             if (data.startDate instanceof Timestamp) formattedData.startDate = data.startDate.toDate().toISOString().split('T')[0];
             if (data.endDate instanceof Timestamp) formattedData.endDate = data.endDate.toDate().toISOString().split('T')[0];
-            // ✅ Load images array
             if (!formattedData.images) formattedData.images = [];
             setFormData(prev => ({ ...prev, ...formattedData }));
             if (data.ticketingOption) {
@@ -130,6 +259,18 @@ export default function AdminEventForm() {
               setServiceFeeType(data.serviceFeeType || 'fixed');
               setServiceFeeAmount(data.serviceFeeAmount || 100);
               setServiceFeePercentage(data.serviceFeePercentage || 2);
+            }
+            // ✅ Load ticket tiers if they exist
+            if (data.hasTicketTiers && data.ticketTiers?.length > 0) {
+              setUseTicketTiers(true);
+              setTicketTiers(data.ticketTiers.map(t => ({
+                id: t.id || `tier_${Date.now()}`,
+                name: t.name || '',
+                price: t.price || '',
+                benefits: t.benefits || '',
+                quantity: t.quantity || '',
+                saleEndDate: t.saleEndDate || '',
+              })));
             }
           }
         } catch (err) {
@@ -236,11 +377,36 @@ export default function AdminEventForm() {
     e.preventDefault();
     if (!formData.category) { alert('Please select a category'); return; }
     if (!formData.imageUrl) { alert('Please upload a main image'); return; }
-    if (ticketingOption === 'outingstation' && !ticketPrice) { alert('Please enter a ticket price'); return; }
+    if (ticketingOption === 'outingstation') {
+      if (useTicketTiers) {
+        if (ticketTiers.length === 0) { alert('Please add at least 1 ticket tier'); return; }
+        for (const tier of ticketTiers) {
+          if (!tier.name?.trim()) { alert('All tiers need a name'); return; }
+          if (!tier.price || isNaN(tier.price)) { alert('All tiers need a valid price'); return; }
+        }
+      } else {
+        if (!ticketPrice) { alert('Please enter a ticket price'); return; }
+      }
+    }
     if (ticketingOption === 'external' && !externalTicketLink) { alert('Please enter an external ticket link'); return; }
 
     setLoading(true);
     try {
+      // ✅ Build tiers data
+      const tiersData = useTicketTiers && ticketingOption === 'outingstation'
+        ? ticketTiers.map((t, i) => ({
+            id: `tier_${i + 1}`,
+            name: t.name.trim(),
+            price: parseFloat(t.price) || 0,
+            benefits: t.benefits?.trim() || null,
+            quantity: t.quantity ? parseInt(t.quantity) : null,
+            sold: isEdit
+              ? (formData.ticketTiers?.find(et => et.name === t.name)?.sold ?? 0)
+              : 0,
+            saleEndDate: t.saleEndDate || null,
+          }))
+        : [];
+
       const eventData = {
         ...formData,
         subCategory: 'events',
@@ -250,12 +416,21 @@ export default function AdminEventForm() {
         date: stringToTimestamp(formData.date),
         startDate: stringToTimestamp(formData.startDate),
         endDate: stringToTimestamp(formData.endDate),
-        images: formData.images || [], // ✅ Save images array
+        images: formData.images || [],
         ticketingOption,
         ticketingEnabled: ticketingOption === 'outingstation',
         hasOutingStationTicketing: ticketingOption === 'outingstation',
-        ticketPrice: ticketingOption === 'outingstation' ? Number(ticketPrice) : 0,
-        ticketsAvailable: ticketingOption === 'outingstation' ? Number(ticketsAvailable) : 0,
+        // ✅ Single price or lowest tier price
+        ticketPrice: ticketingOption === 'outingstation'
+          ? (useTicketTiers && tiersData.length > 0
+              ? Math.min(...tiersData.map(t => t.price))
+              : Number(ticketPrice))
+          : 0,
+        ticketsAvailable: ticketingOption === 'outingstation'
+          ? (useTicketTiers
+              ? tiersData.reduce((sum, t) => sum + (t.quantity || 0), 0) || Number(ticketsAvailable)
+              : Number(ticketsAvailable))
+          : 0,
         ticketsSold: isEdit ? formData.ticketsSold || 0 : 0,
         ...(ticketingOption === 'outingstation' && !isEdit && { manageKey: generateManageKey() }),
         serviceFeeType,
@@ -263,6 +438,9 @@ export default function AdminEventForm() {
         serviceFeePercentage: serviceFeeType === 'percentage' ? Number(serviceFeePercentage) : 0,
         serviceFee: calculateServiceFee(),
         externalTicketLink: ticketingOption === 'external' ? externalTicketLink : null,
+        // ✅ Save ticket tiers
+        hasTicketTiers: useTicketTiers && ticketingOption === 'outingstation' && tiersData.length > 0,
+        ticketTiers: tiersData,
         updatedAt: serverTimestamp()
       };
 
@@ -420,7 +598,7 @@ export default function AdminEventForm() {
                 </div>
               )}
 
-              {/* Ticketing */}
+              {/* ✅ Ticketing — with tiers support */}
               <div>
                 <h3 className="text-lg font-bold mb-4">💳 Ticketing Options</h3>
 
@@ -443,15 +621,60 @@ export default function AdminEventForm() {
 
                       {ticketingOption === 'outingstation' && (
                         <div className="mt-4 space-y-4 border-l-2 border-cyan-500 pl-4">
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Ticket Price (₦) *</label>
-                            <input type="number" value={ticketPrice} onChange={(e) => setTicketPrice(e.target.value)} placeholder="e.g., 5000" className="w-full px-3 py-2 border rounded-lg" />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Tickets Available *</label>
-                            <input type="number" value={ticketsAvailable} onChange={(e) => setTicketsAvailable(e.target.value)} placeholder="e.g., 100" className="w-full px-3 py-2 border rounded-lg" />
+
+                          {/* ✅ Toggle: Single price vs tiers */}
+                          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+                            <div className="flex items-center gap-2">
+                              <Layers size={16} className="text-cyan-600" />
+                              <div>
+                                <p className="text-sm font-bold text-gray-800">Multiple Ticket Tiers</p>
+                                <p className="text-xs text-gray-500">Regular, VIP, Early Bird, Table of 5...</p>
+                              </div>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" checked={useTicketTiers}
+                                onChange={(e) => setUseTicketTiers(e.target.checked)}
+                                className="sr-only peer" />
+                              <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                            </label>
                           </div>
 
+                          {useTicketTiers ? (
+                            /* ✅ Tier builder */
+                            <div>
+                              <p className="text-sm font-medium text-gray-700 mb-3">Configure ticket tiers (max 5):</p>
+                              <TicketTierBuilder tiers={ticketTiers} onChange={setTicketTiers} />
+
+                              {/* Tier pricing preview */}
+                              {ticketTiers.some(t => t.price) && (
+                                <div className="mt-4 bg-cyan-50 p-4 rounded-lg text-sm border border-cyan-200">
+                                  <p className="font-medium mb-2">🎟️ Tiers Summary:</p>
+                                  <div className="space-y-1">
+                                    {ticketTiers.filter(t => t.name && t.price).map((t, i) => (
+                                      <div key={i} className="flex justify-between">
+                                        <span className="text-gray-600">{t.name}</span>
+                                        <span className="font-semibold text-cyan-700">₦{Number(t.price).toLocaleString()}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            /* Single price */
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-sm font-medium mb-1">Ticket Price (₦) *</label>
+                                <input type="number" value={ticketPrice} onChange={(e) => setTicketPrice(e.target.value)} placeholder="e.g., 5000" className="w-full px-3 py-2 border rounded-lg" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium mb-1">Tickets Available *</label>
+                                <input type="number" value={ticketsAvailable} onChange={(e) => setTicketsAvailable(e.target.value)} placeholder="e.g., 100" className="w-full px-3 py-2 border rounded-lg" />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Service fee — always shown for OutingStation ticketing */}
                           <div className="bg-gray-50 p-4 rounded-lg">
                             <label className="block text-sm font-medium mb-3">Service Fee Structure</label>
                             <div className="space-y-3">
@@ -482,7 +705,8 @@ export default function AdminEventForm() {
                             </div>
                           </div>
 
-                          {ticketPrice > 0 && (
+                          {/* Pricing breakdown — single price only */}
+                          {!useTicketTiers && ticketPrice > 0 && (
                             <div className="bg-cyan-50 p-4 rounded-lg text-sm">
                               <p className="font-medium mb-2">💰 Pricing Breakdown:</p>
                               <div className="space-y-1 mb-3">
@@ -655,12 +879,8 @@ export default function AdminEventForm() {
 
               {/* ✅ Image Upload — Main + Additional */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                  Event Images *
-                </h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  Add up to 10 photos. Users can swipe through all photos on the event page.
-                </p>
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">Event Images *</h3>
+                <p className="text-sm text-gray-500 mb-4">Add up to 10 photos. Users can swipe through all photos on the event page.</p>
 
                 {/* Main image */}
                 <div className="mb-4">
@@ -708,33 +928,23 @@ export default function AdminEventForm() {
                   </div>
                 </div>
 
-                {/* Additional photos — only show after main image uploaded */}
+                {/* Additional photos */}
                 {formData.imageUrl && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-2">
                       Additional Photos
-                      <span className="text-gray-400 text-xs ml-2">
-                        ({(formData.images || []).length}/9 added)
-                      </span>
+                      <span className="text-gray-400 text-xs ml-2">({(formData.images || []).length}/9 added)</span>
                     </p>
 
-                    {/* Existing additional images grid */}
                     {(formData.images || []).length > 0 && (
                       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
                         {(formData.images || []).map((img, index) => (
                           <div key={index} className="relative group">
-                            <img
-                              src={img}
-                              alt={`Photo ${index + 1}`}
-                              className="w-full h-20 object-cover rounded-lg border border-gray-200"
-                              onError={(e) => { e.target.src = 'https://via.placeholder.com/80'; }}
-                            />
+                            <img src={img} alt={`Photo ${index + 1}`} className="w-full h-20 object-cover rounded-lg border border-gray-200"
+                              onError={(e) => { e.target.src = 'https://via.placeholder.com/80'; }} />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition" />
-                            <button
-                              type="button"
-                              onClick={() => removeExtraImage(index)}
-                              className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md"
-                            >
+                            <button type="button" onClick={() => removeExtraImage(index)}
+                              className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-md">
                               <X size={10} />
                             </button>
                             <div className="absolute bottom-1 left-1 bg-black/50 text-white text-xs px-1 rounded opacity-0 group-hover:opacity-100 transition">
@@ -745,19 +955,14 @@ export default function AdminEventForm() {
                       </div>
                     )}
 
-                    {/* Upload more button */}
                     {(formData.images || []).length < 9 && (
                       <label className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed rounded-lg cursor-pointer transition ${
-                        uploadingExtra
-                          ? 'border-cyan-300 bg-cyan-50 opacity-70'
-                          : 'border-gray-300 hover:border-cyan-400 hover:bg-cyan-50'
+                        uploadingExtra ? 'border-cyan-300 bg-cyan-50 opacity-70' : 'border-gray-300 hover:border-cyan-400 hover:bg-cyan-50'
                       }`}>
                         {uploadingExtra ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-500" />
-                            <span className="text-sm text-cyan-600 font-medium">
-                              Uploading {uploadExtraProgress}%...
-                            </span>
+                            <span className="text-sm text-cyan-600 font-medium">Uploading {uploadExtraProgress}%...</span>
                           </>
                         ) : (
                           <>
@@ -767,14 +972,7 @@ export default function AdminEventForm() {
                             </span>
                           </>
                         )}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          disabled={uploadingExtra}
-                          onChange={handleExtraImagesUpload}
-                          className="sr-only"
-                        />
+                        <input type="file" accept="image/*" multiple disabled={uploadingExtra} onChange={handleExtraImagesUpload} className="sr-only" />
                       </label>
                     )}
 

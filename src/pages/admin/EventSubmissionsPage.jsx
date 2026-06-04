@@ -3,11 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, query, where, increment, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { AdminSidebar } from '../../components/AdminSidebar';
+import ManageLinkModal from '../../components/ManageLinkModal';
 import {
   Eye, Check, X, Calendar, MapPin, DollarSign,
   Mail, Phone, ExternalLink, Clock, Filter,
   GraduationCap, Menu, RefreshCw, AlertTriangle,
-  Gift, ChevronLeft, ChevronRight, Image, Ticket, Settings
+  Gift, ChevronLeft, ChevronRight, Image, Ticket, Settings, Layers
 } from 'lucide-react';
 
 const generateSlug = (title) => {
@@ -19,6 +20,10 @@ const generateSlug = (title) => {
     .trim()
     .substring(0, 80);
 };
+
+// ✅ Generate unique manage key for organizer access
+const generateManageKey = () =>
+  Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
 
 export default function EventSubmissionsPage() {
   const [submissions, setSubmissions] = useState([]);
@@ -32,10 +37,21 @@ export default function EventSubmissionsPage() {
   const [approving, setApproving] = useState(false);
   const [imageIndex, setImageIndex] = useState(0);
 
+  // ✅ Manage link modal — shown after ticketing approval
+  const [showManageModal, setShowManageModal] = useState(false);
+  const [approvedEventForManage, setApprovedEventForManage] = useState(null);
+
   // ✅ Ticketing setup modal state
   const [showTicketingModal, setShowTicketingModal] = useState(false);
   const [ticketingSubmission, setTicketingSubmission] = useState(null);
-  const [ticketSetup, setTicketSetup] = useState({ price: '', available: 100, serviceFeeType: 'fixed', serviceFeeAmount: 100 });
+  const [ticketSetup, setTicketSetup] = useState({
+    price: '',
+    available: 100,
+    serviceFeeType: 'fixed',
+    serviceFeeAmount: 100,
+    useTiers: false,
+    tiers: [],
+  });
 
   useEffect(() => { fetchSubmissions(); }, []);
 
@@ -97,7 +113,6 @@ export default function EventSubmissionsPage() {
   // ✅ Build the event doc from submission
   const buildEventDoc = (submission, ticketingOverride = null) => {
     const isPlace = submission.listingType === 'place';
-    const wantsTicketing = submission.wantOutingstationTicketing === 'yes' || submission.wantOutingstationTicketing === true;
 
     const eventDoc = {
       title: submission.eventTitle || '',
@@ -106,36 +121,26 @@ export default function EventSubmissionsPage() {
       eventType: submission.isUniversityEvent ? 'campus'
         : (submission.eventType === 'webinar' ? 'webinar' : 'regular'),
       subCategory: submission.subCategory || (isPlace ? 'places' : 'events'),
-
-      // ✅ Images — first = main, rest = additional
       imageUrl: submission.imageUrl || '',
       images: submission.images || [],
-
       location: submission.city || '',
       address: `${submission.venueName || ''}, ${submission.address || ''}`.replace(/^,\s*/, ''),
       mapLocation: submission.mapsLink || null,
       city: submission.city || '',
       venueName: submission.venueName || '',
-
       isFree: submission.isFree === true || submission.isFree === 'yes',
       price: submission.ticketPrice ? parseFloat(submission.ticketPrice) : 0,
-
       organizerName: submission.organizerName || '',
       organizerEmail: submission.organizerEmail || '',
       organizerPhone: submission.organizerPhone || '',
       organizationName: submission.organizationName || null,
-
       university: submission.universityName || null,
       isUniversityEvent: submission.isUniversityEvent || false,
-
       platform: submission.platform || null,
       platformLink: submission.webinarLink || null,
-
       operatingHours: submission.operatingHours || null,
       alwaysOpen: submission.alwaysOpen || false,
-
       additionalInfo: submission.additionalInfo || null,
-
       status: 'published',
       isFeatured: false,
       isTrending: false,
@@ -145,8 +150,6 @@ export default function EventSubmissionsPage() {
       updatedAt: serverTimestamp(),
       createdBy: 'admin_approved',
       submissionId: submission.id,
-
-      // ✅ Ticketing defaults — none unless set up
       ticketingEnabled: false,
       ticketingOption: 'none',
       hasOutingStationTicketing: false,
@@ -154,23 +157,46 @@ export default function EventSubmissionsPage() {
       ticketsAvailable: 0,
       ticketsSold: 0,
       externalTicketLink: submission.externalTicketLink || null,
+      ticketTiers: submission.ticketTiers || [],
+      hasTicketTiers: submission.hasTicketTiers || false,
     };
 
-    // ✅ If ticketing was configured by admin
+    // ✅ If ticketing was configured by admin — generate manageKey for organizer
     if (ticketingOverride) {
       eventDoc.ticketingEnabled = true;
       eventDoc.ticketingOption = 'outingstation';
       eventDoc.hasOutingStationTicketing = true;
-      eventDoc.ticketPrice = parseFloat(ticketingOverride.price) || 0;
-      eventDoc.ticketsAvailable = parseInt(ticketingOverride.available) || 100;
       eventDoc.serviceFeeType = ticketingOverride.serviceFeeType || 'fixed';
       eventDoc.serviceFeeAmount = parseFloat(ticketingOverride.serviceFeeAmount) || 100;
+
+      // ✅ Generate manage key so organizer can manage their event tickets
+      eventDoc.manageKey = generateManageKey();
+
+      if (ticketingOverride.useTiers && ticketingOverride.tiers?.length > 0) {
+        eventDoc.hasTicketTiers = true;
+        eventDoc.ticketTiers = ticketingOverride.tiers.map((t, i) => ({
+          id: `tier_${i + 1}`,
+          name: t.name,
+          price: parseFloat(t.price) || 0,
+          benefits: t.benefits || null,
+          quantity: t.quantity ? parseInt(t.quantity) : null,
+          sold: 0,
+          saleEndDate: t.saleEndDate || null,
+        }));
+        eventDoc.ticketPrice = Math.min(...eventDoc.ticketTiers.map(t => t.price));
+        eventDoc.ticketsAvailable = eventDoc.ticketTiers.reduce((sum, t) => sum + (t.quantity || 0), 0) || parseInt(ticketingOverride.available) || 100;
+      } else {
+        eventDoc.hasTicketTiers = false;
+        eventDoc.ticketTiers = [];
+        eventDoc.ticketPrice = parseFloat(ticketingOverride.price) || 0;
+        eventDoc.ticketsAvailable = parseInt(ticketingOverride.available) || 100;
+      }
+
       eventDoc.serviceFee = ticketingOverride.serviceFeeType === 'fixed'
         ? parseFloat(ticketingOverride.serviceFeeAmount) || 100
         : Math.round(eventDoc.ticketPrice * (parseFloat(ticketingOverride.serviceFeeAmount) / 100));
     }
 
-    // Handle dates
     if (!isPlace) {
       if (submission.startDate) {
         try { eventDoc.date = Timestamp.fromDate(new Date(submission.startDate)); } catch {}
@@ -195,14 +221,22 @@ export default function EventSubmissionsPage() {
     const wantsOSTicketing = submission.wantOutingstationTicketing === 'yes' || submission.wantOutingstationTicketing === true;
     const label = isPlace ? 'place' : 'event';
 
-    // ✅ If they want OutingStation ticketing — open setup modal instead
     if (wantsOSTicketing) {
+      const hasTiers = submission.hasTicketTiers && submission.ticketTiers?.length > 0;
       setTicketingSubmission(submission);
       setTicketSetup({
         price: submission.ticketPrice || '',
         available: 100,
         serviceFeeType: 'fixed',
         serviceFeeAmount: 100,
+        useTiers: hasTiers,
+        tiers: hasTiers ? submission.ticketTiers.map(t => ({
+          name: t.name || '',
+          price: t.price || '',
+          benefits: t.benefits || '',
+          quantity: t.quantity || '',
+          saleEndDate: t.saleEndDate || '',
+        })) : [],
       });
       setShowTicketingModal(true);
       return;
@@ -240,12 +274,21 @@ export default function EventSubmissionsPage() {
     }
   };
 
-  // ✅ Approve WITH ticketing setup
+  // ✅ Approve WITH ticketing — shows ManageLinkModal after so admin can share link with organizer
   const handleApproveWithTicketing = async () => {
     if (!ticketingSubmission) return;
-    if (!ticketSetup.price || parseFloat(ticketSetup.price) <= 0) {
-      alert('Please enter a valid ticket price');
-      return;
+
+    if (ticketSetup.useTiers) {
+      if (!ticketSetup.tiers?.length) { alert('Add at least 1 ticket tier'); return; }
+      for (const t of ticketSetup.tiers) {
+        if (!t.name?.trim()) { alert('All tiers need a name'); return; }
+        if (!t.price || parseFloat(t.price) < 0) { alert('All tiers need a valid price'); return; }
+      }
+    } else {
+      if (!ticketSetup.price || parseFloat(ticketSetup.price) <= 0) {
+        alert('Please enter a valid ticket price');
+        return;
+      }
     }
 
     setApproving(true);
@@ -259,18 +302,20 @@ export default function EventSubmissionsPage() {
         reviewedAt: new Date(),
       });
 
-      let creditMsg = '';
       if (ticketingSubmission.referralCode) {
-        const awardedTo = await awardReferralCredit(ticketingSubmission.referralCode);
-        creditMsg = awardedTo ? `\n✅ Awarded ₦100 credit to ${awardedTo}` : '';
+        await awardReferralCredit(ticketingSubmission.referralCode);
       }
 
-      alert(`✅ Event is now LIVE with ticketing enabled!\n\nTicket Price: ₦${parseFloat(ticketSetup.price).toLocaleString()}\nAvailable: ${ticketSetup.available} tickets\nEvent ID: ${docRef.id}${creditMsg}`);
-
+      // ✅ Close ticketing modal first
       setShowTicketingModal(false);
       setTicketingSubmission(null);
       fetchSubmissions();
       setSelectedSubmission(null);
+
+      // ✅ Show ManageLinkModal so admin can copy and send the link to organizer
+      setApprovedEventForManage({ id: docRef.id, ...eventDoc });
+      setShowManageModal(true);
+
     } catch (err) {
       console.error('Error approving with ticketing:', err);
       alert('❌ Failed to approve: ' + err.message);
@@ -279,7 +324,6 @@ export default function EventSubmissionsPage() {
     }
   };
 
-  // ✅ Flag for ticketing contact — approve without ticketing for now
   const handleApproveWithoutTicketing = async () => {
     if (!ticketingSubmission) return;
     if (!confirm('Publish without ticketing for now? You can enable ticketing later by editing the event.')) return;
@@ -362,6 +406,25 @@ export default function EventSubmissionsPage() {
 
   const wantsTicketing = (sub) => sub.wantOutingstationTicketing === 'yes' || sub.wantOutingstationTicketing === true;
 
+  const addModalTier = () => {
+    if (ticketSetup.tiers.length >= 5) return;
+    setTicketSetup(prev => ({
+      ...prev,
+      tiers: [...prev.tiers, { name: '', price: '', benefits: '', quantity: '', saleEndDate: '' }]
+    }));
+  };
+
+  const removeModalTier = (index) => {
+    setTicketSetup(prev => ({ ...prev, tiers: prev.tiers.filter((_, i) => i !== index) }));
+  };
+
+  const updateModalTier = (index, field, value) => {
+    setTicketSetup(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, [field]: value } : t)
+    }));
+  };
+
   if (error) return (
     <div className="flex h-screen bg-gray-50">
       <AdminSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -420,7 +483,7 @@ export default function EventSubmissionsPage() {
               { label: 'Total', value: submissions.length, style: 'bg-white border-gray-200 text-gray-900' },
               { label: 'Pending', value: submissions.filter(s => !s.status || s.status === 'pending').length, style: 'bg-yellow-50 border-yellow-200 text-yellow-800' },
               { label: 'Approved', value: submissions.filter(s => s.status === 'approved').length, style: 'bg-green-50 border-green-200 text-green-800' },
-              { label: 'Needs Ticketing Setup', value: submissions.filter(s => !s.status || s.status === 'pending').filter(wantsTicketing).length, style: 'bg-blue-50 border-blue-200 text-blue-800' },
+              { label: 'Needs Ticketing Setup', value: submissions.filter(s => (!s.status || s.status === 'pending') && wantsTicketing(s)).length, style: 'bg-blue-50 border-blue-200 text-blue-800' },
             ].map((stat, i) => (
               <div key={i} className={`rounded-xl p-4 sm:p-6 shadow-sm border ${stat.style}`}>
                 <div className="text-xl sm:text-2xl font-bold">{stat.value}</div>
@@ -470,6 +533,7 @@ export default function EventSubmissionsPage() {
                     <tr><td colSpan="6" className="px-6 py-12 text-center text-gray-500">No submissions found</td></tr>
                   ) : filteredSubmissions.map((sub) => {
                     const allImages = getAllImages(sub);
+                    const hasTiers = sub.hasTicketTiers && sub.ticketTiers?.length > 0;
                     return (
                       <tr key={sub.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4">
@@ -512,14 +576,19 @@ export default function EventSubmissionsPage() {
                           </span>
                           {sub.isUniversityEvent && <div className="text-xs text-blue-600 font-semibold mt-1">🎓 Campus</div>}
                         </td>
-                        {/* ✅ Ticketing column */}
                         <td className="px-6 py-4">
                           {wantsTicketing(sub) ? (
                             <div className="flex flex-col gap-1">
                               <span className="inline-flex items-center gap-1 text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold">
                                 <Ticket size={11} />Wants OS Ticketing
                               </span>
-                              <span className="text-xs text-gray-500">₦{parseFloat(sub.ticketPrice || 0).toLocaleString()}</span>
+                              {hasTiers ? (
+                                <span className="inline-flex items-center gap-1 text-xs bg-cyan-100 text-cyan-700 px-2 py-1 rounded-full font-semibold">
+                                  <Layers size={11} />{sub.ticketTiers.length} Tiers
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-500">₦{parseFloat(sub.ticketPrice || 0).toLocaleString()}</span>
+                              )}
                             </div>
                           ) : sub.externalTicketLink ? (
                             <span className="text-xs text-gray-500">External link</span>
@@ -550,10 +619,11 @@ export default function EventSubmissionsPage() {
         </div>
       </main>
 
-      {/* ✅ Detail Modal */}
+      {/* Detail Modal */}
       {selectedSubmission && (() => {
         const allImages = getAllImages(selectedSubmission);
         const needsTicketing = wantsTicketing(selectedSubmission);
+        const hasTiers = selectedSubmission.hasTicketTiers && selectedSubmission.ticketTiers?.length > 0;
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -565,6 +635,11 @@ export default function EventSubmissionsPage() {
                     {needsTicketing && (
                       <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-sm font-semibold">
                         <Ticket size={14} />Needs Ticketing Setup
+                      </span>
+                    )}
+                    {hasTiers && (
+                      <span className="inline-flex items-center gap-1 bg-cyan-100 text-cyan-700 px-3 py-1 rounded-full text-sm font-semibold">
+                        <Layers size={14} />{selectedSubmission.ticketTiers.length} Ticket Tiers
                       </span>
                     )}
                   </div>
@@ -587,7 +662,6 @@ export default function EventSubmissionsPage() {
 
               <div className="p-6 space-y-6">
 
-                {/* ✅ Ticketing warning banner */}
                 {needsTicketing && selectedSubmission.status !== 'approved' && (
                   <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4 flex items-start gap-3">
                     <Ticket size={22} className="text-orange-500 flex-shrink-0 mt-0.5" />
@@ -597,13 +671,43 @@ export default function EventSubmissionsPage() {
                         Contact them first: <strong>{selectedSubmission.organizerEmail}</strong> · {selectedSubmission.organizerPhone}
                       </p>
                       <p className="text-orange-600 text-xs mt-1">
-                        Requested price: ₦{parseFloat(selectedSubmission.ticketPrice || 0).toLocaleString()} · Once agreed, click "Approve & Set Up Ticketing" below to configure and publish.
+                        {hasTiers
+                          ? `Submitted ${selectedSubmission.ticketTiers.length} ticket tiers — review below`
+                          : `Requested price: ₦${parseFloat(selectedSubmission.ticketPrice || 0).toLocaleString()}`
+                        }
                       </p>
                     </div>
                   </div>
                 )}
 
-                {/* Image carousel */}
+                {hasTiers && (
+                  <div className="border-2 border-cyan-100 rounded-xl p-4">
+                    <h3 className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                      <Layers size={16} className="text-cyan-600" />
+                      Ticket Tiers ({selectedSubmission.ticketTiers.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {selectedSubmission.ticketTiers.map((tier, i) => (
+                        <div key={i} className="flex items-center justify-between py-2.5 px-3 bg-gray-50 rounded-xl border border-gray-100">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-cyan-500 text-white text-xs flex items-center justify-center font-bold flex-shrink-0">{i + 1}</span>
+                              <p className="text-sm font-bold text-gray-800">{tier.name}</p>
+                              {i === 0 && <span className="text-xs bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded font-semibold">Default</span>}
+                            </div>
+                            {tier.benefits && <p className="text-xs text-gray-500 mt-1 ml-7">{tier.benefits}</p>}
+                            {tier.saleEndDate && <p className="text-xs text-orange-500 mt-0.5 ml-7">Ends: {tier.saleEndDate}</p>}
+                          </div>
+                          <div className="text-right flex-shrink-0 ml-4">
+                            <p className="text-sm font-black text-cyan-600">₦{Number(tier.price).toLocaleString()}</p>
+                            {tier.quantity && <p className="text-xs text-gray-400">{tier.quantity} available</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {allImages.length > 0 && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
@@ -718,12 +822,23 @@ export default function EventSubmissionsPage() {
                     </div>
                     <div>
                       <h4 className="text-sm font-semibold text-gray-700 mb-1">Pricing</h4>
-                      <div className="flex items-center gap-2">
-                        <DollarSign size={16} />
-                        {selectedSubmission.isFree === true || selectedSubmission.isFree === 'yes'
-                          ? <span className="text-green-600 font-semibold">FREE</span>
-                          : <span className="text-gray-900">₦{parseFloat(selectedSubmission.ticketPrice || 0).toLocaleString()}</span>}
-                      </div>
+                      {hasTiers ? (
+                        <div className="space-y-1">
+                          {selectedSubmission.ticketTiers.map((t, i) => (
+                            <div key={i} className="flex justify-between text-sm">
+                              <span className="text-gray-600">{t.name}</span>
+                              <span className="font-semibold text-cyan-600">₦{Number(t.price).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <DollarSign size={16} />
+                          {selectedSubmission.isFree === true || selectedSubmission.isFree === 'yes'
+                            ? <span className="text-green-600 font-semibold">FREE</span>
+                            : <span className="text-gray-900">₦{parseFloat(selectedSubmission.ticketPrice || 0).toLocaleString()}</span>}
+                        </div>
+                      )}
                       {needsTicketing && (
                         <p className="text-xs text-orange-600 mt-1 font-medium">🎫 Requested OutingStation ticketing</p>
                       )}
@@ -774,7 +889,6 @@ export default function EventSubmissionsPage() {
                 </div>
               </div>
 
-              {/* ✅ Action Buttons — different for ticketing vs non-ticketing */}
               <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 flex gap-3 justify-end flex-wrap">
                 {selectedSubmission.status !== 'approved' && (
                   needsTicketing ? (
@@ -811,10 +925,10 @@ export default function EventSubmissionsPage() {
         );
       })()}
 
-      {/* ✅ Ticketing Setup Modal */}
+      {/* Ticketing Setup Modal */}
       {showTicketingModal && ticketingSubmission && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-6 text-white">
               <div className="flex items-center gap-3 mb-1">
                 <Ticket size={24} />
@@ -825,37 +939,118 @@ export default function EventSubmissionsPage() {
 
             <div className="p-6 space-y-5">
 
-              {/* Contact reminder */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm">
                 <p className="font-semibold text-blue-800 mb-1">✅ Confirm you've spoken to the organizer</p>
                 <p className="text-blue-700">
                   <strong>{ticketingSubmission.organizerName}</strong> · {ticketingSubmission.organizerEmail}
                 </p>
-                <p className="text-blue-600 text-xs mt-1">Their requested price: ₦{parseFloat(ticketingSubmission.ticketPrice || 0).toLocaleString()}</p>
               </div>
 
-              {/* Ticket price */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">
-                  Ticket Price (₦) <span className="text-red-500">*</span>
+              {/* ✅ Manage link notice */}
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm flex items-start gap-3">
+                <span className="text-xl">🔗</span>
+                <div>
+                  <p className="font-semibold text-green-800">Organizer will get a Manage Link</p>
+                  <p className="text-green-700 text-xs mt-1">
+                    After publishing, you'll see a shareable manage link to send to the organizer so they can check in attendees and view ticket sales — without needing admin access.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <div className="flex items-center gap-2">
+                  <Layers size={18} className="text-cyan-600" />
+                  <div>
+                    <p className="text-sm font-bold text-gray-800">Use Multiple Ticket Tiers</p>
+                    <p className="text-xs text-gray-500">Regular, VIP, Early Bird, Table of 5...</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" checked={ticketSetup.useTiers}
+                    onChange={(e) => {
+                      const useTiers = e.target.checked;
+                      setTicketSetup(prev => ({
+                        ...prev,
+                        useTiers,
+                        tiers: useTiers && prev.tiers.length === 0
+                          ? [{ name: 'Regular', price: prev.price || '', benefits: '', quantity: '', saleEndDate: '' }]
+                          : prev.tiers,
+                      }));
+                    }}
+                    className="sr-only peer" />
+                  <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
                 </label>
-                <input type="number" value={ticketSetup.price}
-                  onChange={(e) => setTicketSetup(prev => ({ ...prev, price: e.target.value }))}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none text-lg font-semibold"
-                  placeholder="e.g. 5000" />
-                <p className="text-xs text-gray-500 mt-1">Agreed amount after your conversation with the organizer</p>
               </div>
 
-              {/* Tickets available */}
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Tickets Available</label>
-                <input type="number" value={ticketSetup.available}
-                  onChange={(e) => setTicketSetup(prev => ({ ...prev, available: e.target.value }))}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none"
-                  placeholder="100" />
-              </div>
+              {ticketSetup.useTiers ? (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold text-gray-700">Ticket Tiers</h3>
+                  {ticketSetup.tiers.map((tier, index) => (
+                    <div key={index} className="border-2 border-gray-100 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold text-gray-600">Tier {index + 1}</span>
+                        {ticketSetup.tiers.length > 1 && (
+                          <button onClick={() => removeModalTier(index)} className="text-red-400 hover:text-red-600 text-xs">Remove</button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="col-span-2">
+                          <input type="text" value={tier.name}
+                            onChange={(e) => updateModalTier(index, 'name', e.target.value)}
+                            placeholder="Tier name (e.g. Regular, VIP)"
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none" />
+                        </div>
+                        <input type="number" value={tier.price}
+                          onChange={(e) => updateModalTier(index, 'price', e.target.value)}
+                          placeholder="Price (₦)"
+                          className="px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none" />
+                        <input type="number" value={tier.quantity}
+                          onChange={(e) => updateModalTier(index, 'quantity', e.target.value)}
+                          placeholder="Qty (optional)"
+                          className="px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none" />
+                        <div className="col-span-2">
+                          <input type="text" value={tier.benefits}
+                            onChange={(e) => updateModalTier(index, 'benefits', e.target.value)}
+                            placeholder="Benefits (optional)"
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none" />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-xs text-gray-500 mb-1 block">Sale ends (optional)</label>
+                          <input type="date" value={tier.saleEndDate}
+                            onChange={(e) => updateModalTier(index, 'saleEndDate', e.target.value)}
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {ticketSetup.tiers.length < 5 && (
+                    <button onClick={addModalTier}
+                      className="w-full py-2.5 border-2 border-dashed border-orange-300 rounded-xl text-sm font-semibold text-orange-600 hover:bg-orange-50 transition">
+                      + Add Tier ({ticketSetup.tiers.length}/5)
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Ticket Price (₦) <span className="text-red-500">*</span>
+                    </label>
+                    <input type="number" value={ticketSetup.price}
+                      onChange={(e) => setTicketSetup(prev => ({ ...prev, price: e.target.value }))}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none text-lg font-semibold"
+                      placeholder="e.g. 5000" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Tickets Available</label>
+                    <input type="number" value={ticketSetup.available}
+                      onChange={(e) => setTicketSetup(prev => ({ ...prev, available: e.target.value }))}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-400 focus:outline-none"
+                      placeholder="100" />
+                  </div>
+                </div>
+              )}
 
-              {/* Service fee */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">OutingStation Service Fee</label>
                 <div className="flex gap-3 mb-3">
@@ -883,8 +1078,7 @@ export default function EventSubmissionsPage() {
                 )}
               </div>
 
-              {/* Live breakdown */}
-              {ticketSetup.price > 0 && (
+              {!ticketSetup.useTiers && ticketSetup.price > 0 && (
                 <div className="bg-gray-50 rounded-xl p-4 text-sm border border-gray-200">
                   <p className="font-semibold text-gray-800 mb-3">💰 Pricing Breakdown</p>
                   {(() => {
@@ -902,11 +1096,6 @@ export default function EventSubmissionsPage() {
                         <div className="border-t border-gray-300 pt-2 flex justify-between font-bold text-base">
                           <span>Buyer pays</span><span className="text-orange-600">₦{total.toLocaleString()}</span>
                         </div>
-                        <div className="border-t border-gray-200 pt-2 space-y-1 text-xs text-gray-500">
-                          <div className="flex justify-between"><span>Organizer receives</span><span className="text-green-700 font-semibold">₦{price.toLocaleString()}</span></div>
-                          <div className="flex justify-between"><span>OutingStation earns</span><span className="text-blue-700 font-semibold">₦{fee.toLocaleString()}</span></div>
-                          <div className="flex justify-between"><span>Paystack gets</span><span className="font-semibold">₦{paystack.toLocaleString()}</span></div>
-                        </div>
                       </div>
                     );
                   })()}
@@ -919,7 +1108,7 @@ export default function EventSubmissionsPage() {
                 className="flex-1 flex items-center justify-center gap-2 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold transition disabled:opacity-50">
                 {approving
                   ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Publishing...</>
-                  : <><Ticket size={18} />Publish with Ticketing</>
+                  : <><Ticket size={18} />Publish & Get Manage Link</>
                 }
               </button>
               <button onClick={handleApproveWithoutTicketing} disabled={approving}
@@ -933,6 +1122,17 @@ export default function EventSubmissionsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ✅ Manage Link Modal — shown after ticketing approval so admin can share with organizer */}
+      {showManageModal && approvedEventForManage?.manageKey && (
+        <ManageLinkModal
+          event={approvedEventForManage}
+          onClose={() => {
+            setShowManageModal(false);
+            setApprovedEventForManage(null);
+          }}
+        />
       )}
     </div>
   );

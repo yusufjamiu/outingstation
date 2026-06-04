@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Menu, Plus, Edit, Trash2, Eye, Bell } from 'lucide-react';
+import { Menu, Plus, Edit, Trash2, Eye, Bell, Layers } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
@@ -29,7 +29,6 @@ export default function AdminEvents() {
       const snapshot = await getDocs(collection(db, 'events'));
       const eventsData = snapshot.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        // ✅ Exclude places — they have their own admin page
         .filter(e => e.subCategory !== 'places');
 
       eventsData.sort((a, b) => {
@@ -232,13 +231,26 @@ export default function AdminEvents() {
                             {event.status || 'draft'}
                           </span>
                         </td>
+
+                        {/* ✅ Price column — shows tier badge if event has tiers */}
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                           {event.isFree ? (
                             <span className="text-emerald-600 font-medium">Free</span>
+                          ) : event.hasTicketTiers && event.ticketTiers?.length > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              <span className="inline-flex items-center gap-1 text-xs bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded-full font-semibold">
+                                <Layers size={10} />
+                                {event.ticketTiers.length} Tiers
+                              </span>
+                              <span className="text-xs text-gray-400">
+                                from ₦{Math.min(...event.ticketTiers.map(t => t.price)).toLocaleString()}
+                              </span>
+                            </div>
                           ) : (
                             <span>₦{(event.ticketPrice || event.price || 0).toLocaleString()}</span>
                           )}
                         </td>
+
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <div className="flex gap-1">
                             <button

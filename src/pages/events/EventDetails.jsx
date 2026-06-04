@@ -5,7 +5,7 @@ import SEO from '../../components/SEO';
 import {
   Calendar, Clock, MapPin, DollarSign, Users, Share2, Heart,
   ExternalLink, Mail, Phone, Globe, Bookmark, ArrowLeft,
-  CheckCircle, Navigation, Ticket, CreditCard, Lock
+  CheckCircle, Navigation, Ticket, CreditCard, Lock, Layers
 } from 'lucide-react';
 import {
   doc, getDoc, collection, getDocs,
@@ -357,6 +357,14 @@ function CompactTicketModal({ ticketData, onClose }) {
                 background: 'rgba(255,255,255,0.15)', borderRadius: 6,
                 padding: '2px 7px', fontSize: 9, color: 'rgba(255,255,255,0.85)'
               }}>🎟️ E-Ticket</span>
+              {/* ✅ Show tier badge on ticket if applicable */}
+              {ticketData.tierName && (
+                <span style={{
+                  background: 'rgba(255,255,255,0.25)', borderRadius: 6,
+                  padding: '2px 8px', fontSize: 9, fontWeight: 700,
+                  color: 'white', letterSpacing: 0.5
+                }}>{ticketData.tierName}</span>
+              )}
             </div>
             <p style={{ color: 'white', fontSize: 14, fontWeight: 800, margin: '0 0 6px', lineHeight: 1.3 }}>
               {ticketData.eventTitle}
@@ -392,6 +400,10 @@ function CompactTicketModal({ ticketData, onClose }) {
               <MiniRow label="Name" value={ticketData.buyerName} />
               <MiniRow label="Email" value={ticketData.buyerEmail} />
               <MiniRow label="Phone" value={ticketData.buyerPhone} />
+              {/* ✅ Show tier on ticket receipt */}
+              {ticketData.tierName && (
+                <MiniRow label="Tier" value={ticketData.tierName} />
+              )}
               <MiniRow label="Qty" value={`${ticketData.quantity} ticket${ticketData.quantity > 1 ? 's' : ''}`} />
               <MiniRow label="Paid" value={`₦${ticketData.totalPaid?.toLocaleString()}`} highlight />
               {ticketData.creditsApplied > 0 && (
@@ -463,6 +475,73 @@ function MiniRow({ label, value, highlight }) {
   );
 }
 
+// ─── Ticket Tier Selector ─────────────────────────────────────────────────────
+
+function TicketTierSelector({ tiers, selectedTier, onSelect }) {
+  const now = new Date();
+  return (
+    <div className="space-y-2 mb-4">
+      <p className="text-sm font-bold text-gray-800 flex items-center gap-2">
+        <Layers size={16} className="text-cyan-600" />
+        Select Ticket Type
+      </p>
+      {tiers.map((tier, i) => {
+        const isExpired = tier.saleEndDate && new Date(tier.saleEndDate) < now;
+        const isSoldOut = tier.quantity != null && (tier.sold ?? 0) >= tier.quantity;
+        const unavailable = isExpired || isSoldOut;
+        const isSelected = selectedTier?.id === tier.id;
+        const remaining = tier.quantity != null ? tier.quantity - (tier.sold ?? 0) : null;
+
+        return (
+          <button
+            key={tier.id || i}
+            type="button"
+            disabled={unavailable}
+            onClick={() => !unavailable && onSelect(tier)}
+            className={`w-full text-left p-3.5 rounded-xl border-2 transition-all ${
+              unavailable
+                ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                : isSelected
+                ? 'border-cyan-500 bg-cyan-50 shadow-md'
+                : 'border-gray-200 bg-white hover:border-cyan-300 hover:bg-cyan-50/50'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                  isSelected ? 'border-cyan-500 bg-cyan-500' : 'border-gray-300'
+                }`}>
+                  {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold text-gray-800">{tier.name}</p>
+                    {i === 0 && !unavailable && (
+                      <span className="text-xs bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded font-semibold">Popular</span>
+                    )}
+                    {isExpired && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-semibold">Expired</span>}
+                    {isSoldOut && <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-semibold">Sold Out</span>}
+                  </div>
+                  {tier.benefits && <p className="text-xs text-gray-500 mt-0.5">{tier.benefits}</p>}
+                  {remaining != null && remaining <= 20 && !isSoldOut && (
+                    <p className="text-xs text-orange-500 mt-0.5">⚡ Only {remaining} left</p>
+                  )}
+                  {tier.saleEndDate && !isExpired && (
+                    <p className="text-xs text-gray-400 mt-0.5">Ends {new Date(tier.saleEndDate).toLocaleDateString()}</p>
+                  )}
+                </div>
+              </div>
+              <div className="text-right flex-shrink-0 ml-3">
+                <p className="text-sm font-black text-cyan-600">₦{Number(tier.price).toLocaleString()}</p>
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Ticket Purchase Section ──────────────────────────────────────────────────
 
 const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
@@ -481,6 +560,17 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   const [isAmbassador, setIsAmbassador] = useState(false);
   const [creditsUnlocked, setCreditsUnlocked] = useState(false);
   const [creditUsedOnEvents, setCreditUsedOnEvents] = useState([]);
+
+  // ✅ Tier state
+  const hasTiers = event.hasTicketTiers && event.ticketTiers?.length > 0;
+  const firstAvailableTier = hasTiers
+    ? event.ticketTiers.find(t => {
+        const isExpired = t.saleEndDate && new Date(t.saleEndDate) < new Date();
+        const isSoldOut = t.quantity != null && (t.sold ?? 0) >= t.quantity;
+        return !isExpired && !isSoldOut;
+      }) || event.ticketTiers[0]
+    : null;
+  const [selectedTier, setSelectedTier] = useState(firstAvailableTier);
 
   const ticketId = useRef(generateTicketId());
   const paymentRef = useRef(`OS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
@@ -515,17 +605,25 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     event.id
   );
 
-  const ticketPrice = event.ticketPrice || 0;
+  // ✅ Use selected tier price if tiers exist, otherwise fall back to event.ticketPrice
+  const activeTicketPrice = hasTiers && selectedTier ? selectedTier.price : (event.ticketPrice || 0);
+
+  const ticketPrice = activeTicketPrice;
   const serviceFee = calculateServiceFee(event);
   const paystackFee = calculatePaystackFee(event);
-  const baseTotal = calculateTotal(event);
+  // ✅ Recalculate total using active tier price
+  const baseTotal = ticketPrice + serviceFee + paystackFee;
   const totalBeforeCredits = baseTotal * quantity;
   const maxCreditsAllowed = calculateMaxCreditUsage(totalBeforeCredits, availableCredits);
   const actualCreditsApplied = useCredits && canUseCredits
     ? Math.min(creditsToApply || maxCreditsAllowed, maxCreditsAllowed)
     : 0;
   const finalTotal = totalBeforeCredits - actualCreditsApplied;
-  const ticketsRemaining = (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
+
+  // ✅ Tickets remaining — tier-aware
+  const ticketsRemaining = hasTiers && selectedTier
+    ? (selectedTier.quantity != null ? selectedTier.quantity - (selectedTier.sold ?? 0) : 9999)
+    : (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
 
   // ✅ Reset credits if quantity > 1
   useEffect(() => {
@@ -535,6 +633,11 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   useEffect(() => {
     setCreditsToApply(useCredits && canUseCredits ? maxCreditsAllowed : 0);
   }, [useCredits, maxCreditsAllowed, canUseCredits]);
+
+  // ✅ Reset paystack button when tier changes
+  useEffect(() => {
+    setShowPaystackButton(false);
+  }, [selectedTier]);
 
   const handlePaymentSuccess = async (reference) => {
     // ✅ Record credit usage on this event
@@ -560,6 +663,9 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       buyerPhone,
       quantity,
       ticketPrice,
+      // ✅ Include tier info in ticket
+      tierName: selectedTier?.name || null,
+      tierId: selectedTier?.id || null,
       serviceFee: serviceFee * quantity,
       paystackFee: paystackFee * quantity,
       totalPaid: finalTotal,
@@ -577,6 +683,11 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
   };
 
   const handleProceedToPayment = () => {
+    // ✅ Validate tier selection
+    if (hasTiers && !selectedTier) {
+      toast.error('Please select a ticket type');
+      return;
+    }
     if (!buyerName || !buyerEmail || !buyerPhone) {
       toast.error('Please enter your name, email, and phone number');
       return;
@@ -600,6 +711,8 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         { display_name: 'TID', variable_name: 'tid', value: ticketId.current },
         { display_name: 'Name', variable_name: 'buyer_name', value: buyerName },
         { display_name: 'Phone', variable_name: 'buyer_phone', value: buyerPhone },
+        // ✅ Include tier in Paystack metadata
+        { display_name: 'Tier', variable_name: 'tier_name', value: selectedTier?.name || 'Standard' },
         { display_name: 'Price', variable_name: 'ticket_price', value: String(ticketPrice) },
         { display_name: 'Fee', variable_name: 'service_fee', value: String(serviceFee) },
         { display_name: 'Qty', variable_name: 'quantity', value: String(quantity) },
@@ -609,6 +722,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
       ],
       event_id: event.id,
       ticket_id: ticketId.current,
+      tier_id: selectedTier?.id || null,
       total_amount: finalTotal,
     },
   };
@@ -634,15 +748,25 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
 
         <div className="bg-cyan-50 rounded-lg p-3 mb-4">
           <p className="text-sm text-gray-700">
-            <span className="font-semibold">{ticketsRemaining}</span> tickets remaining
+            <span className="font-semibold">{ticketsRemaining >= 9999 ? 'Unlimited' : ticketsRemaining}</span> tickets remaining
+            {hasTiers && selectedTier && <span className="text-gray-500 text-xs"> · {selectedTier.name}</span>}
           </p>
-          {ticketsRemaining < 10 && ticketsRemaining > 0 && (
+          {ticketsRemaining < 10 && ticketsRemaining > 0 && ticketsRemaining < 9999 && (
             <p className="text-xs text-orange-600 mt-1">⚠️ Selling fast!</p>
           )}
           {ticketsRemaining === 0 && (
             <p className="text-xs text-red-600 mt-1">❌ Sold out!</p>
           )}
         </div>
+
+        {/* ✅ Tier selector — shown only when event has tiers */}
+        {hasTiers && (
+          <TicketTierSelector
+            tiers={event.ticketTiers}
+            selectedTier={selectedTier}
+            onSelect={(tier) => setSelectedTier(tier)}
+          />
+        )}
 
         <div className="space-y-3 mb-4">
           <div>
@@ -667,7 +791,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
             <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
             <input type="number" value={quantity}
               onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-              min="1" max={ticketsRemaining}
+              min="1" max={ticketsRemaining >= 9999 ? 10 : ticketsRemaining}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent" />
           </div>
         </div>
@@ -759,6 +883,13 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         <div className="bg-gray-50 rounded-lg p-4 mb-4">
           <p className="text-sm font-semibold text-gray-900 mb-2">Price Breakdown:</p>
           <div className="space-y-1 text-sm">
+            {/* ✅ Show selected tier name in breakdown */}
+            {hasTiers && selectedTier && (
+              <div className="flex justify-between text-xs text-gray-500 pb-1 border-b border-gray-200 mb-1">
+                <span>Tier:</span>
+                <span className="font-semibold text-cyan-600">{selectedTier.name}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-gray-600">Ticket Price ({quantity}x):</span>
               <span className="font-medium">{formatCredits(ticketPrice * quantity)}</span>
@@ -805,7 +936,8 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
               className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
             >
               <Ticket size={20} />
-              Proceed to Payment
+              {/* ✅ Show tier name in button */}
+              {hasTiers && selectedTier ? `Buy ${selectedTier.name} Ticket` : 'Proceed to Payment'}
             </button>
           )
         ) : (
@@ -864,7 +996,12 @@ const handleRegister = (event, currentUser, navigate) => {
     const ticketSection = document.getElementById('ticket-purchase-section');
     if (ticketSection) {
       ticketSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      toast.success('👇 Fill in your details below to purchase tickets');
+      // ✅ Different message for tier events
+      toast.success(
+        event.hasTicketTiers
+          ? '👇 Select your ticket type below'
+          : '👇 Fill in your details below to purchase tickets'
+      );
     }
     return;
   }
@@ -1068,6 +1205,8 @@ export default function EventDetails() {
   const eventDate = formatEventDateFull(event);
   const eventTime = formatEventTime(event);
   const hasOutingStationTicketing = event.ticketingOption === 'outingstation' && event.ticketingEnabled;
+  // ✅ Tier flag for sidebar
+  const hasTiers = event.hasTicketTiers && event.ticketTiers?.length > 0;
   const canonicalUrl = event.slug
     ? `https://www.outingstation.com/e/${event.slug}`
     : `https://www.outingstation.com/event/${event.id}`;
@@ -1255,17 +1394,32 @@ export default function EventDetails() {
                   </div>
                   <div className="flex items-start gap-3">
                     <DollarSign size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
-                    <div>
+                    <div className="flex-1">
                       <p className="font-semibold text-gray-900 text-sm">{isPlace ? 'Entry Fee' : 'Price'}</p>
-                      <p className="text-gray-600 text-sm">
-                        {hasOutingStationTicketing ? (
-                          <span className="font-semibold">₦{event.ticketPrice?.toLocaleString()}</span>
-                        ) : event.isFree ? (
-                          <span className="text-emerald-600 font-semibold">Free</span>
-                        ) : (
-                          <span className="font-semibold">₦{event.price?.toLocaleString() || 'Contact Organizer'}</span>
-                        )}
-                      </p>
+                      {/* ✅ Show tier prices in sidebar */}
+                      {hasTiers ? (
+                        <div className="space-y-1 mt-1">
+                          {event.ticketTiers.slice(0, 4).map((tier, i) => (
+                            <div key={i} className="flex justify-between items-center">
+                              <span className="text-gray-600 text-xs">{tier.name}</span>
+                              <span className="font-semibold text-xs text-cyan-600">₦{Number(tier.price).toLocaleString()}</span>
+                            </div>
+                          ))}
+                          {event.ticketTiers.length > 4 && (
+                            <p className="text-xs text-gray-400">+{event.ticketTiers.length - 4} more tiers</p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-gray-600 text-sm">
+                          {hasOutingStationTicketing ? (
+                            <span className="font-semibold">₦{event.ticketPrice?.toLocaleString()}</span>
+                          ) : event.isFree ? (
+                            <span className="text-emerald-600 font-semibold">Free</span>
+                          ) : (
+                            <span className="font-semibold">₦{event.price?.toLocaleString() || 'Contact Organizer'}</span>
+                          )}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1276,7 +1430,11 @@ export default function EventDetails() {
                     className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
                   >
                     <CheckCircle size={20} />
-                    {hasOutingStationTicketing ? 'Buy Tickets' : isPlace ? 'Get Info' : (event.isFree ? 'Register' : 'Buy Tickets')}
+                    {/* ✅ Button label — "Select Ticket" for tier events */}
+                    {hasOutingStationTicketing
+                      ? (hasTiers ? 'Select Ticket' : 'Buy Tickets')
+                      : isPlace ? 'Get Info'
+                      : (event.isFree ? 'Register' : 'Buy Tickets')}
                   </button>
 
                   <button

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Menu, Save, X, Upload, Plus } from 'lucide-react';
+import { Menu, Save, X, Upload, Plus, Trash2, Layers } from 'lucide-react';
 import { AmbassadorSidebar } from '../../components/AmbassadorSidebar';
 import { useNavigate, useParams } from 'react-router-dom';
 import { collection, addDoc, doc, getDoc, getDocs, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
@@ -22,6 +22,125 @@ const generateSlug = (title) => {
     .trim()
     .substring(0, 80);
 };
+
+// ✅ Tier presets
+const TIER_PRESETS = [
+  { name: 'Regular', emoji: '🎫' },
+  { name: 'Early Bird', emoji: '🐦' },
+  { name: 'VIP', emoji: '⭐' },
+  { name: 'VVIP', emoji: '👑' },
+  { name: 'Table of 5', emoji: '🪑' },
+  { name: 'Student', emoji: '🎓' },
+  { name: 'Couple', emoji: '💑' },
+];
+
+// ✅ Ticket Tier Builder component
+function TicketTierBuilder({ tiers, onChange }) {
+  const addTier = () => {
+    if (tiers.length >= 5) return;
+    onChange([...tiers, {
+      id: `tier_${Date.now()}`,
+      name: '',
+      price: '',
+      benefits: '',
+      quantity: '',
+      saleEndDate: '',
+    }]);
+  };
+
+  const removeTier = (index) => {
+    if (tiers.length <= 1) return;
+    onChange(tiers.filter((_, i) => i !== index));
+  };
+
+  const updateTier = (index, field, value) => {
+    onChange(tiers.map((t, i) => i === index ? { ...t, [field]: value } : t));
+  };
+
+  return (
+    <div className="space-y-3">
+      {tiers.map((tier, index) => (
+        <div key={tier.id || index} className="border-2 border-gray-100 rounded-xl p-4 bg-gray-50">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-cyan-500 text-white text-xs flex items-center justify-center font-bold">{index + 1}</span>
+              <span className="text-sm font-bold text-gray-700">{tier.name || `Tier ${index + 1}`}</span>
+              {index === 0 && <span className="text-xs bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded-full font-semibold">Default</span>}
+            </div>
+            {tiers.length > 1 && (
+              <button type="button" onClick={() => removeTier(index)}
+                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Quick presets */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {TIER_PRESETS.map(p => (
+              <button key={p.name} type="button"
+                onClick={() => updateTier(index, 'name', p.name)}
+                className={`px-2 py-1 rounded-lg text-xs font-semibold border transition ${
+                  tier.name === p.name
+                    ? 'bg-cyan-500 text-white border-cyan-500'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-cyan-400'
+                }`}>
+                {p.emoji} {p.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Tier Name *</label>
+              <input type="text" value={tier.name}
+                onChange={(e) => updateTier(index, 'name', e.target.value)}
+                placeholder="e.g. Regular, VIP, Early Bird"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Price (₦) *</label>
+              <input type="number" value={tier.price}
+                onChange={(e) => updateTier(index, 'price', e.target.value)}
+                placeholder="5000" min="0"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Quantity <span className="text-gray-400">(optional)</span></label>
+              <input type="number" value={tier.quantity}
+                onChange={(e) => updateTier(index, 'quantity', e.target.value)}
+                placeholder="e.g. 100" min="1"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Benefits <span className="text-gray-400">(optional)</span></label>
+              <input type="text" value={tier.benefits}
+                onChange={(e) => updateTier(index, 'benefits', e.target.value)}
+                placeholder="e.g. General admission + free drink"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Sale Ends <span className="text-gray-400">(optional)</span></label>
+              <input type="date" value={tier.saleEndDate}
+                onChange={(e) => updateTier(index, 'saleEndDate', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {tiers.length < 5 && (
+        <button type="button" onClick={addTier}
+          className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-cyan-300 rounded-xl text-sm font-semibold text-cyan-600 hover:bg-cyan-50 hover:border-cyan-500 transition">
+          <Plus size={16} /> Add Tier ({tiers.length}/5)
+        </button>
+      )}
+      {tiers.length >= 5 && (
+        <p className="text-center text-xs text-gray-400 py-1">Maximum 5 tiers reached</p>
+      )}
+    </div>
+  );
+}
 
 export default function AmbassadorEventForm() {
   const navigate = useNavigate();
@@ -52,10 +171,21 @@ export default function AmbassadorEventForm() {
   const [serviceFeeAmount, setServiceFeeAmount] = useState(100);
   const [serviceFeePercentage, setServiceFeePercentage] = useState(2);
 
+  // ✅ Ticket tiers state
+  const [useTicketTiers, setUseTicketTiers] = useState(false);
+  const [ticketTiers, setTicketTiers] = useState([{
+    id: `tier_${Date.now()}`,
+    name: 'Regular',
+    price: '',
+    benefits: '',
+    quantity: '',
+    saleEndDate: '',
+  }]);
+
   const [formData, setFormData] = useState({
     title: '', description: '', category: '',
     subCategory: 'events',
-    religionType: '', eventType: 'campus', // 🔒 locked to campus
+    religionType: '', eventType: 'campus',
     eventDuration: 'single', date: '', time: '',
     startDate: '', endDate: '',
     dailyStartTime: '', dailyEndTime: '',
@@ -69,7 +199,6 @@ export default function AmbassadorEventForm() {
     status: 'published', isFeatured: false, isTrending: false
   });
 
-  // 🔒 The ambassador's assigned campuses (mapped from ids → university objects)
   const assignedIds = userProfile?.assignedCampuses || [];
   const myCampuses = universities.filter(u => assignedIds.includes(u.id));
   const myCampusNames = myCampuses.map(u => u.name).filter(Boolean);
@@ -99,7 +228,6 @@ export default function AmbassadorEventForm() {
     }
   };
 
-  // Auto-select the campus when the ambassador has exactly one (new events only)
   useEffect(() => {
     if (!isEdit && myCampuses.length === 1 && !formData.university) {
       setFormData(prev => ({ ...prev, university: myCampuses[0].name }));
@@ -107,7 +235,6 @@ export default function AmbassadorEventForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [universities]);
 
-  // Load existing event when editing
   useEffect(() => {
     if (isEdit) {
       const loadEvent = async () => {
@@ -130,6 +257,18 @@ export default function AmbassadorEventForm() {
               setServiceFeeAmount(data.serviceFeeAmount || 100);
               setServiceFeePercentage(data.serviceFeePercentage || 2);
             }
+            // ✅ Load ticket tiers if they exist
+            if (data.hasTicketTiers && data.ticketTiers?.length > 0) {
+              setUseTicketTiers(true);
+              setTicketTiers(data.ticketTiers.map(t => ({
+                id: t.id || `tier_${Date.now()}`,
+                name: t.name || '',
+                price: t.price || '',
+                benefits: t.benefits || '',
+                quantity: t.quantity || '',
+                saleEndDate: t.saleEndDate || '',
+              })));
+            }
           }
         } catch (err) {
           console.error('Error loading event:', err);
@@ -140,7 +279,6 @@ export default function AmbassadorEventForm() {
     }
   }, [id, isEdit]);
 
-  // 🔒 Access guard: an ambassador may only edit events for their own campus
   useEffect(() => {
     if (isEdit && !fetchingEvent && universities.length > 0 && formData.university) {
       if (!myCampusNames.includes(formData.university)) {
@@ -225,15 +363,41 @@ export default function AmbassadorEventForm() {
     if (!myCampusNames.includes(formData.university)) { alert('You can only create events for your assigned campus.'); return; }
     if (!formData.category) { alert('Please select a category'); return; }
     if (!formData.imageUrl) { alert('Please upload a main image'); return; }
-    if (ticketingOption === 'outingstation' && !ticketPrice) { alert('Please enter a ticket price'); return; }
+
+    if (ticketingOption === 'outingstation') {
+      if (useTicketTiers) {
+        if (ticketTiers.length === 0) { alert('Please add at least 1 ticket tier'); return; }
+        for (const tier of ticketTiers) {
+          if (!tier.name?.trim()) { alert('All tiers need a name'); return; }
+          if (!tier.price || isNaN(tier.price)) { alert('All tiers need a valid price'); return; }
+        }
+      } else {
+        if (!ticketPrice) { alert('Please enter a ticket price'); return; }
+      }
+    }
     if (ticketingOption === 'external' && !externalTicketLink) { alert('Please enter an external ticket link'); return; }
 
     setLoading(true);
     try {
+      // ✅ Build tiers data
+      const tiersData = useTicketTiers && ticketingOption === 'outingstation'
+        ? ticketTiers.map((t, i) => ({
+            id: `tier_${i + 1}`,
+            name: t.name.trim(),
+            price: parseFloat(t.price) || 0,
+            benefits: t.benefits?.trim() || null,
+            quantity: t.quantity ? parseInt(t.quantity) : null,
+            sold: isEdit
+              ? (formData.ticketTiers?.find(et => et.name === t.name)?.sold ?? 0)
+              : 0,
+            saleEndDate: t.saleEndDate || null,
+          }))
+        : [];
+
       const eventData = {
         ...formData,
-        eventType: 'campus',        // 🔒 always a campus event
-        isFeatured: false,          // 🔒 ambassadors can't feature site-wide
+        eventType: 'campus',
+        isFeatured: false,
         isTrending: false,
         subCategory: 'events',
         slug: generateSlug(formData.title),
@@ -246,8 +410,17 @@ export default function AmbassadorEventForm() {
         ticketingOption,
         ticketingEnabled: ticketingOption === 'outingstation',
         hasOutingStationTicketing: ticketingOption === 'outingstation',
-        ticketPrice: ticketingOption === 'outingstation' ? Number(ticketPrice) : 0,
-        ticketsAvailable: ticketingOption === 'outingstation' ? Number(ticketsAvailable) : 0,
+        // ✅ Single price or lowest tier price
+        ticketPrice: ticketingOption === 'outingstation'
+          ? (useTicketTiers && tiersData.length > 0
+              ? Math.min(...tiersData.map(t => t.price))
+              : Number(ticketPrice))
+          : 0,
+        ticketsAvailable: ticketingOption === 'outingstation'
+          ? (useTicketTiers
+              ? tiersData.reduce((sum, t) => sum + (t.quantity || 0), 0) || Number(ticketsAvailable)
+              : Number(ticketsAvailable))
+          : 0,
         ticketsSold: isEdit ? formData.ticketsSold || 0 : 0,
         ...(ticketingOption === 'outingstation' && !isEdit && { manageKey: generateManageKey() }),
         serviceFeeType,
@@ -255,6 +428,9 @@ export default function AmbassadorEventForm() {
         serviceFeePercentage: serviceFeeType === 'percentage' ? Number(serviceFeePercentage) : 0,
         serviceFee: calculateServiceFee(),
         externalTicketLink: ticketingOption === 'external' ? externalTicketLink : null,
+        // ✅ Save ticket tiers
+        hasTicketTiers: useTicketTiers && ticketingOption === 'outingstation' && tiersData.length > 0,
+        ticketTiers: tiersData,
         updatedAt: serverTimestamp()
       };
 
@@ -263,7 +439,7 @@ export default function AmbassadorEventForm() {
         setCreatedEvent({ id, ...eventData });
       } else {
         eventData.createdBy = auth.currentUser?.uid || 'ambassador';
-        eventData.createdByAmbassador = true;   // audit flag
+        eventData.createdByAmbassador = true;
         eventData.createdAt = serverTimestamp();
         eventData.savedCount = 0;
         const docRef = await addDoc(collection(db, 'events'), eventData);
@@ -312,7 +488,7 @@ export default function AmbassadorEventForm() {
           <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
 
-              {/* Campus (locked to your assigned campus) */}
+              {/* Campus */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Campus</h3>
                 {myCampuses.length === 0 ? (
@@ -386,7 +562,7 @@ export default function AmbassadorEventForm() {
                 </div>
               </div>
 
-              {/* Ticketing */}
+              {/* ✅ Ticketing — with tiers support */}
               <div>
                 <h3 className="text-lg font-bold mb-4">💳 Ticketing Options</h3>
 
@@ -406,16 +582,60 @@ export default function AmbassadorEventForm() {
                     <div className="flex-1">
                       <p className="font-semibold">OutingStation Ticketing ⭐</p>
                       <p className="text-sm text-gray-600 mb-2">Sell tickets directly. Automatic payment, tickets, and check-in.</p>
+
                       {ticketingOption === 'outingstation' && (
                         <div className="mt-4 space-y-4 border-l-2 border-cyan-500 pl-4">
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Ticket Price (₦) *</label>
-                            <input type="number" value={ticketPrice} onChange={(e) => setTicketPrice(e.target.value)} placeholder="e.g., 5000" className="w-full px-3 py-2 border rounded-lg" />
+
+                          {/* ✅ Toggle: Single price vs tiers */}
+                          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
+                            <div className="flex items-center gap-2">
+                              <Layers size={16} className="text-cyan-600" />
+                              <div>
+                                <p className="text-sm font-bold text-gray-800">Multiple Ticket Tiers</p>
+                                <p className="text-xs text-gray-500">Regular, VIP, Early Bird, Table of 5...</p>
+                              </div>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input type="checkbox" checked={useTicketTiers}
+                                onChange={(e) => setUseTicketTiers(e.target.checked)}
+                                className="sr-only peer" />
+                              <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                            </label>
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Tickets Available *</label>
-                            <input type="number" value={ticketsAvailable} onChange={(e) => setTicketsAvailable(e.target.value)} placeholder="e.g., 100" className="w-full px-3 py-2 border rounded-lg" />
-                          </div>
+
+                          {useTicketTiers ? (
+                            <div>
+                              <p className="text-sm font-medium text-gray-700 mb-3">Configure ticket tiers (max 5):</p>
+                              <TicketTierBuilder tiers={ticketTiers} onChange={setTicketTiers} />
+
+                              {ticketTiers.some(t => t.price) && (
+                                <div className="mt-4 bg-cyan-50 p-4 rounded-lg text-sm border border-cyan-200">
+                                  <p className="font-medium mb-2">🎟️ Tiers Summary:</p>
+                                  <div className="space-y-1">
+                                    {ticketTiers.filter(t => t.name && t.price).map((t, i) => (
+                                      <div key={i} className="flex justify-between">
+                                        <span className="text-gray-600">{t.name}</span>
+                                        <span className="font-semibold text-cyan-700">₦{Number(t.price).toLocaleString()}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-sm font-medium mb-1">Ticket Price (₦) *</label>
+                                <input type="number" value={ticketPrice} onChange={(e) => setTicketPrice(e.target.value)} placeholder="e.g., 5000" className="w-full px-3 py-2 border rounded-lg" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium mb-1">Tickets Available *</label>
+                                <input type="number" value={ticketsAvailable} onChange={(e) => setTicketsAvailable(e.target.value)} placeholder="e.g., 100" className="w-full px-3 py-2 border rounded-lg" />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Service fee */}
                           <div className="bg-gray-50 p-4 rounded-lg">
                             <label className="block text-sm font-medium mb-3">Service Fee Structure</label>
                             <div className="space-y-3">
@@ -445,7 +665,9 @@ export default function AmbassadorEventForm() {
                               </div>
                             </div>
                           </div>
-                          {ticketPrice > 0 && (
+
+                          {/* Pricing breakdown — single price only */}
+                          {!useTicketTiers && ticketPrice > 0 && (
                             <div className="bg-cyan-50 p-4 rounded-lg text-sm">
                               <p className="font-medium mb-2">💰 Pricing Breakdown:</p>
                               <div className="space-y-1 mb-3">
@@ -614,7 +836,6 @@ export default function AmbassadorEventForm() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-1">Event Images *</h3>
                 <p className="text-sm text-gray-500 mb-4">Add up to 10 photos. Users can swipe through all photos on the event page.</p>
 
-                {/* Main image */}
                 <div className="mb-4">
                   <p className="text-sm font-medium text-gray-700 mb-2">
                     Main Photo *
@@ -654,7 +875,6 @@ export default function AmbassadorEventForm() {
                   </div>
                 </div>
 
-                {/* Additional photos */}
                 {formData.imageUrl && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-2">
