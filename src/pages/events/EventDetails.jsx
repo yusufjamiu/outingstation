@@ -357,7 +357,6 @@ function CompactTicketModal({ ticketData, onClose }) {
                 background: 'rgba(255,255,255,0.15)', borderRadius: 6,
                 padding: '2px 7px', fontSize: 9, color: 'rgba(255,255,255,0.85)'
               }}>🎟️ E-Ticket</span>
-              {/* ✅ Show tier badge on ticket if applicable */}
               {ticketData.tierName && (
                 <span style={{
                   background: 'rgba(255,255,255,0.25)', borderRadius: 6,
@@ -400,7 +399,6 @@ function CompactTicketModal({ ticketData, onClose }) {
               <MiniRow label="Name" value={ticketData.buyerName} />
               <MiniRow label="Email" value={ticketData.buyerEmail} />
               <MiniRow label="Phone" value={ticketData.buyerPhone} />
-              {/* ✅ Show tier on ticket receipt */}
               {ticketData.tierName && (
                 <MiniRow label="Tier" value={ticketData.tierName} />
               )}
@@ -544,7 +542,8 @@ function TicketTierSelector({ tiers, selectedTier, onSelect }) {
 
 // ─── Ticket Purchase Section ──────────────────────────────────────────────────
 
-const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
+// ✅ CHANGE 1: Added onPurchaseComplete prop
+const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplete }) => {
   const [buyerName, setBuyerName] = useState(currentUser?.displayName || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
   const [buyerPhone, setBuyerPhone] = useState('');
@@ -676,6 +675,11 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
     setTicketData(newTicket);
     setShowTicketModal(true);
     toast.success('🎉 Payment successful! Check your email for your ticket.', { duration: 5000 });
+
+    // ✅ FIX: Pass tierId+qty to parent so it updates event state optimistically
+    // Do NOT call loadEventDetails — it triggers setLoading(true), unmounts this
+    // component, and re-fetches Firestore before the webhook has time to update it
+    if (onPurchaseComplete) onPurchaseComplete(selectedTier?.id, quantity);
   };
 
   const handlePaymentClose = () => {
@@ -713,6 +717,8 @@ const TicketPurchaseSection = ({ event, currentUser, navigate }) => {
         { display_name: 'Phone', variable_name: 'buyer_phone', value: buyerPhone },
         // ✅ Include tier in Paystack metadata
         { display_name: 'Tier', variable_name: 'tier_name', value: selectedTier?.name || 'Standard' },
+        // ✅ FIX: tier_id must be in custom_fields — Paystack drops direct metadata fields in webhook
+        { display_name: 'TierID', variable_name: 'tier_id', value: selectedTier?.id || '' },
         { display_name: 'Price', variable_name: 'ticket_price', value: String(ticketPrice) },
         { display_name: 'Fee', variable_name: 'service_fee', value: String(serviceFee) },
         { display_name: 'Qty', variable_name: 'quantity', value: String(quantity) },
@@ -1084,6 +1090,19 @@ export default function EventDetails() {
     return () => { toast.dismiss(); };
   }, []);
 
+  // ✅ FIX: Optimistically update tier sold count in parent state — no Firestore re-fetch
+  // Re-fetching causes a race condition: webhook hasn't fired yet so Firestore
+  // still shows old sold count, making the tier appear available again
+  const handlePurchaseComplete = (tierId, qty) => {
+    if (!tierId || !event?.ticketTiers) return;
+    setEvent(prev => ({
+      ...prev,
+      ticketTiers: prev.ticketTiers.map(t =>
+        t.id === tierId ? { ...t, sold: (t.sold || 0) + qty } : t
+      )
+    }));
+  };
+
   const loadEventDetails = async () => {
     try {
       setLoading(true);
@@ -1274,7 +1293,8 @@ export default function EventDetails() {
 
               {hasOutingStationTicketing && (
                 <div id="ticket-purchase-section" className="mb-6">
-                  <TicketPurchaseSection event={event} currentUser={currentUser} navigate={navigate} />
+                  {/* ✅ CHANGE 3: Pass onPurchaseComplete so tier counts refresh after purchase */}
+                  <TicketPurchaseSection event={event} currentUser={currentUser} navigate={navigate} onPurchaseComplete={handlePurchaseComplete} />
                 </div>
               )}
 
