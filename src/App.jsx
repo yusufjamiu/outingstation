@@ -59,6 +59,7 @@ import AmbassadorPlaceForm from './pages/ambassador/AmbassadorPlaceForm';
 import AmbassadorVendors from './pages/ambassador/AmbassadorVendors';
 import AmbassadorVendorForm from './pages/ambassador/AmbassadorVendorForm';
 import AmbassadorNotifications from './pages/ambassador/AmbassadorNotifications';
+import SubmittedEvents from './pages/ambassador/SubmittedEvents';
 
 // Event Management
 import ManageEvent from './pages/EventManage/ManageEvent';
@@ -198,6 +199,12 @@ function App() {
               <Route path="/ambassador/notifications" element={
                 <AmbassadorRoute>
                   <AmbassadorNotifications />
+                </AmbassadorRoute>
+              } />
+
+              <Route path="/ambassador/submitted-events" element={
+                <AmbassadorRoute>
+                  <SubmittedEvents />
                 </AmbassadorRoute>
               } />
 

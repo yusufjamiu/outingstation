@@ -1159,10 +1159,13 @@ const SubmitEventPage = () => {
                       <p className="text-xs text-gray-500 mt-0.5">Check if your event is happening at a university campus</p>
                     </div>
                   </label>
-                  {form.isUniversityEvent && (
+                {form.isUniversityEvent && (
                     <div className="mt-3">
-                      <StyledInput name="universityName" value={form.universityName} onChange={handle}
-                        error={errors.universityName} placeholder="e.g. University of Lagos" />
+                      <StyledSelect name="universityName" value={form.universityName} onChange={handle}
+                        error={errors.universityName}>
+                        <option value="">Select your university</option>
+                        {universities.map(u => <option key={u} value={u}>{u}</option>)}
+                      </StyledSelect>
                       {errors.universityName && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.universityName}</p>}
                     </div>
                   )}

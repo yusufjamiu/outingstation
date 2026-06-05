@@ -4,7 +4,7 @@ import { db } from '../../firebase';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { AmbassadorSidebar } from '../../components/AmbassadorSidebar';
-import { Menu, Calendar, MapPin, ShoppingBag, Bell, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Menu, Calendar, MapPin, ShoppingBag, Bell, AlertTriangle, ArrowRight, FileText } from 'lucide-react';
 
 export default function AmbassadorDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -33,6 +33,7 @@ export default function AmbassadorDashboard() {
     { icon: MapPin, label: 'Places', desc: 'Add and manage campus places (library, gym, etc.)', to: '/ambassador/places', color: 'from-purple-500 to-violet-500' },
     { icon: ShoppingBag, label: 'Vendors', desc: 'Review and accept vendors for your campus', to: '/ambassador/vendors', color: 'from-teal-500 to-emerald-500' },
     { icon: Bell, label: 'Notifications', desc: 'Message people who follow your campus', to: '/ambassador/notifications', color: 'from-amber-500 to-orange-500' },
+    { icon: FileText, label: 'Submitted Events', desc: 'Review and approve events submitted for your campus', to: '/ambassador/submitted-events', color: 'from-rose-500 to-pink-500' },
   ];
 
   return (

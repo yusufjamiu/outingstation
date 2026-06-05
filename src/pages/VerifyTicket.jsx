@@ -4,12 +4,11 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   CheckCircle, XCircle, AlertCircle,
-  Calendar, MapPin, User, Phone, Mail, Hash, Clock, CalendarX
+  Calendar, MapPin, User, Phone, Mail, Hash, Clock, CalendarX, Ticket
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
-// ✅ Parse "Saturday, May 18, 2026" → Date object
 function parseEventDate(dateStr) {
   if (!dateStr) return null;
   try {
@@ -21,12 +20,9 @@ function parseEventDate(dateStr) {
       'June': 5, 'July': 6, 'August': 7, 'September': 8,
       'October': 9, 'November': 10, 'December': 11,
     };
-
     const cleaned = dateStr.replace(/,/g, '').trim();
     const parts = cleaned.split(' ').filter(p => p);
-
     let month = null, day = null, year = null;
-
     for (const part of parts) {
       if (months[part] !== undefined) {
         month = months[part];
@@ -36,7 +32,6 @@ function parseEventDate(dateStr) {
         else day = num;
       }
     }
-
     if (month !== null && day !== null && year !== null) {
       return new Date(year, month, day);
     }
@@ -46,7 +41,6 @@ function parseEventDate(dateStr) {
   }
 }
 
-// ✅ Check if event date has passed
 function isEventOver(eventDateStr) {
   const eventDate = parseEventDate(eventDateStr);
   if (!eventDate) return false;
@@ -123,14 +117,12 @@ export default function VerifyTicket() {
     );
   }
 
-  // ✅ Determine status — event over takes priority
   const eventOver = isEventOver(ticket.eventDate);
   const isValid = ticket.status === 'valid';
   const isUsed = ticket.status === 'used';
 
-  // ✅ Compute final status
   const getStatus = () => {
-    if (eventOver) return 'expired'; // ✅ Event has passed
+    if (eventOver) return 'expired';
     if (isValid) return 'valid';
     if (isUsed) return 'used';
     return 'invalid';
@@ -183,6 +175,10 @@ export default function VerifyTicket() {
 
   const config = statusConfig[status];
 
+  // ✅ Tier — null for old tickets, no UI impact whatsoever
+  const tierName = ticket.tierName;
+  const hasTier = tierName && tierName.trim().length > 0;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-blue-50">
       <Navbar />
@@ -196,6 +192,13 @@ export default function VerifyTicket() {
           </div>
           <h1 className="text-2xl font-black text-white mb-2">{config.label}</h1>
           <p className="text-white/85 text-sm">{config.description}</p>
+          {/* ✅ Tier badge in banner — first thing a bouncer sees when scanning */}
+          {hasTier && (
+            <div className="inline-flex items-center gap-1.5 mt-4 bg-white/20 border border-white/30 rounded-full px-4 py-1.5">
+              <Ticket size={13} className="text-white" />
+              <span className="text-white text-xs font-black tracking-wide">{tierName}</span>
+            </div>
+          )}
         </div>
 
         {/* Ticket Card */}
@@ -250,7 +253,7 @@ export default function VerifyTicket() {
               )}
             </div>
 
-            {/* Ticket ID */}
+            {/* Ticket ID + status badge */}
             <div className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-2xl p-4 mb-6 flex items-center justify-between border border-cyan-100">
               <div>
                 <p className="text-xs font-bold text-cyan-500 uppercase tracking-wider mb-1">Ticket ID</p>
@@ -268,7 +271,27 @@ export default function VerifyTicket() {
                 <HolderRow icon={<User size={14} className="text-gray-400" />} label="Name" value={ticket.buyerName} />
                 <HolderRow icon={<Mail size={14} className="text-gray-400" />} label="Email" value={ticket.buyerEmail} />
                 <HolderRow icon={<Phone size={14} className="text-gray-400" />} label="Phone" value={ticket.buyerPhone} />
-                <HolderRow icon={<Hash size={14} className="text-gray-400" />} label="Quantity" value={`${ticket.quantity} ticket${ticket.quantity > 1 ? 's' : ''}`} />
+
+                {/* ✅ Ticket Type — only for tier tickets, completely invisible for old ones */}
+                {hasTier && (
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-cyan-50 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Ticket size={14} className="text-cyan-500" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Ticket Type</p>
+                      <span className="inline-block bg-cyan-100 text-cyan-700 text-sm font-black px-3 py-0.5 rounded-full mt-0.5">
+                        {tierName}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <HolderRow
+                  icon={<Hash size={14} className="text-gray-400" />}
+                  label="Quantity"
+                  value={`${ticket.quantity} ticket${ticket.quantity > 1 ? 's' : ''}`}
+                />
               </div>
             </div>
 
@@ -292,7 +315,7 @@ export default function VerifyTicket() {
               <p className="text-xs font-mono text-gray-600 break-all">{ticket.paymentReference || ticket.paymentRef}</p>
             </div>
 
-            {/* ✅ Event ended notice */}
+            {/* Event ended notice */}
             {eventOver && (
               <div className="bg-gray-100 rounded-xl p-4 mb-5 border border-gray-200">
                 <p className="text-sm text-gray-600 text-center font-medium">

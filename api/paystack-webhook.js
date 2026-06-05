@@ -116,7 +116,35 @@ async function findUserByEmail(email) {
   }
 }
 
-// ✅ FULLY FIXED: Handles string, truncated string, and object
+// ✅ Update tier sold count — critical for accurate tier availability
+// Uses arrayUnion pattern: reads tiers, increments matching tier's sold, writes back
+async function updateTierSoldCount(eventId, tierId, quantity) {
+  if (!eventId || !tierId) return;
+  try {
+    const eventRef = doc(db, 'events', eventId);
+    const eventSnap = await getDoc(eventRef);
+    if (!eventSnap.exists()) return;
+
+    const eventData = eventSnap.data();
+    const tiers = eventData.ticketTiers || [];
+
+    if (tiers.length === 0) return;
+
+    const updatedTiers = tiers.map(tier => {
+      if (tier.id === tierId) {
+        return { ...tier, sold: (tier.sold || 0) + quantity };
+      }
+      return tier;
+    });
+
+    await updateDoc(eventRef, { ticketTiers: updatedTiers });
+    console.log(`✅ Updated sold count for tier ${tierId} (+${quantity})`);
+  } catch (err) {
+    console.error('❌ Error updating tier sold count:', err);
+  }
+}
+
+// ✅ Extract metadata — now also extracts tierName and tierId
 function extractMetadata(paymentData) {
   let rawMetadata = paymentData.metadata || {};
 
@@ -133,7 +161,6 @@ function extractMetadata(paymentData) {
         return match ? match[1] : null;
       };
 
-      // ✅ Try short keys first (new format), then long keys (old format)
       const eventId = extract('eid') || extract('event_id');
       const ticketId = extract('tid') || extract('ticket_id');
       const buyerName = extract('buyer_name');
@@ -144,9 +171,13 @@ function extractMetadata(paymentData) {
       const subtotal = extract('subtotal');
       const creditsApplied = extract('credits_applied');
       const totalAmount = extract('total_amount');
+      // ✅ Extract tier fields
+      const tierId = extract('tier_id');
+      const tierName = extract('tier_name');
 
       console.log('📦 Regex extracted eventId:', eventId);
       console.log('📦 Regex extracted ticketId:', ticketId);
+      if (tierName) console.log('📦 Regex extracted tierName:', tierName);
 
       return {
         ticketId,
@@ -162,6 +193,9 @@ function extractMetadata(paymentData) {
         totalAmount: totalAmount
           ? parseInt(totalAmount)
           : Math.round(paymentData.amount / 100),
+        // ✅ Tier fields
+        tierId: tierId || null,
+        tierName: tierName || null,
       };
     }
   }
@@ -177,11 +211,15 @@ function extractMetadata(paymentData) {
 
     console.log('📦 Parsed custom_fields:', JSON.stringify(fields, null, 2));
 
-    // ✅ Try short keys first, then long keys
     const eventId = fields.eid || fields.event_id || fields.eventId ||
                     rawMetadata.event_id || rawMetadata.eventId;
     const ticketId = fields.tid || fields.ticket_id || fields.ticketId || null;
     const totalAmount = parseInt(fields.total_amount || fields.tot || fields.totalAmount) || 0;
+    // ✅ Extract tier fields from custom_fields
+    const tierId = fields.tier_id || fields.tierId || rawMetadata.tier_id || rawMetadata.tierId || null;
+    const tierName = fields.tier_name || fields.tierName || rawMetadata.tier_name || rawMetadata.tierName || null;
+
+    if (tierName) console.log('📦 Extracted tierName:', tierName);
 
     return {
       ticketId,
@@ -195,10 +233,13 @@ function extractMetadata(paymentData) {
       subtotal: parseInt(fields.subtotal || fields.sub) || 0,
       creditsApplied: parseInt(fields.credits_applied || fields.creditsApplied) || 0,
       totalAmount: totalAmount > 0 ? totalAmount : Math.round(paymentData.amount / 100),
+      // ✅ Tier fields
+      tierId,
+      tierName,
     };
   }
 
-  // ✅ Direct fields fallback
+  // ✅ Direct fields fallback — also covers tier
   const eventId = rawMetadata.event_id || rawMetadata.eventId;
   return {
     ticketId: rawMetadata.ticket_id || rawMetadata.ticketId || null,
@@ -212,12 +253,16 @@ function extractMetadata(paymentData) {
     subtotal: parseInt(rawMetadata.subtotal) || 0,
     creditsApplied: parseInt(rawMetadata.credits_applied || rawMetadata.creditsApplied) || 0,
     totalAmount: parseInt(rawMetadata.total_amount || rawMetadata.totalAmount || rawMetadata.totalPaid) || 0,
+    // ✅ Tier fields
+    tierId: rawMetadata.tier_id || rawMetadata.tierId || null,
+    tierName: rawMetadata.tier_name || rawMetadata.tierName || null,
   };
 }
 
-// ✅ BEAUTIFUL EMAIL RESTORED
+// ✅ Email — shows tier badge when present, invisible for old tickets
 function generateTicketEmail(ticketData, eventData) {
   const showCredits = ticketData.creditsApplied && ticketData.creditsApplied > 0;
+  const showTier = ticketData.tierName && ticketData.tierName.trim().length > 0;
   const verifyUrl = `https://www.outingstation.com/verify-ticket/${ticketData.ticketId}`;
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}&color=0e7490&bgcolor=ffffff`;
 
@@ -240,6 +285,10 @@ function generateTicketEmail(ticketData, eventData) {
               <p style="color: rgba(255,255,255,0.75); margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">OutingStation</p>
               <h1 style="color: #ffffff; margin: 0 0 8px; font-size: 30px; font-weight: 900;">🎉 You're Going!</h1>
               <p style="color: #e0f2fe; margin: 0; font-size: 15px;">Your ticket has been confirmed</p>
+              ${showTier ? `
+              <div style="display: inline-block; margin-top: 14px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); border-radius: 20px; padding: 6px 18px;">
+                <span style="color: #ffffff; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;">🎟️ ${ticketData.tierName} Ticket</span>
+              </div>` : ''}
             </td>
           </tr>
 
@@ -285,6 +334,11 @@ function generateTicketEmail(ticketData, eventData) {
                         <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Phone</p>
                         <p style="margin: 0; font-size: 13px; color: #1e293b; font-weight: 500;">${ticketData.buyerPhone}</p>
                       </td></tr>
+                      ${showTier ? `
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Ticket Type</p>
+                        <p style="margin: 0; font-size: 14px; color: #0891b2; font-weight: 800;">${ticketData.tierName}</p>
+                      </td></tr>` : ''}
                       <tr><td style="padding-bottom: 10px;">
                         <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Quantity</p>
                         <p style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">${ticketData.quantity} ticket${ticketData.quantity > 1 ? 's' : ''}</p>
@@ -328,7 +382,7 @@ function generateTicketEmail(ticketData, eventData) {
                 <p style="margin: 0 0 14px; font-size: 13px; font-weight: 800; color: #374151; text-transform: uppercase; letter-spacing: 0.5px;">Payment Breakdown</p>
                 <table width="100%" cellpadding="0" cellspacing="0">
                   <tr>
-                    <td style="font-size: 13px; color: #6b7280; padding: 4px 0;">Ticket Price (${ticketData.quantity}x)</td>
+                    <td style="font-size: 13px; color: #6b7280; padding: 4px 0;">Ticket Price${showTier ? ` (${ticketData.tierName})` : ''} ×${ticketData.quantity}</td>
                     <td style="font-size: 13px; color: #374151; text-align: right; font-weight: 600;">₦${(ticketData.ticketPrice * ticketData.quantity).toLocaleString()}</td>
                   </tr>
                   <tr>
@@ -407,7 +461,7 @@ export default async function handler(req, res) {
     const paymentData = event.data;
     console.log('📦 Processing payment:', paymentData.customer.email);
 
-    // ✅ Idempotency check — prevent duplicate tickets
+    // Idempotency check — prevent duplicate tickets
     const existingQuery = query(
       collection(db, 'tickets'),
       where('paymentReference', '==', paymentData.reference)
@@ -468,14 +522,25 @@ export default async function handler(req, res) {
       checkedIn: false,
       userId: userId || null,
       purchasedAt: serverTimestamp(),
+      // ✅ Save tier info — null for non-tier events, populated for tier events
+      // Old tickets without this field are unaffected
+      tierId: metadata.tierId || null,
+      tierName: metadata.tierName || null,
     };
 
     await setDoc(doc(db, 'tickets', ticketId), ticketData);
-    console.log(`✅ Ticket saved: ${ticketId}`);
+    console.log(`✅ Ticket saved: ${ticketId}${metadata.tierName ? ` (${metadata.tierName})` : ''}`);
 
+    // ✅ Update event ticketsSold count
     await updateDoc(doc(db, 'events', metadata.eventId), {
       ticketsSold: increment(metadata.quantity)
     });
+
+    // ✅ CRITICAL: Also update the individual tier's sold count
+    // Without this, tier availability won't decrement and sold-out tiers keep selling
+    if (metadata.tierId) {
+      await updateTierSoldCount(metadata.eventId, metadata.tierId, metadata.quantity);
+    }
 
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -488,7 +553,7 @@ export default async function handler(req, res) {
     await transporter.sendMail({
       from: `"OutingStation Tickets" <${process.env.GMAIL_USER}>`,
       to: paymentData.customer.email,
-      subject: `🎉 Your Ticket for ${eventData.title} — ${ticketId}`,
+      subject: `🎉 Your${metadata.tierName ? ` ${metadata.tierName}` : ''} Ticket for ${eventData.title} — ${ticketId}`,
       html: generateTicketEmail(ticketData, eventData)
     });
 
@@ -498,6 +563,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       ticketId,
+      tierName: metadata.tierName || null,
       creditsDeducted: metadata.creditsApplied
     });
 
