@@ -116,14 +116,11 @@ async function findUserByEmail(email) {
   }
 }
 
-// ✅ FIXED: Now matches by tierName as fallback when tierId is null/missing
-// Root cause of sold count not updating: tier objects in Firestore often don't
-// have an `id` field, so tierId is null and the old code returned early.
-// Now we fall back to matching by tierName which is always available.
+// ✅ Matches tier by id first, falls back to name
+// Also enforces sold count cannot exceed quantity (prevents overselling)
 async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
   if (!eventId) return;
 
-  // Need at least one identifier to match the tier
   if (!tierId && !tierName) {
     console.log('⚠️ updateTierSoldCount: no tierId or tierName — skipping');
     return;
@@ -139,18 +136,25 @@ async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
     if (tiers.length === 0) return;
 
     console.log(`🔍 Matching tier — tierId: "${tierId}", tierName: "${tierName}"`);
-    console.log(`🔍 Firestore tiers:`, tiers.map(t => `id="${t.id}" name="${t.name}"`));
+    console.log(`🔍 Firestore tiers:`, tiers.map(t => `id="${t.id}" name="${t.name}" sold=${t.sold} qty=${t.quantity}`));
 
     let matched = false;
     const updatedTiers = tiers.map(tier => {
-      // ✅ Match by id first (exact), then fall back to name
       const matchById = tierId && tier.id && tier.id === tierId;
       const matchByName = !matchById && tierName && tier.name === tierName;
 
       if (matchById || matchByName) {
         matched = true;
-        console.log(`✅ Matched tier "${tier.name}" by ${matchById ? 'id' : 'name'} → sold: ${tier.sold || 0} → ${(tier.sold || 0) + quantity}`);
-        return { ...tier, sold: (tier.sold || 0) + quantity };
+        const currentSold = tier.sold || 0;
+        const newSold = currentSold + quantity;
+
+        // ✅ Cap at quantity to prevent overselling
+        const cappedSold = tier.quantity != null
+          ? Math.min(newSold, tier.quantity)
+          : newSold;
+
+        console.log(`✅ Matched tier "${tier.name}" by ${matchById ? 'id' : 'name'} → sold: ${currentSold} → ${cappedSold}`);
+        return { ...tier, sold: cappedSold };
       }
       return tier;
     });
@@ -167,7 +171,7 @@ async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
   }
 }
 
-// ✅ Extract metadata — extracts tierName and tierId from all 3 metadata formats
+// ✅ Extract metadata from all 3 Paystack metadata formats
 function extractMetadata(paymentData) {
   let rawMetadata = paymentData.metadata || {};
 
@@ -501,6 +505,29 @@ export default async function handler(req, res) {
     }
     const eventData = eventDoc.data();
 
+    // ✅ OVERSELL GUARD — check tier availability before creating ticket
+    if (metadata.tierName || metadata.tierId) {
+      const tiers = eventData.ticketTiers || [];
+      const matchedTier = tiers.find(t =>
+        (metadata.tierId && t.id === metadata.tierId) ||
+        (metadata.tierName && t.name === metadata.tierName)
+      );
+      if (matchedTier && matchedTier.quantity != null) {
+        const currentSold = matchedTier.sold || 0;
+        const remaining = matchedTier.quantity - currentSold;
+        if (remaining <= 0) {
+          console.log(`❌ OVERSELL BLOCKED: tier "${matchedTier.name}" is sold out (sold: ${currentSold}, qty: ${matchedTier.quantity})`);
+          // Still return 200 so Paystack doesn't retry — but don't create ticket
+          // The payment went through on Paystack's side — handle refund manually
+          return res.status(200).json({
+            success: false,
+            message: `Tier "${matchedTier.name}" is sold out — manual refund required`,
+            reference: paymentData.reference,
+          });
+        }
+      }
+    }
+
     const ticketId = metadata.ticketId || generateTicketId();
 
     const totalPaid = metadata.totalAmount > 0
@@ -537,15 +564,14 @@ export default async function handler(req, res) {
     await setDoc(doc(db, 'tickets', ticketId), ticketData);
     console.log(`✅ Ticket saved: ${ticketId}${metadata.tierName ? ` (${metadata.tierName})` : ''}`);
 
-    // Update total ticketsSold count
+    // ✅ Update ticketsSold AND ticketsAvailable together
     await updateDoc(doc(db, 'events', metadata.eventId), {
       ticketsSold: increment(metadata.quantity),
-      ticketsAvailable: increment(-metadata.quantity)
+      ticketsAvailable: increment(-metadata.quantity),
     });
+    console.log(`✅ Event ticket counts updated`);
 
-    // ✅ FIXED: Now passes tierName as fallback — matches tier even when tierId is null
-    // Previously: only ran when tierId was truthy → never updated sold count
-    // Now: runs when either tierId OR tierName is present, matches by name if id missing
+    // ✅ Update tier sold count (matches by id, falls back to name)
     if (metadata.tierId || metadata.tierName) {
       await updateTierSoldCount(
         metadata.eventId,
