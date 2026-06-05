@@ -539,7 +539,8 @@ export default async function handler(req, res) {
 
     // Update total ticketsSold count
     await updateDoc(doc(db, 'events', metadata.eventId), {
-      ticketsSold: increment(metadata.quantity)
+      ticketsSold: increment(metadata.quantity),
+      ticketsAvailable: increment(-metadata.quantity)
     });
 
     // ✅ FIXED: Now passes tierName as fallback — matches tier even when tierId is null
