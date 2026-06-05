@@ -116,10 +116,19 @@ async function findUserByEmail(email) {
   }
 }
 
-// ✅ Update tier sold count — critical for accurate tier availability
-// Uses arrayUnion pattern: reads tiers, increments matching tier's sold, writes back
-async function updateTierSoldCount(eventId, tierId, quantity) {
-  if (!eventId || !tierId) return;
+// ✅ FIXED: Now matches by tierName as fallback when tierId is null/missing
+// Root cause of sold count not updating: tier objects in Firestore often don't
+// have an `id` field, so tierId is null and the old code returned early.
+// Now we fall back to matching by tierName which is always available.
+async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
+  if (!eventId) return;
+
+  // Need at least one identifier to match the tier
+  if (!tierId && !tierName) {
+    console.log('⚠️ updateTierSoldCount: no tierId or tierName — skipping');
+    return;
+  }
+
   try {
     const eventRef = doc(db, 'events', eventId);
     const eventSnap = await getDoc(eventRef);
@@ -127,24 +136,38 @@ async function updateTierSoldCount(eventId, tierId, quantity) {
 
     const eventData = eventSnap.data();
     const tiers = eventData.ticketTiers || [];
-
     if (tiers.length === 0) return;
 
+    console.log(`🔍 Matching tier — tierId: "${tierId}", tierName: "${tierName}"`);
+    console.log(`🔍 Firestore tiers:`, tiers.map(t => `id="${t.id}" name="${t.name}"`));
+
+    let matched = false;
     const updatedTiers = tiers.map(tier => {
-      if (tier.id === tierId) {
+      // ✅ Match by id first (exact), then fall back to name
+      const matchById = tierId && tier.id && tier.id === tierId;
+      const matchByName = !matchById && tierName && tier.name === tierName;
+
+      if (matchById || matchByName) {
+        matched = true;
+        console.log(`✅ Matched tier "${tier.name}" by ${matchById ? 'id' : 'name'} → sold: ${tier.sold || 0} → ${(tier.sold || 0) + quantity}`);
         return { ...tier, sold: (tier.sold || 0) + quantity };
       }
       return tier;
     });
 
+    if (!matched) {
+      console.log(`⚠️ No tier matched for tierId="${tierId}" tierName="${tierName}" — sold count NOT updated`);
+      return;
+    }
+
     await updateDoc(eventRef, { ticketTiers: updatedTiers });
-    console.log(`✅ Updated sold count for tier ${tierId} (+${quantity})`);
+    console.log(`✅ Tier sold count saved to Firestore`);
   } catch (err) {
     console.error('❌ Error updating tier sold count:', err);
   }
 }
 
-// ✅ Extract metadata — now also extracts tierName and tierId
+// ✅ Extract metadata — extracts tierName and tierId from all 3 metadata formats
 function extractMetadata(paymentData) {
   let rawMetadata = paymentData.metadata || {};
 
@@ -171,13 +194,11 @@ function extractMetadata(paymentData) {
       const subtotal = extract('subtotal');
       const creditsApplied = extract('credits_applied');
       const totalAmount = extract('total_amount');
-      // ✅ Extract tier fields
       const tierId = extract('tier_id');
       const tierName = extract('tier_name');
 
       console.log('📦 Regex extracted eventId:', eventId);
-      console.log('📦 Regex extracted ticketId:', ticketId);
-      if (tierName) console.log('📦 Regex extracted tierName:', tierName);
+      console.log('📦 Regex extracted tierId:', tierId, 'tierName:', tierName);
 
       return {
         ticketId,
@@ -193,7 +214,6 @@ function extractMetadata(paymentData) {
         totalAmount: totalAmount
           ? parseInt(totalAmount)
           : Math.round(paymentData.amount / 100),
-        // ✅ Tier fields
         tierId: tierId || null,
         tierName: tierName || null,
       };
@@ -202,7 +222,7 @@ function extractMetadata(paymentData) {
 
   console.log('🔍 Raw metadata:', JSON.stringify(rawMetadata, null, 2));
 
-  // ✅ custom_fields array
+  // ✅ custom_fields array path
   if (rawMetadata.custom_fields && Array.isArray(rawMetadata.custom_fields)) {
     const fields = rawMetadata.custom_fields.reduce((acc, field) => {
       acc[field.variable_name] = field.value;
@@ -215,11 +235,10 @@ function extractMetadata(paymentData) {
                     rawMetadata.event_id || rawMetadata.eventId;
     const ticketId = fields.tid || fields.ticket_id || fields.ticketId || null;
     const totalAmount = parseInt(fields.total_amount || fields.tot || fields.totalAmount) || 0;
-    // ✅ Extract tier fields from custom_fields
     const tierId = fields.tier_id || fields.tierId || rawMetadata.tier_id || rawMetadata.tierId || null;
     const tierName = fields.tier_name || fields.tierName || rawMetadata.tier_name || rawMetadata.tierName || null;
 
-    if (tierName) console.log('📦 Extracted tierName:', tierName);
+    console.log('📦 Extracted tierId:', tierId, 'tierName:', tierName);
 
     return {
       ticketId,
@@ -233,13 +252,12 @@ function extractMetadata(paymentData) {
       subtotal: parseInt(fields.subtotal || fields.sub) || 0,
       creditsApplied: parseInt(fields.credits_applied || fields.creditsApplied) || 0,
       totalAmount: totalAmount > 0 ? totalAmount : Math.round(paymentData.amount / 100),
-      // ✅ Tier fields
       tierId,
       tierName,
     };
   }
 
-  // ✅ Direct fields fallback — also covers tier
+  // ✅ Direct fields fallback
   const eventId = rawMetadata.event_id || rawMetadata.eventId;
   return {
     ticketId: rawMetadata.ticket_id || rawMetadata.ticketId || null,
@@ -253,13 +271,11 @@ function extractMetadata(paymentData) {
     subtotal: parseInt(rawMetadata.subtotal) || 0,
     creditsApplied: parseInt(rawMetadata.credits_applied || rawMetadata.creditsApplied) || 0,
     totalAmount: parseInt(rawMetadata.total_amount || rawMetadata.totalAmount || rawMetadata.totalPaid) || 0,
-    // ✅ Tier fields
     tierId: rawMetadata.tier_id || rawMetadata.tierId || null,
     tierName: rawMetadata.tier_name || rawMetadata.tierName || null,
   };
 }
 
-// ✅ Email — shows tier badge when present, invisible for old tickets
 function generateTicketEmail(ticketData, eventData) {
   const showCredits = ticketData.creditsApplied && ticketData.creditsApplied > 0;
   const showTier = ticketData.tierName && ticketData.tierName.trim().length > 0;
@@ -279,7 +295,6 @@ function generateTicketEmail(ticketData, eventData) {
       <td align="center">
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.12);">
 
-          <!-- Header -->
           <tr>
             <td style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 60%, #0e7490 100%); padding: 44px 36px; text-align: center;">
               <p style="color: rgba(255,255,255,0.75); margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">OutingStation</p>
@@ -292,7 +307,6 @@ function generateTicketEmail(ticketData, eventData) {
             </td>
           </tr>
 
-          <!-- Event info -->
           <tr>
             <td style="padding: 28px 36px 16px;">
               <h2 style="margin: 0 0 12px; color: #0f172a; font-size: 22px; font-weight: 800; line-height: 1.3;">${eventData.title}</h2>
@@ -304,14 +318,12 @@ function generateTicketEmail(ticketData, eventData) {
             </td>
           </tr>
 
-          <!-- Divider -->
           <tr>
             <td style="padding: 0 36px;">
               <div style="border-top: 2px dashed #cbd5e1;"></div>
             </td>
           </tr>
 
-          <!-- Ticket body -->
           <tr>
             <td style="padding: 24px 36px;">
               <table width="100%" cellpadding="0" cellspacing="0">
@@ -364,7 +376,6 @@ function generateTicketEmail(ticketData, eventData) {
             </td>
           </tr>
 
-          <!-- Entry notice -->
           <tr>
             <td style="padding: 0 36px 24px;">
               <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px 18px;">
@@ -375,7 +386,6 @@ function generateTicketEmail(ticketData, eventData) {
             </td>
           </tr>
 
-          <!-- Price breakdown -->
           <tr>
             <td style="padding: 0 36px 24px;">
               <div style="background: #f8fafc; border-radius: 12px; padding: 18px 20px;">
@@ -410,7 +420,6 @@ function generateTicketEmail(ticketData, eventData) {
             </td>
           </tr>
 
-          <!-- Payment reference -->
           <tr>
             <td style="padding: 0 36px 28px;">
               <p style="margin: 0 0 4px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Payment Reference</p>
@@ -418,7 +427,6 @@ function generateTicketEmail(ticketData, eventData) {
             </td>
           </tr>
 
-          <!-- Footer -->
           <tr>
             <td style="background: linear-gradient(135deg, #0891b2, #0e7490); padding: 28px 36px; text-align: center;">
               <p style="margin: 0 0 6px; color: #ffffff; font-size: 16px; font-weight: 800;">See you at the event! 🎊</p>
@@ -461,7 +469,7 @@ export default async function handler(req, res) {
     const paymentData = event.data;
     console.log('📦 Processing payment:', paymentData.customer.email);
 
-    // Idempotency check — prevent duplicate tickets
+    // Idempotency check
     const existingQuery = query(
       collection(db, 'tickets'),
       where('paymentReference', '==', paymentData.reference)
@@ -522,8 +530,6 @@ export default async function handler(req, res) {
       checkedIn: false,
       userId: userId || null,
       purchasedAt: serverTimestamp(),
-      // ✅ Save tier info — null for non-tier events, populated for tier events
-      // Old tickets without this field are unaffected
       tierId: metadata.tierId || null,
       tierName: metadata.tierName || null,
     };
@@ -531,15 +537,21 @@ export default async function handler(req, res) {
     await setDoc(doc(db, 'tickets', ticketId), ticketData);
     console.log(`✅ Ticket saved: ${ticketId}${metadata.tierName ? ` (${metadata.tierName})` : ''}`);
 
-    // ✅ Update event ticketsSold count
+    // Update total ticketsSold count
     await updateDoc(doc(db, 'events', metadata.eventId), {
       ticketsSold: increment(metadata.quantity)
     });
 
-    // ✅ CRITICAL: Also update the individual tier's sold count
-    // Without this, tier availability won't decrement and sold-out tiers keep selling
-    if (metadata.tierId) {
-      await updateTierSoldCount(metadata.eventId, metadata.tierId, metadata.quantity);
+    // ✅ FIXED: Now passes tierName as fallback — matches tier even when tierId is null
+    // Previously: only ran when tierId was truthy → never updated sold count
+    // Now: runs when either tierId OR tierName is present, matches by name if id missing
+    if (metadata.tierId || metadata.tierName) {
+      await updateTierSoldCount(
+        metadata.eventId,
+        metadata.tierId,
+        metadata.tierName,
+        metadata.quantity
+      );
     }
 
     const transporter = nodemailer.createTransport({
