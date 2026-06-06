@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Instagram, Twitter, Facebook, Linkedin, ArrowRight } from 'lucide-react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
+import { Instagram, Twitter, Facebook, Linkedin } from 'lucide-react';
 import OutingStation from '../assets/OutingStation.png';
 
-const LAUNCH_DATE = new Date('2026-05-26T20:00:00');
+const LAUNCH_DATE = new Date('2026-06-13T12:00:00');
 
 function getTimeLeft() {
   const now = new Date();
@@ -20,27 +18,11 @@ function getTimeLeft() {
 
 export default function ComingSoon() {
   const [timeLeft, setTimeLeft] = useState(getTimeLeft());
-  const [email, setEmail] = useState('');
-  const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setTimeLeft(getTimeLeft()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!email) return;
-    try {
-      await addDoc(collection(db, 'earlyAccess'), {
-        email: email,
-        createdAt: serverTimestamp()
-      });
-    } catch (err) {
-      console.error('Error saving email:', err);
-    }
-    setSubmitted(true);
-  };
 
   const pad = (n) => String(n).padStart(2, '0');
 
@@ -63,12 +45,12 @@ export default function ComingSoon() {
           Something exciting is <span className="text-cyan-400 italic">coming</span>
         </h1>
 
-        {/* Subtitle — split into two lines */}
+        {/* Subtitle */}
         <p className="text-lg text-gray-500 mb-2 leading-relaxed">
           We're putting the finishing touches on something you'll love.
         </p>
         <p className="text-lg font-semibold text-cyan-500 mb-10">
-          Be the first to know.
+          Launching June 13, 2026 🚀
         </p>
 
         {/* Countdown */}
@@ -89,31 +71,6 @@ export default function ComingSoon() {
             </div>
           ))}
         </div>
-
-        {/* Email Capture */}
-        {!submitted ? (
-          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 mb-8">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email for early access"
-              className="flex-1 px-5 py-4 rounded-full border border-gray-200 outline-none focus:ring-2 focus:ring-cyan-400 bg-white shadow-sm text-gray-700"
-            />
-            <button
-              type="submit"
-              className="flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-4 rounded-full font-semibold hover:shadow-lg transition-shadow whitespace-nowrap"
-            >
-              Submit <ArrowRight size={18} />
-            </button>
-          </form>
-        ) : (
-          <div className="mb-8 bg-cyan-50 border border-cyan-200 rounded-2xl px-6 py-4">
-            <p className="text-cyan-700 font-semibold text-lg">🎉 You're on the list!</p>
-            <p className="text-cyan-600 text-sm mt-1">We'll notify you the moment we launch.</p>
-          </div>
-        )}
 
         {/* Launch Bonus */}
         <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-2xl p-5 mb-8 text-white">
