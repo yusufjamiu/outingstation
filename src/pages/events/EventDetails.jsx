@@ -1254,6 +1254,29 @@ export default function EventDetails() {
 
             <div className="lg:col-span-2">
               <EventImageCarousel event={event} isPlace={isPlace} />
+              {hasOutingStationTicketing && (
+  <div
+    onClick={() => {
+      document.getElementById('ticket-purchase-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }}
+    className="cursor-pointer mb-4 flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm shadow-md"
+    style={{ animation: 'pulse-banner 1.8s ease-in-out infinite' }}
+  >
+    <Ticket size={16} />
+    <span>
+      {hasTiers ? 'Select your ticket type below' : 'Get your ticket — scroll down'}
+    </span>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+      <path d="M12 5v14M5 12l7 7 7-7"/>
+    </svg>
+    <style>{`
+      @keyframes pulse-banner {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.75; transform: scale(0.98); }
+      }
+    `}</style>
+  </div>
+)}
 
               <div className="flex items-start justify-between mb-6">
                 <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 flex-1">{event.title}</h1>
