@@ -96,8 +96,8 @@ function App() {
             <ToastContainer />
             <Routes>
               {/* PUBLIC ROUTES */}
-              <Route path="/" element={<ComingSoon />} />
-              <Route path="/preview" element={<LandingPage />} />
+              <Route path="/preview" element={<ComingSoon />} />
+              <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/forgot-password" element={<ResetPasswordPage />} />
