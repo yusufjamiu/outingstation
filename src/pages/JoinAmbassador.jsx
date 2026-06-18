@@ -13,8 +13,7 @@ This isn't just another ambassador program. It's an opportunity to grow your net
 
 If you're proactive, connected, and excited about building the future of experiences, we'd love to hear from you.
 
-— Yusuf Jamiu
-Founder & CEO, OutingStation`;
+— OutingStation`;
 
 const REACH_OPTIONS = ['Less than 50', '50–100', '100–500', '500–1,000', '1,000+'];
 

@@ -84,6 +84,8 @@ import AdminAmbassadors from './pages/admin/AdminAmbassadors';
 import AdminVendors from './pages/admin/AdminVendors'; // 
 import AdminVendorForm from './pages/admin/AdminVendorForm'; // 
 import AdminCreditRequests from './pages/admin/AdminCreditRequests';
+import AdminAmbassadorApplications from './pages/admin/AdminAmbassadorApplications';
+
 
 
 // ✅ FUNCTION STARTS HERE
@@ -333,6 +335,11 @@ function App() {
               <Route path="/admin/credit-requests" element={
                 <AdminRoute> 
                   <AdminCreditRequests /> 
+                </AdminRoute>
+              } />
+              <Route path="/admin/ambassador-applications" element={
+                <AdminRoute>
+                  <AdminAmbassadorApplications />
                 </AdminRoute>
               } />
 
