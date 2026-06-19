@@ -57,7 +57,7 @@ function TypewriterIntro({ onDone }) {
         {done && (
           <button
             onClick={onDone}
-            className="mt-6 w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-400 to-cyan-500 text-white font-bold text-lg hover:shadow-lg transition animate-fade-in"
+            className="mt-6 w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-400 to-cyan-500 text-white font-bold text-lg hover:shadow-lg transition"
           >
             Let's Go →
           </button>
@@ -74,6 +74,7 @@ export default function JoinAmbassador() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [universities, setUniversities] = useState([]);
+  const [sameEmail, setSameEmail] = useState(false);
 
   const [form, setForm] = useState({
     fullName: '',
@@ -97,13 +98,11 @@ export default function JoinAmbassador() {
     photoFile: null,
     photoPreview: null,
     photoUrl: '',
-    // ID
     idType: '',
     idNumber: '',
     idImageFile: null,
     idImagePreview: null,
     idImageUrl: '',
-    // Bank
     bankName: '',
     accountNumber: '',
     accountName: '',
@@ -111,7 +110,6 @@ export default function JoinAmbassador() {
 
   const [errors, setErrors] = useState({});
 
-  // Fetch universities from Firestore
   useEffect(() => {
     const fetchUniversities = async () => {
       try {
@@ -129,6 +127,22 @@ export default function JoinAmbassador() {
   const update = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
+  };
+
+  // ✅ When "same as email" is toggled, sync accountEmail with email
+  const handleSameEmail = (checked) => {
+    setSameEmail(checked);
+    if (checked) {
+      update('accountEmail', form.email);
+    } else {
+      update('accountEmail', '');
+    }
+  };
+
+  // ✅ When email changes and sameEmail is on, keep accountEmail in sync
+  const handleEmailChange = (value) => {
+    update('email', value);
+    if (sameEmail) update('accountEmail', value);
   };
 
   const handlePhoto = (e) => {
@@ -192,6 +206,8 @@ export default function JoinAmbassador() {
     if (!form.whyJoin.trim()) e.whyJoin = 'Please tell us why you want to join';
     if (!form.idType) e.idType = 'Please select an ID type';
     if (!form.idNumber.trim()) e.idNumber = 'ID number is required';
+    // ✅ ID image is now required
+    if (!form.idImageFile) e.idImage = 'Please upload an image of your ID';
     if (!form.bankName.trim()) e.bankName = 'Bank name is required';
     if (!form.accountNumber.trim()) e.accountNumber = 'Account number is required';
     if (!form.accountName.trim()) e.accountName = 'Account name is required';
@@ -209,18 +225,12 @@ export default function JoinAmbassador() {
     setLoading(true);
     try {
       let photoUrl = '';
-      if (form.photoFile) {
-        photoUrl = await uploadToCloudinary(form.photoFile);
-      }
+      if (form.photoFile) photoUrl = await uploadToCloudinary(form.photoFile);
 
-      let idImageUrl = '';
-      if (form.idImageFile) {
-        idImageUrl = await uploadToCloudinary(form.idImageFile);
-      }
+      // ✅ ID image upload is required — always upload
+      const idImageUrl = await uploadToCloudinary(form.idImageFile);
 
-      const universityName = form.university === 'Other'
-        ? form.customUniversity
-        : form.university;
+      const universityName = form.university === 'Other' ? form.customUniversity : form.university;
 
       await addDoc(collection(db, 'ambassadorApplications'), {
         fullName: form.fullName,
@@ -257,10 +267,8 @@ export default function JoinAmbassador() {
     setLoading(false);
   };
 
-  // ── Intro screen
   if (showIntro) return <TypewriterIntro onDone={() => setShowIntro(false)} />;
 
-  // ── Success screen
   if (submitted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-cyan-50 flex items-center justify-center px-4 py-12">
@@ -295,7 +303,6 @@ export default function JoinAmbassador() {
     <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-cyan-50 px-4 py-10">
       <div className="max-w-lg mx-auto">
 
-        {/* Logo */}
         <div className="flex justify-center mb-6">
           <img src={OutingStation} alt="OutingStation" className="h-9 w-auto" />
         </div>
@@ -349,13 +356,13 @@ export default function JoinAmbassador() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
                 <input value={form.fullName} onChange={e => update('fullName', e.target.value)}
                   placeholder="Your full name"
-                  className={`w-full px-4 py-3 rounded-xl border text-sm ${errors.fullName ? 'border-red-400' : 'border-gray-200'} focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none`} />
+                  className={`w-full px-4 py-3 rounded-xl border text-sm ${errors.fullName ? 'border-red-400' : 'border-gray-200'} focus:ring-2 focus:ring-cyan-400 outline-none`} />
                 {errors.fullName && <p className="text-red-500 text-xs mt-1">{errors.fullName}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
-                <input type="email" value={form.email} onChange={e => update('email', e.target.value)}
+                <input type="email" value={form.email} onChange={e => handleEmailChange(e.target.value)}
                   placeholder="your@email.com"
                   className={`w-full px-4 py-3 rounded-xl border text-sm ${errors.email ? 'border-red-400' : 'border-gray-200'} focus:ring-2 focus:ring-cyan-400 outline-none`} />
                 {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
@@ -370,10 +377,24 @@ export default function JoinAmbassador() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">OutingStation Account Email *</label>
-                <input type="email" value={form.accountEmail} onChange={e => update('accountEmail', e.target.value)}
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">OutingStation Account Email *</label>
+                  {/* ✅ Same as email checkbox */}
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sameEmail}
+                      onChange={e => handleSameEmail(e.target.checked)}
+                      className="w-3.5 h-3.5 accent-cyan-500"
+                    />
+                    <span className="text-xs text-gray-500">Same as email</span>
+                  </label>
+                </div>
+                <input type="email" value={form.accountEmail}
+                  onChange={e => update('accountEmail', e.target.value)}
+                  disabled={sameEmail}
                   placeholder="Email you used to sign up on OutingStation"
-                  className={`w-full px-4 py-3 rounded-xl border text-sm ${errors.accountEmail ? 'border-red-400' : 'border-gray-200'} focus:ring-2 focus:ring-cyan-400 outline-none`} />
+                  className={`w-full px-4 py-3 rounded-xl border text-sm ${errors.accountEmail ? 'border-red-400' : 'border-gray-200'} focus:ring-2 focus:ring-cyan-400 outline-none ${sameEmail ? 'bg-gray-50 text-gray-400' : ''}`} />
                 {errors.accountEmail && <p className="text-red-500 text-xs mt-1">{errors.accountEmail}</p>}
                 <p className="text-xs text-gray-400 mt-1">
                   Don't have an account?{' '}
@@ -476,9 +497,7 @@ export default function JoinAmbassador() {
                   {REACH_OPTIONS.map(opt => (
                     <button key={opt} type="button" onClick={() => update('reach', opt)}
                       className={`px-3 py-1.5 rounded-full text-xs border-2 transition-all ${
-                        form.reach === opt
-                          ? 'border-cyan-500 bg-cyan-50 text-cyan-700 font-semibold'
-                          : 'border-gray-200 text-gray-600 hover:border-cyan-300'
+                        form.reach === opt ? 'border-cyan-500 bg-cyan-50 text-cyan-700 font-semibold' : 'border-gray-200 text-gray-600 hover:border-cyan-300'
                       }`}>{opt}</button>
                   ))}
                 </div>
@@ -491,9 +510,7 @@ export default function JoinAmbassador() {
                   {['Part time', 'Full time'].map(opt => (
                     <button key={opt} type="button" onClick={() => update('availability', opt)}
                       className={`p-3 rounded-xl border-2 text-sm font-medium transition-all ${
-                        form.availability === opt
-                          ? 'border-cyan-500 bg-cyan-50 text-cyan-700'
-                          : 'border-gray-200 text-gray-600 hover:border-cyan-300'
+                        form.availability === opt ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600 hover:border-cyan-300'
                       }`}>{opt}</button>
                   ))}
                 </div>
@@ -513,9 +530,7 @@ export default function JoinAmbassador() {
                   {['Yes', 'No'].map(opt => (
                     <button key={opt} type="button" onClick={() => update('isContentCreator', opt)}
                       className={`p-3 rounded-xl border-2 text-sm font-medium transition-all ${
-                        form.isContentCreator === opt
-                          ? 'border-cyan-500 bg-cyan-50 text-cyan-700'
-                          : 'border-gray-200 text-gray-600 hover:border-cyan-300'
+                        form.isContentCreator === opt ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600 hover:border-cyan-300'
                       }`}>{opt}</button>
                   ))}
                 </div>
@@ -591,14 +606,17 @@ export default function JoinAmbassador() {
                   {errors.idNumber && <p className="text-red-500 text-xs mt-1">{errors.idNumber}</p>}
                 </div>
 
+                {/* ✅ ID image is now required */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload ID Image</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload ID Image *</label>
                   <div className="flex items-center gap-4">
                     {form.idImagePreview && (
                       <img src={form.idImagePreview} alt="ID preview"
                         className="w-20 h-14 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
                     )}
-                    <label className="cursor-pointer bg-gray-50 border-2 border-dashed border-gray-200 text-gray-600 px-4 py-3 rounded-xl text-sm hover:bg-gray-100 transition flex items-center gap-2">
+                    <label className={`cursor-pointer border-2 border-dashed text-gray-600 px-4 py-3 rounded-xl text-sm hover:bg-gray-100 transition flex items-center gap-2 ${
+                      errors.idImage ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'
+                    }`}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="17 8 12 3 7 8"/>
@@ -608,6 +626,7 @@ export default function JoinAmbassador() {
                       <input type="file" accept="image/*" onChange={handleIdImage} className="hidden" />
                     </label>
                   </div>
+                  {errors.idImage && <p className="text-red-500 text-xs mt-1">{errors.idImage}</p>}
                 </div>
               </div>
 

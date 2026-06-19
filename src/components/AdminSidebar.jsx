@@ -1,4 +1,4 @@
-import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, Unlock, LogOut, X, FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag, ClipboardList } from 'lucide-react';
+import { Home, Calendar, Users, Grid, GraduationCap, BarChart3, Unlock, LogOut, X, FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag, ClipboardList, Wallet } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export function AdminSidebar({ isOpen, onClose }) {
@@ -26,6 +26,7 @@ export function AdminSidebar({ isOpen, onClose }) {
     { icon: Mail, label: 'Early Access', path: '/admin/early-access' },
     { icon: Star, label: 'Ambassadors', path: '/admin/ambassadors' },
     { icon: ClipboardList, label: 'Ambassador Applications', path: '/admin/ambassador-applications' },
+    { icon: Wallet, label: 'Ambassador Payouts', path: '/admin/ambassador-payouts' },
   ];
 
   return (

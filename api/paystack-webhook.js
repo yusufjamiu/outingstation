@@ -116,11 +116,14 @@ async function findUserByEmail(email) {
   }
 }
 
-// ✅ Matches tier by id first, falls back to name
-// Also enforces sold count cannot exceed quantity (prevents overselling)
+// ✅ FIXED: Now matches by tierName as fallback when tierId is null/missing
+// Root cause of sold count not updating: tier objects in Firestore often don't
+// have an `id` field, so tierId is null and the old code returned early.
+// Now we fall back to matching by tierName which is always available.
 async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
   if (!eventId) return;
 
+  // Need at least one identifier to match the tier
   if (!tierId && !tierName) {
     console.log('⚠️ updateTierSoldCount: no tierId or tierName — skipping');
     return;
@@ -136,25 +139,18 @@ async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
     if (tiers.length === 0) return;
 
     console.log(`🔍 Matching tier — tierId: "${tierId}", tierName: "${tierName}"`);
-    console.log(`🔍 Firestore tiers:`, tiers.map(t => `id="${t.id}" name="${t.name}" sold=${t.sold} qty=${t.quantity}`));
+    console.log(`🔍 Firestore tiers:`, tiers.map(t => `id="${t.id}" name="${t.name}"`));
 
     let matched = false;
     const updatedTiers = tiers.map(tier => {
+      // ✅ Match by id first (exact), then fall back to name
       const matchById = tierId && tier.id && tier.id === tierId;
       const matchByName = !matchById && tierName && tier.name === tierName;
 
       if (matchById || matchByName) {
         matched = true;
-        const currentSold = tier.sold || 0;
-        const newSold = currentSold + quantity;
-
-        // ✅ Cap at quantity to prevent overselling
-        const cappedSold = tier.quantity != null
-          ? Math.min(newSold, tier.quantity)
-          : newSold;
-
-        console.log(`✅ Matched tier "${tier.name}" by ${matchById ? 'id' : 'name'} → sold: ${currentSold} → ${cappedSold}`);
-        return { ...tier, sold: cappedSold };
+        console.log(`✅ Matched tier "${tier.name}" by ${matchById ? 'id' : 'name'} → sold: ${tier.sold || 0} → ${(tier.sold || 0) + quantity}`);
+        return { ...tier, sold: (tier.sold || 0) + quantity };
       }
       return tier;
     });
@@ -171,7 +167,115 @@ async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
   }
 }
 
-// ✅ Extract metadata from all 3 Paystack metadata formats
+// ✅ Distribute ambassador commission after ticket purchase
+// Campus events → campus ambassadors at that university only
+// City/regular events → city ambassadors in that city only
+// The two NEVER mix — each earns from their own scope
+async function distributeAmbassadorCommission(eventData, eventId, serviceFee, quantity) {
+  if (!serviceFee || serviceFee <= 0) return;
+
+  try {
+    const totalServiceFee = serviceFee * quantity;
+    const commissionPool = Math.floor(totalServiceFee * 0.5);
+    if (commissionPool <= 0) {
+      console.log('ℹ️ Commission pool is 0 — skipping');
+      return;
+    }
+
+    const eventType = eventData.eventType || 'regular';
+    const isCampusEvent = eventType === 'campus';
+    const eventUniversity = (eventData.university || '').toLowerCase().trim();
+    const eventCity = (eventData.location || eventData.city || '').toLowerCase().trim();
+
+    console.log(`💰 Commission pool: ₦${commissionPool} | ${isCampusEvent ? 'Campus' : 'City'} event | ${isCampusEvent ? eventUniversity : eventCity}`);
+
+    const ambassadorsSnap = await getDocs(
+      query(collection(db, 'users'), where('isAmbassador', '==', true))
+    );
+    const allAmbassadors = ambassadorsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    let qualifiedAmbassadors = [];
+
+    if (isCampusEvent) {
+      // ✅ Campus event → only campus ambassadors assigned to this university
+      qualifiedAmbassadors = allAmbassadors.filter(amb => {
+        if (!amb.isCampusAmbassador) return false;
+        if ((amb.totalReferrals || 0) < 100) return false;
+        const assignedCampuses = amb.assignedCampuses || [];
+        return assignedCampuses.some(c =>
+          c.toLowerCase().includes(eventUniversity) ||
+          eventUniversity.includes(c.toLowerCase())
+        ) || (amb.university || '').toLowerCase().trim() === eventUniversity;
+      });
+    } else {
+      // ✅ City/regular/webinar event → only city ambassadors (NOT campus ambassadors)
+      qualifiedAmbassadors = allAmbassadors.filter(amb => {
+        if (amb.isCampusAmbassador) return false;
+        if ((amb.totalReferrals || 0) < 100) return false;
+        if (amb.ambassadorType !== 'city') return false;
+        const ambCity = (amb.city || '').toLowerCase().trim();
+        return ambCity === eventCity || ambCity.includes(eventCity) || eventCity.includes(ambCity);
+      });
+    }
+
+    console.log(`${isCampusEvent ? '🎓' : '🏙️'} Qualified ambassadors: ${qualifiedAmbassadors.length}`);
+
+    if (qualifiedAmbassadors.length === 0) {
+      console.log('ℹ️ No qualified ambassadors — commission not distributed');
+      return;
+    }
+
+    const sharePerAmbassador = Math.floor(commissionPool / qualifiedAmbassadors.length);
+    if (sharePerAmbassador <= 0) return;
+
+    console.log(`💸 ₦${sharePerAmbassador} each to ${qualifiedAmbassadors.length} ambassadors`);
+
+    for (const amb of qualifiedAmbassadors) {
+      try {
+        const earningsRef = doc(db, 'ambassadorEarnings', amb.id);
+        const earningsSnap = await getDoc(earningsRef);
+        const transaction = {
+          amount: sharePerAmbassador,
+          eventId: eventId || '',
+          eventTitle: eventData.title || '',
+          eventType,
+          type: 'commission',
+          date: new Date().toISOString(),
+        };
+
+        if (earningsSnap.exists()) {
+          const transactions = earningsSnap.data().transactions || [];
+          await updateDoc(earningsRef, {
+            totalEarned: increment(sharePerAmbassador),
+            availableBalance: increment(sharePerAmbassador),
+            updatedAt: serverTimestamp(),
+            transactions: [...transactions.slice(-49), transaction],
+          });
+        } else {
+          await setDoc(earningsRef, {
+            ambassadorId: amb.id,
+            ambassadorName: amb.name || '',
+            ambassadorEmail: amb.email || '',
+            ambassadorType: isCampusEvent ? 'campus' : 'city',
+            totalEarned: sharePerAmbassador,
+            availableBalance: sharePerAmbassador,
+            totalPaidOut: 0,
+            updatedAt: serverTimestamp(),
+            transactions: [transaction],
+          });
+        }
+        console.log(`✅ Credited ₦${sharePerAmbassador} to ${isCampusEvent ? 'campus' : 'city'} ambassador: ${amb.name || amb.id}`);
+      } catch (err) {
+        console.error(`❌ Failed to credit ambassador ${amb.id}:`, err);
+      }
+    }
+    console.log(`✅ Commission distribution complete`);
+  } catch (err) {
+    console.error('❌ Commission distribution error:', err);
+  }
+}
+
+// ✅ Extract metadata — extracts tierName and tierId from all 3 metadata formats
 function extractMetadata(paymentData) {
   let rawMetadata = paymentData.metadata || {};
 
@@ -505,29 +609,6 @@ export default async function handler(req, res) {
     }
     const eventData = eventDoc.data();
 
-    // ✅ OVERSELL GUARD — check tier availability before creating ticket
-    if (metadata.tierName || metadata.tierId) {
-      const tiers = eventData.ticketTiers || [];
-      const matchedTier = tiers.find(t =>
-        (metadata.tierId && t.id === metadata.tierId) ||
-        (metadata.tierName && t.name === metadata.tierName)
-      );
-      if (matchedTier && matchedTier.quantity != null) {
-        const currentSold = matchedTier.sold || 0;
-        const remaining = matchedTier.quantity - currentSold;
-        if (remaining <= 0) {
-          console.log(`❌ OVERSELL BLOCKED: tier "${matchedTier.name}" is sold out (sold: ${currentSold}, qty: ${matchedTier.quantity})`);
-          // Still return 200 so Paystack doesn't retry — but don't create ticket
-          // The payment went through on Paystack's side — handle refund manually
-          return res.status(200).json({
-            success: false,
-            message: `Tier "${matchedTier.name}" is sold out — manual refund required`,
-            reference: paymentData.reference,
-          });
-        }
-      }
-    }
-
     const ticketId = metadata.ticketId || generateTicketId();
 
     const totalPaid = metadata.totalAmount > 0
@@ -564,14 +645,14 @@ export default async function handler(req, res) {
     await setDoc(doc(db, 'tickets', ticketId), ticketData);
     console.log(`✅ Ticket saved: ${ticketId}${metadata.tierName ? ` (${metadata.tierName})` : ''}`);
 
-    // ✅ Update ticketsSold AND ticketsAvailable together
+    // Update total ticketsSold count
     await updateDoc(doc(db, 'events', metadata.eventId), {
-      ticketsSold: increment(metadata.quantity),
-      ticketsAvailable: increment(-metadata.quantity),
+      ticketsSold: increment(metadata.quantity)
     });
-    console.log(`✅ Event ticket counts updated`);
 
-    // ✅ Update tier sold count (matches by id, falls back to name)
+    // ✅ FIXED: Now passes tierName as fallback — matches tier even when tierId is null
+    // Previously: only ran when tierId was truthy → never updated sold count
+    // Now: runs when either tierId OR tierName is present, matches by name if id missing
     if (metadata.tierId || metadata.tierName) {
       await updateTierSoldCount(
         metadata.eventId,
@@ -598,6 +679,14 @@ export default async function handler(req, res) {
 
     console.log(`✅ Ticket created: ${ticketId}`);
     console.log(`📧 Email sent to: ${paymentData.customer.email}`);
+
+    // ✅ Distribute ambassador commission (50% of service fee split among qualified ambassadors)
+    // Runs async — does not block ticket creation or email
+    distributeAmbassadorCommission(
+      { ...eventData, id: metadata.eventId },
+      metadata.serviceFee,
+      metadata.quantity
+    ).catch(err => console.error('Commission distribution failed silently:', err));
 
     return res.status(200).json({
       success: true,

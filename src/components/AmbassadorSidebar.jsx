@@ -1,5 +1,5 @@
 import {
-  Home, Calendar, ShoppingBag, Bell, LogOut, X, GraduationCap, MapPin, FileText,
+  Home, Calendar, ShoppingBag, Bell, LogOut, X, GraduationCap, MapPin, FileText, Wallet,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -11,7 +11,7 @@ export function AmbassadorSidebar({ isOpen, onClose }) {
 
   const handleLogout = async () => {
     try {
-      await logout();              // real Firebase sign-out (ambassadors use their normal account)
+      await logout();
       navigate('/login');
     } catch (err) {
       console.error('Logout failed:', err);
@@ -23,11 +23,11 @@ export function AmbassadorSidebar({ isOpen, onClose }) {
     { icon: Calendar, label: 'Events', path: '/ambassador/events' },
     { icon: MapPin, label: 'Places', path: '/ambassador/places' },
     { icon: ShoppingBag, label: 'Vendors', path: '/ambassador/vendors' },
+    { icon: Wallet, label: 'Earnings', path: '/ambassador/earnings' },
     { icon: Bell, label: 'Notifications', path: '/ambassador/notifications' },
     { icon: FileText, label: 'Submitted Events', path: '/ambassador/submitted-events' },
   ];
 
-  // exact match for the dashboard root, "starts with" for the sub-sections
   const isActive = (path) =>
     path === '/ambassador'
       ? location.pathname === '/ambassador'
@@ -87,7 +87,7 @@ export function AmbassadorSidebar({ isOpen, onClose }) {
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{name}</p>
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full mt-0.5">
-                🎓 Campus Ambassador
+                ⭐ Ambassador
               </span>
             </div>
           </div>
