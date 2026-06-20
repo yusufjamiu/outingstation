@@ -62,6 +62,7 @@ import AmbassadorVendorForm from './pages/ambassador/AmbassadorVendorForm';
 import AmbassadorNotifications from './pages/ambassador/AmbassadorNotifications';
 import SubmittedEvents from './pages/ambassador/SubmittedEvents';
 import AmbassadorEarnings from './pages/ambassador/AmbassadorEarnings';
+import CityAmbassadorCreate from './pages/ambassador/CityAmbassadorCreate';
 
 // Event Management
 import ManageEvent from './pages/EventManage/ManageEvent';
@@ -87,6 +88,7 @@ import AdminVendorForm from './pages/admin/AdminVendorForm'; //
 import AdminCreditRequests from './pages/admin/AdminCreditRequests';
 import AdminAmbassadorApplications from './pages/admin/AdminAmbassadorApplications';
 import AdminAmbassadorPayouts from './pages/admin/AdminAmbassadorPayouts';
+
 
 
 
@@ -216,6 +218,12 @@ function App() {
               <Route path="/ambassador/earnings" element={
                 <AmbassadorRoute>
                   <AmbassadorEarnings />
+                </AmbassadorRoute>
+              } />
+
+              <Route path="/ambassador/create" element={
+                <AmbassadorRoute>
+                  <CityAmbassadorCreate />
                 </AmbassadorRoute>
               } />
 

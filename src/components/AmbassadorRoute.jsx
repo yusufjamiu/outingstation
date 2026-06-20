@@ -4,16 +4,18 @@ import { useAuth } from '../context/AuthContext';
 export default function AmbassadorRoute({ children }) {
   const { currentUser, userProfile } = useAuth();
 
-  // Not logged in at all → send to login
+  // Not logged in → send to login
   if (!currentUser) {
     return <Navigate to="/login" replace />;
   }
 
-  // Logged in, but not a campus ambassador → send to the normal user dashboard
-  if (userProfile?.isCampusAmbassador !== true) {
+  // ✅ Allow both campus and city ambassadors
+  const isCampusAmbassador = userProfile?.isCampusAmbassador === true;
+  const isCityAmbassador = userProfile?.isAmbassador === true && userProfile?.ambassadorType === 'city';
+
+  if (!isCampusAmbassador && !isCityAmbassador) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // Logged in AND a campus ambassador → allow through
   return children;
 }

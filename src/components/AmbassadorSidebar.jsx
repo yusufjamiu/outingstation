@@ -1,5 +1,5 @@
 import {
-  Home, Calendar, ShoppingBag, Bell, LogOut, X, GraduationCap, MapPin, FileText, Wallet,
+  Home, Calendar, ShoppingBag, Bell, LogOut, X, GraduationCap, MapPin, FileText, Wallet, Plus,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -18,15 +18,27 @@ export function AmbassadorSidebar({ isOpen, onClose }) {
     }
   };
 
-  const menuItems = [
-    { icon: Home, label: 'Dashboard', path: '/ambassador' },
-    { icon: Calendar, label: 'Events', path: '/ambassador/events' },
-    { icon: MapPin, label: 'Places', path: '/ambassador/places' },
-    { icon: ShoppingBag, label: 'Vendors', path: '/ambassador/vendors' },
-    { icon: Wallet, label: 'Earnings', path: '/ambassador/earnings' },
-    { icon: Bell, label: 'Notifications', path: '/ambassador/notifications' },
-    { icon: FileText, label: 'Submitted Events', path: '/ambassador/submitted-events' },
-  ];
+  // ✅ Detect ambassador type
+  const isCityAmbassador = userProfile?.ambassadorType === 'city' && !userProfile?.isCampusAmbassador;
+
+  // ✅ City ambassadors see simplified menu
+  // ✅ Campus ambassadors see full menu
+  const menuItems = isCityAmbassador
+    ? [
+        { icon: Home, label: 'Dashboard', path: '/ambassador' },
+        { icon: Plus, label: 'Create', path: '/ambassador/create' },
+        { icon: Wallet, label: 'Earnings', path: '/ambassador/earnings' },
+        { icon: Bell, label: 'Notifications', path: '/ambassador/notifications' },
+      ]
+    : [
+        { icon: Home, label: 'Dashboard', path: '/ambassador' },
+        { icon: Calendar, label: 'Events', path: '/ambassador/events' },
+        { icon: MapPin, label: 'Places', path: '/ambassador/places' },
+        { icon: ShoppingBag, label: 'Vendors', path: '/ambassador/vendors' },
+        { icon: Wallet, label: 'Earnings', path: '/ambassador/earnings' },
+        { icon: Bell, label: 'Notifications', path: '/ambassador/notifications' },
+        { icon: FileText, label: 'Submitted Events', path: '/ambassador/submitted-events' },
+      ];
 
   const isActive = (path) =>
     path === '/ambassador'
@@ -86,8 +98,9 @@ export function AmbassadorSidebar({ isOpen, onClose }) {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{name}</p>
+              {/* ✅ Badge reflects ambassador type */}
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full mt-0.5">
-                ⭐ Ambassador
+                {isCityAmbassador ? '🏙️ City Ambassador' : '🎓 Campus Ambassador'}
               </span>
             </div>
           </div>
