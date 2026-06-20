@@ -20,7 +20,6 @@ const REACH_OPTIONS = ['Less than 50', '50–100', '100–500', '500–1,000', '
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
-// ── Typewriter Intro ─────────────────────────────────────────────────────────
 function TypewriterIntro({ onDone }) {
   const [displayed, setDisplayed] = useState('');
   const [done, setDone] = useState(false);
@@ -67,7 +66,6 @@ function TypewriterIntro({ onDone }) {
   );
 }
 
-// ── Main Form ────────────────────────────────────────────────────────────────
 export default function JoinAmbassador() {
   const [showIntro, setShowIntro] = useState(true);
   const [step, setStep] = useState(1);
@@ -75,6 +73,8 @@ export default function JoinAmbassador() {
   const [loading, setLoading] = useState(false);
   const [universities, setUniversities] = useState([]);
   const [sameEmail, setSameEmail] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [termsError, setTermsError] = useState('');
 
   const [form, setForm] = useState({
     fullName: '',
@@ -129,17 +129,12 @@ export default function JoinAmbassador() {
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
   };
 
-  // ✅ When "same as email" is toggled, sync accountEmail with email
   const handleSameEmail = (checked) => {
     setSameEmail(checked);
-    if (checked) {
-      update('accountEmail', form.email);
-    } else {
-      update('accountEmail', '');
-    }
+    if (checked) update('accountEmail', form.email);
+    else update('accountEmail', '');
   };
 
-  // ✅ When email changes and sameEmail is on, keep accountEmail in sync
   const handleEmailChange = (value) => {
     update('email', value);
     if (sameEmail) update('accountEmail', value);
@@ -206,12 +201,18 @@ export default function JoinAmbassador() {
     if (!form.whyJoin.trim()) e.whyJoin = 'Please tell us why you want to join';
     if (!form.idType) e.idType = 'Please select an ID type';
     if (!form.idNumber.trim()) e.idNumber = 'ID number is required';
-    // ✅ ID image is now required
     if (!form.idImageFile) e.idImage = 'Please upload an image of your ID';
     if (!form.bankName.trim()) e.bankName = 'Bank name is required';
     if (!form.accountNumber.trim()) e.accountNumber = 'Account number is required';
     if (!form.accountName.trim()) e.accountName = 'Account name is required';
     setErrors(e);
+
+    // ✅ Terms check
+    if (!agreedToTerms) {
+      setTermsError('You must agree to the Terms & Conditions and Privacy Policy to submit');
+      return false;
+    }
+
     return Object.keys(e).length === 0;
   };
 
@@ -226,10 +227,7 @@ export default function JoinAmbassador() {
     try {
       let photoUrl = '';
       if (form.photoFile) photoUrl = await uploadToCloudinary(form.photoFile);
-
-      // ✅ ID image upload is required — always upload
       const idImageUrl = await uploadToCloudinary(form.idImageFile);
-
       const universityName = form.university === 'Other' ? form.customUniversity : form.university;
 
       await addDoc(collection(db, 'ambassadorApplications'), {
@@ -257,6 +255,8 @@ export default function JoinAmbassador() {
         bankName: form.bankName,
         accountNumber: form.accountNumber,
         accountName: form.accountName,
+        agreedToTerms: true,
+        agreedAt: new Date().toISOString(),
         status: 'pending',
         createdAt: serverTimestamp(),
       });
@@ -326,12 +326,11 @@ export default function JoinAmbassador() {
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
 
-          {/* ── STEP 1 ── */}
+          {/* STEP 1 */}
           {step === 1 && (
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900 mb-5">Personal Information</h2>
 
-              {/* Photo */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Profile Photo</label>
                 <div className="flex items-center gap-4">
@@ -379,14 +378,9 @@ export default function JoinAmbassador() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-sm font-medium text-gray-700">OutingStation Account Email *</label>
-                  {/* ✅ Same as email checkbox */}
                   <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={sameEmail}
-                      onChange={e => handleSameEmail(e.target.checked)}
-                      className="w-3.5 h-3.5 accent-cyan-500"
-                    />
+                    <input type="checkbox" checked={sameEmail} onChange={e => handleSameEmail(e.target.checked)}
+                      className="w-3.5 h-3.5 accent-cyan-500" />
                     <span className="text-xs text-gray-500">Same as email</span>
                   </label>
                 </div>
@@ -424,7 +418,7 @@ export default function JoinAmbassador() {
             </div>
           )}
 
-          {/* ── STEP 2 ── */}
+          {/* STEP 2 */}
           {step === 2 && (
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900 mb-5">
@@ -519,7 +513,7 @@ export default function JoinAmbassador() {
             </div>
           )}
 
-          {/* ── STEP 3 ── */}
+          {/* STEP 3 */}
           {step === 3 && (
             <div className="space-y-4">
               <h2 className="text-lg font-bold text-gray-900 mb-5">About You</h2>
@@ -573,10 +567,9 @@ export default function JoinAmbassador() {
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
               </div>
 
-              {/* ── ID Verification ── */}
+              {/* ID Verification */}
               <div className="pt-2">
                 <p className="text-sm font-bold text-gray-800 mb-3">ID Verification</p>
-
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">ID Type *</label>
                   <div className="flex flex-wrap gap-2">
@@ -606,7 +599,6 @@ export default function JoinAmbassador() {
                   {errors.idNumber && <p className="text-red-500 text-xs mt-1">{errors.idNumber}</p>}
                 </div>
 
-                {/* ✅ ID image is now required */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Upload ID Image *</label>
                   <div className="flex items-center gap-4">
@@ -630,7 +622,7 @@ export default function JoinAmbassador() {
                 </div>
               </div>
 
-              {/* ── Bank Details ── */}
+              {/* Bank Details */}
               <div className="pt-2">
                 <p className="text-sm font-bold text-gray-800 mb-3">Bank Details</p>
                 <div className="space-y-4">
@@ -656,6 +648,29 @@ export default function JoinAmbassador() {
                     {errors.accountName && <p className="text-red-500 text-xs mt-1">{errors.accountName}</p>}
                   </div>
                 </div>
+              </div>
+
+              {/* ✅ Terms & Privacy Policy checkbox */}
+              <div className={`mt-4 p-4 rounded-xl border-2 ${termsError ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>
+                <label className="flex items-start gap-3 cursor-pointer" onClick={() => { setAgreedToTerms(!agreedToTerms); setTermsError(''); }}>
+                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
+                    agreedToTerms ? 'bg-cyan-500 border-cyan-500' : 'border-gray-300 bg-white'
+                  }`}>
+                    {agreedToTerms && (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                    )}
+                  </div>
+                  <span className="text-sm text-gray-600 leading-relaxed">
+                    I have read and agree to the OutingStation{' '}
+                    <a href="/terms" target="_blank" className="text-cyan-500 font-semibold hover:underline">Terms & Conditions</a>
+                    {' '}and{' '}
+                    <a href="/privacy" target="_blank" className="text-cyan-500 font-semibold hover:underline">Privacy Policy</a>.
+                    I confirm all information provided is accurate and I understand this is a voluntary, performance-based role.
+                  </span>
+                </label>
+                {termsError && <p className="text-red-500 text-xs mt-2">{termsError}</p>}
               </div>
 
             </div>
