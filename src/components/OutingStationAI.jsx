@@ -1,10 +1,9 @@
 // src/components/OutingStationAI.jsx
-//
 // Outing AI — powered by Claude Haiku via /api/ai-recommend
-// Non-users get 1 free query with blurred paywall preview
+// Fixes: bookmark saves to Firestore + city filter applied before sending to AI
 
 import React, { useState, useRef, useEffect } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -17,9 +16,20 @@ const OS_SECONDARY = "#47A2B6";
 const OS_DARK_TEXT = "#0d2d36";
 
 const CITIES = ["Lagos", "Abuja", "Ibadan", "Port Harcourt", "Benin", "Kano"];
+
 const cityOf = (text) => {
   const t = (text || "").toLowerCase();
   return CITIES.find((c) => t.includes(c.toLowerCase())) || "";
+};
+
+// ✅ Check if an event's city matches the user's city
+// Flexible match — "Lagos" matches "Lagos Island", "Ikeja Lagos", etc.
+const matchesCity = (eventCity, userCity) => {
+  if (!userCity) return true; // no user city set — show everything
+  if (!eventCity) return false;
+  const ec = eventCity.toLowerCase();
+  const uc = userCity.toLowerCase().split(",")[0].trim();
+  return ec.includes(uc) || uc.includes(ec);
 };
 
 const CATEGORY_MOODS = {
@@ -74,6 +84,7 @@ function normEvent(doc) {
     dateMs: d.date && d.date.seconds ? d.date.seconds * 1000 : null,
   };
 }
+
 function normVendor(doc) {
   const d = doc.data ? doc.data() : doc;
   return {
@@ -155,12 +166,12 @@ const S = {
 };
 
 const STARTERS = [
-  "🎉 Something fun in Lagos this weekend",
+  "🎉 Something fun this weekend",
   "😌 Chill spot for a date",
   "🎓 Events on my campus",
   "🍔 Campus food vendors",
-  "🧭 Explore Abuja",
   "🎵 Live music tonight",
+  "🧭 What's happening near me?",
 ];
 
 // ✅ Real Web Share API with clipboard fallback
@@ -185,49 +196,33 @@ async function shareItem(title, url, flash) {
 function PaywallOverlay() {
   return (
     <div style={{
-      position: "absolute", inset: 0, zIndex: 10,
-      background: "linear-gradient(to bottom, transparent 0%, rgba(244,249,251,0.7) 20%, rgba(244,249,251,0.97) 50%)",
-      display: "flex", flexDirection: "column", alignItems: "center",
-      justifyContent: "flex-end", padding: "16px 16px 20px",
-      borderRadius: 16,
+      position:"absolute", inset:0, zIndex:10,
+      background:"linear-gradient(to bottom, transparent 0%, rgba(244,249,251,0.7) 20%, rgba(244,249,251,0.97) 50%)",
+      display:"flex", flexDirection:"column", alignItems:"center",
+      justifyContent:"flex-end", padding:"16px 16px 20px", borderRadius:16,
     }}>
       <div style={{
-        background: "#fff", borderRadius: 20, padding: "20px 20px 16px",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.12)", width: "100%", maxWidth: 340,
-        border: `1px solid ${OS_PRIMARY}44`, textAlign: "center",
+        background:"#fff", borderRadius:20, padding:"20px 20px 16px",
+        boxShadow:"0 8px 32px rgba(0,0,0,0.12)", width:"100%", maxWidth:340,
+        border:`1px solid ${OS_PRIMARY}44`, textAlign:"center",
       }}>
         <div style={{
-          width: 44, height: 44, borderRadius: "50%",
-          background: `linear-gradient(135deg,${OS_PRIMARY}22,${OS_SECONDARY}22)`,
-          border: `1.5px solid ${OS_PRIMARY}66`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          margin: "0 auto 10px",
+          width:44, height:44, borderRadius:"50%",
+          background:`linear-gradient(135deg,${OS_PRIMARY}22,${OS_SECONDARY}22)`,
+          border:`1.5px solid ${OS_PRIMARY}66`,
+          display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 10px",
         }}>
           <Lock size={20} color={OS_SECONDARY} />
         </div>
-        <p style={{ fontWeight: 700, fontSize: 15, color: "#0d2d36", marginBottom: 6 }}>
+        <p style={{ fontWeight:700, fontSize:15, color:"#0d2d36", marginBottom:6 }}>
           Login to unlock all recommendations
         </p>
-        <p style={{ fontSize: 12, color: "#6a8e9b", marginBottom: 16, lineHeight: 1.5 }}>
+        <p style={{ fontSize:12, color:"#6a8e9b", marginBottom:16, lineHeight:1.5 }}>
           Create a free account to get personalised picks, save events, and buy tickets.
         </p>
-        <div style={{ display: "flex", gap: 8 }}>
-          <a href="/login" style={{
-            flex: 1, padding: "10px 0", borderRadius: 12,
-            background: `linear-gradient(135deg,${OS_PRIMARY},${OS_SECONDARY})`,
-            color: OS_DARK_TEXT, fontWeight: 700, fontSize: 13,
-            textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            Login
-          </a>
-          <a href="/signup" style={{
-            flex: 1, padding: "10px 0", borderRadius: 12,
-            background: "#f0f6f8", border: `1px solid ${OS_PRIMARY}55`,
-            color: OS_SECONDARY, fontWeight: 700, fontSize: 13,
-            textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            Sign Up Free
-          </a>
+        <div style={{ display:"flex", gap:8 }}>
+          <a href="/login" style={{ flex:1, padding:"10px 0", borderRadius:12, background:`linear-gradient(135deg,${OS_PRIMARY},${OS_SECONDARY})`, color:OS_DARK_TEXT, fontWeight:700, fontSize:13, textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center" }}>Login</a>
+          <a href="/signup" style={{ flex:1, padding:"10px 0", borderRadius:12, background:"#f0f6f8", border:`1px solid ${OS_PRIMARY}55`, color:OS_SECONDARY, fontWeight:700, fontSize:13, textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center" }}>Sign Up Free</a>
         </div>
       </div>
     </div>
@@ -239,9 +234,7 @@ export default function OutingStationAI() {
   const userProfile = auth?.userProfile;
   const currentUser = auth?.currentUser;
 
-  // ✅ Track whether non-user has used their 1 free query
   const [guestQueryUsed, setGuestQueryUsed] = useState(false);
-
   const [open,         setOpen]         = useState(false);
   const [showNudge,    setShowNudge]    = useState(false);
   const [loaded,       setLoaded]       = useState(false);
@@ -252,7 +245,7 @@ export default function OutingStationAI() {
   const [inputText,    setInputText]    = useState("");
   const [loading,      setLoading]      = useState(false);
   const [history,      setHistory]      = useState([]);
-  const [saved,        setSaved]        = useState([]);
+  const [saved,        setSaved]        = useState(new Set()); // ✅ Set of saved event IDs
   const [toast,        setToast]        = useState("");
   const [isMd,         setIsMd]         = useState(false);
   const [showStarters, setShowStarters] = useState(true);
@@ -260,9 +253,11 @@ export default function OutingStationAI() {
   const scrollRef   = useRef(null);
   const textareaRef = useRef(null);
 
-  const isLoggedIn = !!currentUser;
-  // ✅ Input is locked if guest has already used their 1 free query
+  const isLoggedIn  = !!currentUser;
   const inputLocked = !isLoggedIn && guestQueryUsed;
+
+  // ✅ User's city from their profile
+  const userCity = userProfile?.city || "";
 
   useEffect(() => {
     const check = () => setIsMd(window.innerWidth >= 640);
@@ -276,6 +271,7 @@ export default function OutingStationAI() {
     return () => clearTimeout(t);
   }, []);
 
+  // ✅ Load events filtered by user's city + load their saved events
   useEffect(() => {
     if (!open || loaded) return;
     (async () => {
@@ -285,30 +281,51 @@ export default function OutingStationAI() {
           getDocs(collection(db, "vendors")).catch(() => ({ docs: [] })),
           getDocs(collection(db, "universities")).catch(() => ({ docs: [] })),
         ]);
-        setEvents(evSnap.docs.map(normEvent).filter((x) => x.title && x.status === "published"));
+
+        const allEvents = evSnap.docs
+          .map(normEvent)
+          .filter((x) => x.title && x.status === "published");
+
+        // ✅ Filter events by user's city — only send relevant events to AI
+        // Campus events (eventType === 'campus') bypass city filter
+        const cityFilteredEvents = allEvents.filter((e) =>
+          e.eventType === "campus" || matchesCity(e.city, userCity)
+        );
+
+        setEvents(cityFilteredEvents);
         setVendors((vSnap.docs || []).map(normVendor));
         setUniversities((uSnap.docs || []).map((d) => d.data().name || d.data().title || d.id).filter(Boolean));
+
+        // ✅ Load user's existing saved events from Firestore
+        if (currentUser) {
+          const savedSnap = await getDocs(
+            collection(db, "users", currentUser.uid, "savedEvents")
+          ).catch(() => ({ docs: [] }));
+          const savedIds = new Set(savedSnap.docs.map((d) => d.id));
+          setSaved(savedIds);
+        }
       } catch (e) {
         console.error("Outing AI load failed", e);
-        setMessages((m) => [...m, { from: "ai", text: "I'm having trouble loading events right now. Please try again in a moment 🙏", isError: true }]);
+        setMessages((m) => [...m, { from:"ai", text:"I'm having trouble loading events right now. Please try again in a moment 🙏", isError:true }]);
       } finally {
         setLoaded(true);
       }
     })();
-  }, [open, loaded]);
+  }, [open, loaded]); // eslint-disable-line
 
   useEffect(() => {
     if (open && messages.length === 0) {
       const name = userProfile?.name?.split(" ")[0] || userProfile?.displayName?.split(" ")[0];
+      const city = userCity ? ` in ${userCity.split(",")[0]}` : "";
       const greeting = name
-        ? `Hi ${name} 👋 I'm Outing AI. Tell me what you're looking for — events, places, campus vibes — and I'll find the best picks for you.`
-        : "Hi 👋 I'm Outing AI. Tell me what you're looking for — events, a chill spot, campus vendors — and I'll find the perfect match.";
-      setMessages([{ from: "ai", text: greeting }]);
+        ? `Hi ${name} 👋 I'm Outing AI. Tell me what you're looking for${city} — events, places, campus vibes — and I'll find the best picks for you.`
+        : `Hi 👋 I'm Outing AI. Tell me what you're looking for — events, a chill spot, campus vendors — and I'll find the perfect match.`;
+      setMessages([{ from:"ai", text:greeting }]);
     }
   }, [open]); // eslint-disable-line
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current?.scrollTo({ top:scrollRef.current.scrollHeight, behavior:"smooth" });
   }, [messages, loading]);
 
   const handleInputChange = (e) => {
@@ -319,17 +336,56 @@ export default function OutingStationAI() {
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2000); };
 
+  // ✅ Toggle save — writes to Firestore users/{uid}/savedEvents/{eventId}
+  const toggleSave = async (id) => {
+    if (!isLoggedIn) {
+      flash("Login to save events");
+      return;
+    }
+    const isSaved = saved.has(id);
+    // Optimistic UI update
+    setSaved((prev) => {
+      const next = new Set(prev);
+      isSaved ? next.delete(id) : next.add(id);
+      return next;
+    });
+    try {
+      const ref = doc(db, "users", currentUser.uid, "savedEvents", id);
+      if (isSaved) {
+        await deleteDoc(ref);
+      } else {
+        // Find the event to save its basic info
+        const event = events.find((e) => e.id === id);
+        await setDoc(ref, {
+          eventId: id,
+          savedAt: new Date(),
+          title: event?.title || "",
+          imageUrl: event?.imageUrl || "",
+          city: event?.city || "",
+        });
+        flash("Event saved! ✨");
+      }
+    } catch (err) {
+      console.error("Save failed:", err);
+      // Revert optimistic update on error
+      setSaved((prev) => {
+        const next = new Set(prev);
+        isSaved ? next.add(id) : next.delete(id);
+        return next;
+      });
+      flash("Failed to save event");
+    }
+  };
+
   const send = async (text) => {
     const msg = (text || inputText).trim();
     if (!msg || loading || inputLocked) return;
     setInputText("");
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setShowStarters(false);
-    setMessages((m) => [...m, { from: "user", text: msg }]);
+    setMessages((m) => [...m, { from:"user", text:msg }]);
     setLoading(true);
-    const newHistory = [...history, { role: "user", content: msg }];
-
-    // ✅ Mark guest query as used BEFORE the response comes back
+    const newHistory = [...history, { role:"user", content:msg }];
     if (!isLoggedIn) setGuestQueryUsed(true);
 
     try {
@@ -339,9 +395,11 @@ export default function OutingStationAI() {
         body: JSON.stringify({
           message: msg,
           history,
+          // ✅ Already city-filtered — AI only sees events in user's city
           events: events.filter((e) => e.status === "published"),
           vendors,
           universities,
+          userCity,
         }),
       });
       const data = await res.json();
@@ -351,17 +409,16 @@ export default function OutingStationAI() {
         .filter(Boolean);
 
       setMessages((m) => [...m, {
-        from: "ai",
-        text: data.reply,
-        results: resolvedResults,
-        reasons: data.reasons || {},
-        // ✅ Flag this message as a guest-preview if user is not logged in
-        isGuestPreview: !isLoggedIn,
+        from:"ai",
+        text:data.reply,
+        results:resolvedResults,
+        reasons:data.reasons || {},
+        isGuestPreview:!isLoggedIn,
       }]);
-      setHistory([...newHistory, { role: "assistant", content: data.reply }]);
+      setHistory([...newHistory, { role:"assistant", content:data.reply }]);
     } catch (err) {
       console.error("Outing AI error:", err);
-      setMessages((m) => [...m, { from: "ai", text: "Hmm, something went wrong on my end. Try again in a moment 😕", isError: true }]);
+      setMessages((m) => [...m, { from:"ai", text:"Hmm, something went wrong on my end. Try again in a moment 😕", isError:true }]);
     } finally {
       setLoading(false);
     }
@@ -373,10 +430,9 @@ export default function OutingStationAI() {
 
   const restart = () => {
     setMessages([]); setHistory([]); setShowStarters(true);
-    setTimeout(() => setMessages([{ from: "ai", text: "Fresh start 👋 What are you looking for?" }]), 60);
+    setTimeout(() => setMessages([{ from:"ai", text:"Fresh start 👋 What are you looking for?" }]), 60);
   };
 
-  const toggleSave = (id) => setSaved((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
   const goToEvent  = (r) => { window.location.href = r.slug ? `/e/${r.slug}` : `/event/${r.id}`; };
   const getShareUrl = (r) => {
     const base = window.location.origin;
@@ -384,52 +440,58 @@ export default function OutingStationAI() {
     return `${base}/event/${r.id}`;
   };
 
-  const ResultCard = ({ r, reason }) => (
-    <div style={S.card} className="os-msg-in">
-      <div style={{ display:"flex" }}>
-        <div style={S.cardThumb}>
-          {r.imageUrl
-            ? <img src={r.imageUrl} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} onError={(e) => { e.target.style.display="none"; }} />
-            : <span>{r.emoji}</span>}
-        </div>
-        <div style={S.cardBody}>
-          <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8 }}>
-            <h3 style={S.cardTitle}>{r.title}</h3>
-            <button onClick={() => toggleSave(r.id)} style={{ background:"none",border:"none",cursor:"pointer",color:saved.includes(r.id)?OS_PRIMARY:"#c0d4da",flexShrink:0 }}>
-              <Bookmark size={17} fill={saved.includes(r.id)?"currentColor":"none"} />
-            </button>
+  const ResultCard = ({ r, reason }) => {
+    const isSaved = saved.has(r.id);
+    return (
+      <div style={S.card} className="os-msg-in">
+        <div style={{ display:"flex" }}>
+          <div style={S.cardThumb}>
+            {r.imageUrl
+              ? <img src={r.imageUrl} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} onError={(e) => { e.target.style.display="none"; }} />
+              : <span>{r.emoji}</span>}
           </div>
-          <div style={S.cardMeta}>
-            {r.area       && <span style={{ display:"flex",alignItems:"center",gap:3 }}><MapPin size={11}/>{r.area}</span>}
-            {r.priceLabel && <span style={{ display:"flex",alignItems:"center",gap:3 }}><Ticket size={11}/>{r.priceLabel}</span>}
-            <span style={{ color:"#a0bcc5",textTransform:"capitalize" }}>{r.kind}</span>
-          </div>
-          {r.desc && <p style={{ fontSize:12,color:"#4a7a8a",marginTop:6,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden" }}>{r.desc}</p>}
-          {reason && <div style={S.whyTag}><strong>Why: </strong>{reason}</div>}
-          <div style={S.cardActs}>
-            {r.kind === "vendor" ? (
-              r.whatsapp && <a href={`https://wa.me/${r.whatsapp}`} target="_blank" rel="noopener noreferrer" style={{ ...S.btnPrimary,background:"#22c55e",textDecoration:"none" }}><MessageCircle size={12}/> WhatsApp</a>
-            ) : (
-              <>
-                <button onClick={() => goToEvent(r)} style={S.btnPrimary}>View details</button>
-                {r.mapLocation && <a href={r.mapLocation} target="_blank" rel="noopener noreferrer" style={{ ...S.btnGhost,textDecoration:"none" }}><MapPin size={12}/> Directions</a>}
-              </>
-            )}
-            <button onClick={() => shareItem(r.title, getShareUrl(r), flash)} style={S.btnGhost}>
-              <Share2 size={12}/> Share
-            </button>
+          <div style={S.cardBody}>
+            <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8 }}>
+              <h3 style={S.cardTitle}>{r.title}</h3>
+              {/* ✅ Bookmark now saves to Firestore */}
+              <button
+                onClick={() => toggleSave(r.id)}
+                title={isSaved ? "Remove from saved" : "Save event"}
+                style={{ background:"none",border:"none",cursor:"pointer",color:isSaved?OS_PRIMARY:"#c0d4da",flexShrink:0 }}
+              >
+                <Bookmark size={17} fill={isSaved?"currentColor":"none"} />
+              </button>
+            </div>
+            <div style={S.cardMeta}>
+              {r.area       && <span style={{ display:"flex",alignItems:"center",gap:3 }}><MapPin size={11}/>{r.area}</span>}
+              {r.priceLabel && <span style={{ display:"flex",alignItems:"center",gap:3 }}><Ticket size={11}/>{r.priceLabel}</span>}
+              <span style={{ color:"#a0bcc5",textTransform:"capitalize" }}>{r.kind}</span>
+            </div>
+            {r.desc && <p style={{ fontSize:12,color:"#4a7a8a",marginTop:6,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden" }}>{r.desc}</p>}
+            {reason && <div style={S.whyTag}><strong>Why: </strong>{reason}</div>}
+            <div style={S.cardActs}>
+              {r.kind === "vendor" ? (
+                r.whatsapp && <a href={`https://wa.me/${r.whatsapp}`} target="_blank" rel="noopener noreferrer" style={{ ...S.btnPrimary,background:"#22c55e",textDecoration:"none" }}><MessageCircle size={12}/> WhatsApp</a>
+              ) : (
+                <>
+                  <button onClick={() => goToEvent(r)} style={S.btnPrimary}>View details</button>
+                  {r.mapLocation && <a href={r.mapLocation} target="_blank" rel="noopener noreferrer" style={{ ...S.btnGhost,textDecoration:"none" }}><MapPin size={12}/> Directions</a>}
+                </>
+              )}
+              <button onClick={() => shareItem(r.title, getShareUrl(r), flash)} style={S.btnGhost}>
+                <Share2 size={12}/> Share
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  // ✅ Results renderer — shows 1 card fully, blurs the rest for guests
   const ResultsBlock = ({ results, reasons, isGuestPreview }) => {
     if (!results || results.length === 0) return null;
 
     if (!isGuestPreview) {
-      // Logged-in user — show all cards normally
       return (
         <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:8,marginLeft:36 }}>
           {results.map((r) => <ResultCard key={r.id} r={r} reason={reasons?.[r.id]}/>)}
@@ -438,33 +500,22 @@ export default function OutingStationAI() {
       );
     }
 
-    // ✅ Guest preview — show first card clearly, blur rest with paywall
     const first = results[0];
     const rest  = results.slice(1);
 
     return (
       <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:8,marginLeft:36 }}>
-        {/* First card — fully visible */}
         <ResultCard key={first.id} r={first} reason={reasons?.[first.id]} />
-
-        {/* Remaining cards — blurred with paywall overlay */}
         {rest.length > 0 && (
           <div style={{ position:"relative", borderRadius:16, overflow:"hidden" }}>
-            {/* Blurred cards */}
             <div style={{ filter:"blur(3px)", pointerEvents:"none", display:"flex", flexDirection:"column", gap:8 }}>
               {rest.map((r) => <ResultCard key={r.id} r={r} reason={reasons?.[r.id]}/>)}
             </div>
-            {/* Paywall overlay */}
             <PaywallOverlay />
           </div>
         )}
-
-        {/* If there was only 1 result, still show the paywall nudge */}
         {rest.length === 0 && (
-          <div style={{
-            background:"#fff", borderRadius:16, padding:"16px",
-            border:`1px solid ${OS_PRIMARY}44`, textAlign:"center",
-          }}>
+          <div style={{ background:"#fff", borderRadius:16, padding:"16px", border:`1px solid ${OS_PRIMARY}44`, textAlign:"center" }}>
             <Lock size={18} color={OS_SECONDARY} style={{ marginBottom:8 }} />
             <p style={{ fontWeight:700,fontSize:14,color:"#0d2d36",marginBottom:4 }}>Want more recommendations?</p>
             <p style={{ fontSize:12,color:"#6a8e9b",marginBottom:12 }}>Login for personalised picks, saved events and more.</p>
@@ -504,7 +555,11 @@ export default function OutingStationAI() {
               <div style={S.headerIcon}><Sparkles size={19} color={OS_PRIMARY}/></div>
               <div style={S.headerInfo}>
                 <div style={S.headerH1}>Outing AI</div>
-                <div style={S.headerSub}>Your personal guide to what's happening around you</div>
+                <div style={S.headerSub}>
+                  {userCity
+                    ? `Showing events in ${userCity.split(",")[0]} · OutingStation`
+                    : "Your personal guide to what's happening around you"}
+                </div>
               </div>
               <div style={S.betaBadge}><div style={S.liveDot}/> Beta</div>
               {messages.length > 1 && (
@@ -522,11 +577,7 @@ export default function OutingStationAI() {
                         <div style={S.aiAvatar}><Sparkles size={13} color={OS_PRIMARY}/></div>
                         <div style={m.isError ? S.errorBubble : S.aiBubble}>{m.text}</div>
                       </div>
-                      <ResultsBlock
-                        results={m.results}
-                        reasons={m.reasons}
-                        isGuestPreview={m.isGuestPreview}
-                      />
+                      <ResultsBlock results={m.results} reasons={m.reasons} isGuestPreview={m.isGuestPreview} />
                     </>
                   )}
                   {m.from === "user" && (
@@ -551,15 +602,9 @@ export default function OutingStationAI() {
                 </div>
               )}
 
-              {/* ✅ Locked state for guests who have used their free query */}
               {inputLocked ? (
-                <div style={{
-                  background:`${OS_PRIMARY}10`, border:`1.5px solid ${OS_PRIMARY}44`,
-                  borderRadius:16, padding:"12px 16px", textAlign:"center",
-                }}>
-                  <p style={{ fontSize:13,color:"#0d2d36",fontWeight:600,marginBottom:8 }}>
-                    🔒 Login to ask more questions
-                  </p>
+                <div style={{ background:`${OS_PRIMARY}10`, border:`1.5px solid ${OS_PRIMARY}44`, borderRadius:16, padding:"12px 16px", textAlign:"center" }}>
+                  <p style={{ fontSize:13,color:"#0d2d36",fontWeight:600,marginBottom:8 }}>🔒 Login to ask more questions</p>
                   <div style={{ display:"flex",gap:8,justifyContent:"center" }}>
                     <a href="/login" style={{ padding:"8px 20px",borderRadius:10,background:`linear-gradient(135deg,${OS_PRIMARY},${OS_SECONDARY})`,color:OS_DARK_TEXT,fontWeight:700,fontSize:12,textDecoration:"none" }}>Login</a>
                     <a href="/signup" style={{ padding:"8px 20px",borderRadius:10,background:"#f0f6f8",border:`1px solid ${OS_PRIMARY}55`,color:OS_SECONDARY,fontWeight:700,fontSize:12,textDecoration:"none" }}>Sign Up Free</a>

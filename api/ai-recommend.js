@@ -1,14 +1,8 @@
 // api/ai-recommend.js
-// Vercel serverless function — OutingStation AI recommendation engine
-//
-// SETUP:
-//   1. Drop this file in your project's /api folder
-//   2. Add ANTHROPIC_API_KEY to your Vercel environment variables
-//      (Vercel Dashboard → Your Project → Settings → Environment Variables)
-//   3. That's it. Vercel auto-deploys it as /api/ai-recommend
+// Vercel serverless function — Outing AI recommendation engine
 
 export default async function handler(req, res) {
-  // CORS — allow your frontend origin
+  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -20,7 +14,7 @@ export default async function handler(req, res) {
   if (!message) return res.status(400).json({ error: "message is required" });
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set in environment variables" });
 
-  // ── Build context string from Firestore data ────────────────────────────────
+  // ── Build context string from Firestore data ──────────────────────────────
   const eventsContext = (events || []).slice(0, 120).map((e) =>
     `[ID:${e.id}] ${e.title} | ${e.kind} | city:${e.city || "?"} | area:${e.area || "?"} | price:${e.priceLabel} | mood:${(e.moods || []).join("/")} | campus:${e.eventType === "campus" ? "yes" : "no"} | university:${e.university || "-"} | desc:${(e.desc || "").slice(0, 80)}`
   ).join("\n");
@@ -31,7 +25,7 @@ export default async function handler(req, res) {
 
   const uniList = (universities || []).join(", ");
 
-  const systemPrompt = `You are OutingStation AI, a smart and friendly Nigerian event & experience guide built into the OutingStation app. You help users find events, places, and campus vendors that match their vibe.
+  const systemPrompt = `You are Outing AI, a smart and friendly Nigerian event & experience guide built into the OutingStation app. You help users find events, places, and campus vendors that match their vibe.
 
 AVAILABLE DATA:
 Universities: ${uniList || "none listed"}
@@ -49,8 +43,9 @@ YOUR JOB:
 - Be warm, conversational, and use a Nigerian-friendly tone — casual but helpful
 - Use light emoji where it feels natural 🎉
 
-RESPONSE FORMAT (STRICT JSON):
-Always reply with this exact JSON structure and nothing else:
+CRITICAL RESPONSE FORMAT:
+You MUST return ONLY a valid JSON object — no text before it, no text after it, no markdown, no backticks, no explanation.
+Return exactly this structure and nothing else:
 {
   "reply": "Your conversational message to the user (1-3 sentences max)",
   "results": [
@@ -62,15 +57,19 @@ Always reply with this exact JSON structure and nothing else:
   "needsMoreInfo": false
 }
 
+RULES:
 - "results" can be empty [] if you need more info or nothing matches
 - "needsMoreInfo": true means you asked a follow-up question and are waiting
 - Pick 3-5 best matches max — quality over quantity
 - ONLY use IDs that exist in the data above — never invent IDs
-- Return ONLY the JSON object, no markdown, no extra text`;
+- DO NOT wrap your response in markdown code blocks
+- DO NOT add any text before or after the JSON object
+- The very first character of your response must be {
+- The very last character of your response must be }`;
 
-  // ── Build conversation history ───────────────────────────────────────────────
+  // ── Build conversation history ─────────────────────────────────────────────
   const messages = [
-    ...(history || []).slice(-6), // last 3 turns (6 messages) for context
+    ...(history || []).slice(-6),
     { role: "user", content: message },
   ];
 
@@ -81,17 +80,16 @@ Always reply with this exact JSON structure and nothing else:
         "Content-Type": "application/json",
         "x-api-key": process.env.ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
-        // prompt caching on the system prompt (saves ~90% on repeated calls)
         "anthropic-beta": "prompt-caching-2024-07-31",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001", // cheapest, fastest — perfect for recommendations
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 600,
         system: [
           {
             type: "text",
             text: systemPrompt,
-            cache_control: { type: "ephemeral" }, // cache the big system prompt
+            cache_control: { type: "ephemeral" },
           },
         ],
         messages,
@@ -105,15 +103,29 @@ Always reply with this exact JSON structure and nothing else:
     }
 
     const data = await response.json();
-    const rawText = data.content?.[0]?.text || "{}";
+    const rawText = (data.content?.[0]?.text || "{}").trim();
 
-    // Parse JSON from AI response
+    // ✅ Strip any text before the first { — Claude sometimes adds preamble
+    const jsonStart = rawText.indexOf("{");
+    const jsonEnd   = rawText.lastIndexOf("}");
+    const cleanText = jsonStart !== -1 && jsonEnd !== -1
+      ? rawText.slice(jsonStart, jsonEnd + 1)
+      : rawText;
+
+    // ✅ Parse JSON from AI response
     let parsed;
     try {
-      parsed = JSON.parse(rawText.replace(/```json|```/g, "").trim());
+      parsed = JSON.parse(cleanText.replace(/```json|```/g, "").trim());
     } catch {
-      // fallback if AI didn't return clean JSON
-      parsed = { reply: rawText, results: [], needsMoreInfo: false };
+      // ✅ Fallback — try to extract just the reply field with regex
+      const replyMatch = rawText.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      parsed = {
+        reply: replyMatch
+          ? replyMatch[1].replace(/\\n/g, "\n")
+          : "Let me help you find something great! What are you looking for?",
+        results: [],
+        needsMoreInfo: false,
+      };
     }
 
     return res.status(200).json({
@@ -121,7 +133,6 @@ Always reply with this exact JSON structure and nothing else:
       resultIds: (parsed.results || []).map((r) => r.id),
       reasons: Object.fromEntries((parsed.results || []).map((r) => [r.id, r.reason])),
       needsMoreInfo: parsed.needsMoreInfo || false,
-      // pass back usage for monitoring
       usage: data.usage,
     });
   } catch (err) {
