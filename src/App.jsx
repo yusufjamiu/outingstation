@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SavedEventsProvider } from './context/SavedEventsContext';
 import ToastContainer from './components/ToastContainer';
+import OutingStationAI from './components/OutingStationAI';
 
 // Layouts
 import UserLayout from './layouts/UserLayout';
@@ -101,6 +102,7 @@ function App() {
           <ScrollToTop />
           <div className="App">
             <ToastContainer />
+            <OutingStationAI />
             <Routes>
               {/* PUBLIC ROUTES */}
               <Route path="/preview" element={<ComingSoon />} />
