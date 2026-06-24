@@ -1,6 +1,5 @@
 // src/components/OutingStationAI.jsx
 // Outing AI — powered by Claude Haiku via /api/ai-recommend
-// Fixes: bookmark saves to Firestore + city filter applied before sending to AI
 
 import React, { useState, useRef, useEffect } from "react";
 import { collection, getDocs, doc, setDoc, deleteDoc } from "firebase/firestore";
@@ -22,10 +21,8 @@ const cityOf = (text) => {
   return CITIES.find((c) => t.includes(c.toLowerCase())) || "";
 };
 
-// ✅ Check if an event's city matches the user's city
-// Flexible match — "Lagos" matches "Lagos Island", "Ikeja Lagos", etc.
 const matchesCity = (eventCity, userCity) => {
-  if (!userCity) return true; // no user city set — show everything
+  if (!userCity) return true;
   if (!eventCity) return false;
   const ec = eventCity.toLowerCase();
   const uc = userCity.toLowerCase().split(",")[0].trim();
@@ -39,7 +36,7 @@ const CATEGORY_MOODS = {
   "Family & Kids Fun": ["chill", "explore"], "Sport & Fitness": ["explore"],
   "Networking & Social": ["explore", "learn"], "Business & Tech": ["learn"],
   "Education": ["learn"], "Religion & Community": ["learn", "chill"],
-  "Malls": ["explore", "chill"], "Spas": ["chill"], "Other": ["explore"],
+  "Malls": ["explore", "chill"], "Spas": ["chill"], "Halls": ["explore"], "Other": ["explore"],
 };
 const VIBE_KEYWORDS = {
   outdoor: ["outdoor", "open-air", "park", "garden", "beach", "nature", "rooftop"],
@@ -52,6 +49,7 @@ const VIBE_KEYWORDS = {
   business: ["business", "ceo", "entrepreneur", "summit", "conference", "founder"],
   career: ["career", "job", "bootcamp", "skill"],
   religious: ["church", "mosque", "worship", "faith", "prayer", "gospel"],
+  hall: ["hall", "venue", "auditorium", "conference centre", "event centre", "banquet"],
 };
 
 function normEvent(doc) {
@@ -171,10 +169,9 @@ const STARTERS = [
   "🎓 Events on my campus",
   "🍔 Campus food vendors",
   "🎵 Live music tonight",
-  "🧭 What's happening near me?",
+  "🏛️ Halls & venues near me",
 ];
 
-// ✅ Real Web Share API with clipboard fallback
 async function shareItem(title, url, flash) {
   const shareData = { title, text: `Check out "${title}" on OutingStation`, url: url || window.location.origin };
   try {
@@ -192,7 +189,6 @@ async function shareItem(title, url, flash) {
   }
 }
 
-// ✅ Paywall overlay shown over blurred cards
 function PaywallOverlay() {
   return (
     <div style={{
@@ -245,7 +241,7 @@ export default function OutingStationAI() {
   const [inputText,    setInputText]    = useState("");
   const [loading,      setLoading]      = useState(false);
   const [history,      setHistory]      = useState([]);
-  const [saved,        setSaved]        = useState(new Set()); // ✅ Set of saved event IDs
+  const [saved,        setSaved]        = useState(new Set());
   const [toast,        setToast]        = useState("");
   const [isMd,         setIsMd]         = useState(false);
   const [showStarters, setShowStarters] = useState(true);
@@ -255,9 +251,7 @@ export default function OutingStationAI() {
 
   const isLoggedIn  = !!currentUser;
   const inputLocked = !isLoggedIn && guestQueryUsed;
-
-  // ✅ User's city from their profile
-  const userCity = userProfile?.city || "";
+  const userCity    = userProfile?.city || "";
 
   useEffect(() => {
     const check = () => setIsMd(window.innerWidth >= 640);
@@ -271,7 +265,6 @@ export default function OutingStationAI() {
     return () => clearTimeout(t);
   }, []);
 
-  // ✅ Load events filtered by user's city + load their saved events
   useEffect(() => {
     if (!open || loaded) return;
     (async () => {
@@ -286,23 +279,25 @@ export default function OutingStationAI() {
           .map(normEvent)
           .filter((x) => x.title && x.status === "published");
 
-        // ✅ Filter events by user's city — only send relevant events to AI
-        // Campus events (eventType === 'campus') bypass city filter
+        // ✅ City filter:
+        // - Campus events bypass (they're university-specific, not city-bound)
+        // - Places bypass (halls, venues, restaurants are permanent — show across all cities)
+        // - Regular events filtered by user's city
         const cityFilteredEvents = allEvents.filter((e) =>
-          e.eventType === "campus" || matchesCity(e.city, userCity)
+          e.eventType === "campus" ||
+          e.isPlace ||
+          matchesCity(e.city, userCity)
         );
 
         setEvents(cityFilteredEvents);
         setVendors((vSnap.docs || []).map(normVendor));
         setUniversities((uSnap.docs || []).map((d) => d.data().name || d.data().title || d.id).filter(Boolean));
 
-        // ✅ Load user's existing saved events from Firestore
         if (currentUser) {
           const savedSnap = await getDocs(
             collection(db, "users", currentUser.uid, "savedEvents")
           ).catch(() => ({ docs: [] }));
-          const savedIds = new Set(savedSnap.docs.map((d) => d.id));
-          setSaved(savedIds);
+          setSaved(new Set(savedSnap.docs.map((d) => d.id)));
         }
       } catch (e) {
         console.error("Outing AI load failed", e);
@@ -318,8 +313,8 @@ export default function OutingStationAI() {
       const name = userProfile?.name?.split(" ")[0] || userProfile?.displayName?.split(" ")[0];
       const city = userCity ? ` in ${userCity.split(",")[0]}` : "";
       const greeting = name
-        ? `Hi ${name} 👋 I'm Outing AI. Tell me what you're looking for${city} — events, places, campus vibes — and I'll find the best picks for you.`
-        : `Hi 👋 I'm Outing AI. Tell me what you're looking for — events, a chill spot, campus vendors — and I'll find the perfect match.`;
+        ? `Hi ${name} 👋 I'm Outing AI. Tell me what you're looking for${city} — events, places, halls, campus vibes — and I'll find the best picks for you.`
+        : `Hi 👋 I'm Outing AI. Tell me what you're looking for — events, a chill spot, a hall, campus vendors — and I'll find the perfect match.`;
       setMessages([{ from:"ai", text:greeting }]);
     }
   }, [open]); // eslint-disable-line
@@ -336,14 +331,9 @@ export default function OutingStationAI() {
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2000); };
 
-  // ✅ Toggle save — writes to Firestore users/{uid}/savedEvents/{eventId}
   const toggleSave = async (id) => {
-    if (!isLoggedIn) {
-      flash("Login to save events");
-      return;
-    }
+    if (!isLoggedIn) { flash("Login to save events"); return; }
     const isSaved = saved.has(id);
-    // Optimistic UI update
     setSaved((prev) => {
       const next = new Set(prev);
       isSaved ? next.delete(id) : next.add(id);
@@ -354,20 +344,15 @@ export default function OutingStationAI() {
       if (isSaved) {
         await deleteDoc(ref);
       } else {
-        // Find the event to save its basic info
         const event = events.find((e) => e.id === id);
         await setDoc(ref, {
-          eventId: id,
-          savedAt: new Date(),
-          title: event?.title || "",
-          imageUrl: event?.imageUrl || "",
-          city: event?.city || "",
+          eventId: id, savedAt: new Date(),
+          title: event?.title || "", imageUrl: event?.imageUrl || "", city: event?.city || "",
         });
         flash("Event saved! ✨");
       }
     } catch (err) {
       console.error("Save failed:", err);
-      // Revert optimistic update on error
       setSaved((prev) => {
         const next = new Set(prev);
         isSaved ? next.add(id) : next.delete(id);
@@ -393,13 +378,9 @@ export default function OutingStationAI() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: msg,
-          history,
-          // ✅ Already city-filtered — AI only sees events in user's city
+          message: msg, history,
           events: events.filter((e) => e.status === "published"),
-          vendors,
-          universities,
-          userCity,
+          vendors, universities, userCity,
         }),
       });
       const data = await res.json();
@@ -409,10 +390,8 @@ export default function OutingStationAI() {
         .filter(Boolean);
 
       setMessages((m) => [...m, {
-        from:"ai",
-        text:data.reply,
-        results:resolvedResults,
-        reasons:data.reasons || {},
+        from:"ai", text:data.reply,
+        results:resolvedResults, reasons:data.reasons || {},
         isGuestPreview:!isLoggedIn,
       }]);
       setHistory([...newHistory, { role:"assistant", content:data.reply }]);
@@ -433,7 +412,7 @@ export default function OutingStationAI() {
     setTimeout(() => setMessages([{ from:"ai", text:"Fresh start 👋 What are you looking for?" }]), 60);
   };
 
-  const goToEvent  = (r) => { window.location.href = r.slug ? `/e/${r.slug}` : `/event/${r.id}`; };
+  const goToEvent   = (r) => { window.location.href = r.slug ? `/e/${r.slug}` : `/event/${r.id}`; };
   const getShareUrl = (r) => {
     const base = window.location.origin;
     if (r.slug) return `${base}/e/${r.slug}`;
@@ -453,12 +432,8 @@ export default function OutingStationAI() {
           <div style={S.cardBody}>
             <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8 }}>
               <h3 style={S.cardTitle}>{r.title}</h3>
-              {/* ✅ Bookmark now saves to Firestore */}
-              <button
-                onClick={() => toggleSave(r.id)}
-                title={isSaved ? "Remove from saved" : "Save event"}
-                style={{ background:"none",border:"none",cursor:"pointer",color:isSaved?OS_PRIMARY:"#c0d4da",flexShrink:0 }}
-              >
+              <button onClick={() => toggleSave(r.id)} title={isSaved ? "Remove from saved" : "Save event"}
+                style={{ background:"none",border:"none",cursor:"pointer",color:isSaved?OS_PRIMARY:"#c0d4da",flexShrink:0 }}>
                 <Bookmark size={17} fill={isSaved?"currentColor":"none"} />
               </button>
             </div>
@@ -490,7 +465,6 @@ export default function OutingStationAI() {
 
   const ResultsBlock = ({ results, reasons, isGuestPreview }) => {
     if (!results || results.length === 0) return null;
-
     if (!isGuestPreview) {
       return (
         <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:8,marginLeft:36 }}>
@@ -499,10 +473,8 @@ export default function OutingStationAI() {
         </div>
       );
     }
-
     const first = results[0];
     const rest  = results.slice(1);
-
     return (
       <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:8,marginLeft:36 }}>
         <ResultCard key={first.id} r={first} reason={reasons?.[first.id]} />
@@ -549,16 +521,13 @@ export default function OutingStationAI() {
       {open && (
         <div style={isMd ? S.overlayMd : S.overlay} onClick={(e) => { if (e.target === e.currentTarget && isMd) setOpen(false); }}>
           <div style={{ ...S.window, ...(isMd ? S.windowMd : {}) }}>
-
             <div style={S.header}>
               <div style={S.headerGlow}/>
               <div style={S.headerIcon}><Sparkles size={19} color={OS_PRIMARY}/></div>
               <div style={S.headerInfo}>
                 <div style={S.headerH1}>Outing AI</div>
                 <div style={S.headerSub}>
-                  {userCity
-                    ? `Showing events in ${userCity.split(",")[0]} · OutingStation`
-                    : "Your personal guide to what's happening around you"}
+                  {userCity ? `Showing events & places in ${userCity.split(",")[0]} · OutingStation` : "Your personal guide to what's happening around you"}
                 </div>
               </div>
               <div style={S.betaBadge}><div style={S.liveDot}/> Beta</div>
@@ -601,7 +570,6 @@ export default function OutingStationAI() {
                   ))}
                 </div>
               )}
-
               {inputLocked ? (
                 <div style={{ background:`${OS_PRIMARY}10`, border:`1.5px solid ${OS_PRIMARY}44`, borderRadius:16, padding:"12px 16px", textAlign:"center" }}>
                   <p style={{ fontSize:13,color:"#0d2d36",fontWeight:600,marginBottom:8 }}>🔒 Login to ask more questions</p>
@@ -613,17 +581,10 @@ export default function OutingStationAI() {
               ) : (
                 <>
                   <div style={S.inputRow}>
-                    <textarea
-                      ref={textareaRef}
-                      className="os-input"
-                      rows={1}
-                      value={inputText}
-                      onChange={handleInputChange}
-                      onKeyDown={handleKeyDown}
+                    <textarea ref={textareaRef} className="os-input" rows={1} value={inputText}
+                      onChange={handleInputChange} onKeyDown={handleKeyDown}
                       placeholder={isLoggedIn ? "Type what you're looking for…" : "Try a question — 1 free search for guests"}
-                      style={S.textarea}
-                      disabled={loading}
-                    />
+                      style={S.textarea} disabled={loading} />
                     <button className="os-send-btn" style={S.sendBtn} onClick={() => send()} disabled={!inputText.trim() || loading}>
                       <Send size={16}/>
                     </button>
@@ -635,7 +596,6 @@ export default function OutingStationAI() {
                   )}
                 </>
               )}
-
               {isLoggedIn && (
                 <div style={S.footerHint}>
                   <Compass size={11} color={OS_PRIMARY}/> Powered by Outing AI · OutingStation

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { Video, Briefcase, Palette, UtensilsCrossed, Dumbbell,
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv, GraduationCap,
-  ShoppingBag, Sparkles } from 'lucide-react';
+  ShoppingBag, Sparkles, Building2 } from 'lucide-react';
 import campusImg from '../../assets/campus1.jpg';
 import campusPlacesImg from '../../assets/campus_places.jpg';
 
@@ -32,7 +32,6 @@ export default function CategoryBrowse() {
     { title: 'Nightlife & Parties', icon: Music, bg: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-100', link: '/dashboard/category/Nightlife & Parties?places=true' },
     { title: 'Family & Kids Fun', icon: Baby, bg: 'bg-yellow-50', text: 'text-yellow-600', border: 'border-yellow-100', link: '/dashboard/category/Family & Kids Fun?places=true' },
     { title: 'Cinema & Show', icon: Tv, bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-100', link: '/dashboard/category/Cinema & Show?places=true' },
-    // ✅ Places only
     { title: 'Malls', icon: ShoppingBag, bg: 'bg-sky-50', text: 'text-sky-600', border: 'border-sky-100', link: '/dashboard/category/Malls?places=true' },
     { title: 'Spas', icon: Sparkles, bg: 'bg-pink-50', text: 'text-pink-400', border: 'border-pink-100', link: '/dashboard/category/Spas?places=true' },
   ];
@@ -72,6 +71,7 @@ export default function CategoryBrowse() {
         </div>
       )}
 
+      {/* ── Webinar banner (events tab) ── */}
       {activeTab === 'events' && !searchQuery && (
         <Link
           to="/dashboard/web-events"
@@ -81,7 +81,7 @@ export default function CategoryBrowse() {
             className="relative w-full h-24 sm:h-40 flex items-center"
             style={{ background: 'linear-gradient(135deg, #1E3A5F 0%, #0F2340 100%)' }}
           >
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-white/5"></div>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-white/5" />
             <div className="relative z-10 flex items-center gap-3 sm:gap-5 px-4 sm:px-6 w-full">
               <div className="bg-white/10 rounded-xl p-2 sm:p-3 flex-shrink-0">
                 <Video size={20} className="text-white sm:w-7 sm:h-7" />
@@ -101,6 +101,37 @@ export default function CategoryBrowse() {
         </Link>
       )}
 
+      {/* ✅ Halls banner (places tab) — mirrors webinar pattern */}
+      {activeTab === 'places' && !searchQuery && (
+        <Link
+          to="/dashboard/halls"
+          className="block mb-4 sm:mb-6 rounded-xl sm:rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition group"
+        >
+          <div
+            className="relative w-full h-24 sm:h-40 flex items-center"
+            style={{ background: 'linear-gradient(135deg, #0F4C3A 0%, #062820 100%)' }}
+          >
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-white/5" />
+            <div className="relative z-10 flex items-center gap-3 sm:gap-5 px-4 sm:px-6 w-full">
+              <div className="bg-white/10 rounded-xl p-2 sm:p-3 flex-shrink-0">
+                <Building2 size={20} className="text-white sm:w-7 sm:h-7" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-cyan-400 text-xs font-bold uppercase tracking-wider mb-0.5">All Nigeria</div>
+                <h3 className="text-white font-bold text-sm sm:text-xl leading-tight truncate">Halls & Venues</h3>
+                <p className="text-white/70 text-xs line-clamp-1 hidden sm:block">Event halls, conference centres & venues across every city</p>
+              </div>
+              <div className="flex-shrink-0 animate-pulse">
+                <div className="flex items-center gap-1 bg-white/10 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full">
+                  <span className="text-white font-semibold text-xs whitespace-nowrap">Explore →</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Link>
+      )}
+
+      {/* Category grid */}
       <div className="mb-4 sm:mb-6">
         <h2 className="text-sm font-bold text-gray-700 mb-2 sm:mb-3">
           {searchQuery ? `Results for "${searchQuery}"` : `All ${activeTab === 'events' ? 'Event' : 'Place'} Categories`}
@@ -132,6 +163,7 @@ export default function CategoryBrowse() {
         )}
       </div>
 
+      {/* Campus Events banner */}
       {activeTab === 'events' && !searchQuery && (
         <Link to="/dashboard/uni-events" className="block rounded-xl sm:rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition group">
           <div className="relative w-full h-36 sm:h-52">
@@ -153,6 +185,7 @@ export default function CategoryBrowse() {
         </Link>
       )}
 
+      {/* Campus Places banner */}
       {activeTab === 'places' && !searchQuery && (
         <Link to="/dashboard/campus-places" className="block rounded-xl sm:rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition group">
           <div className="relative w-full h-36 sm:h-52">

@@ -51,6 +51,7 @@ import WebinarEvents from './pages/dashboard/WebinarEvents';
 import CategoryBrowse from './pages/dashboard/CategoryBrowse';
 import CampusEvents from './pages/dashboard/CampusEvents';
 import CampusPlaces from './pages/dashboard/CampusPlaces';
+import HallsPage from './pages/dashboard/HallsPage';
 
 // Ambassador Dashboard Pages
 import AmbassadorDashboard from './pages/ambassador/AmbassadorDashboard';
@@ -139,6 +140,7 @@ function App() {
                 <Route path="/dashboard/uni-events" element={<CampusEvents />} />
                 <Route path="/dashboard/web-events" element={<WebinarEvents />} />
                 <Route path="/dashboard/campus-places" element={<CampusPlaces />} />
+                <Route path="/dashboard/halls" element={<HallsPage />} />
                 <Route path="/dashboard/category/:slug" element={<GenericCategory />} />
                 <Route path="/saved-events" element={<SavedEvents />} />
                 <Route path="/settings" element={<Settings />} />
