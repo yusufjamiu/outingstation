@@ -526,7 +526,7 @@ export default function OutingStationAI() {
           )}
           <button onClick={() => { setOpen(true); setShowNudge(false); }} style={S.fab}>
             <div style={S.fabRing}/>
-            <Sparkles size={18}/> Ask Outing AI
+            <Compass size={18}/> Ask Outing AI
           </button>
         </div>
       )}
@@ -537,7 +537,7 @@ export default function OutingStationAI() {
 
             <div style={S.header}>
               <div style={S.headerGlow}/>
-              <div style={S.headerIcon}><Sparkles size={19} color={OS_PRIMARY}/></div>
+              <div style={S.headerIcon}><Compass size={19} color={OS_PRIMARY}/></div>
               <div style={S.headerInfo}>
                 <div style={S.headerH1}>Outing AI</div>
                 <div style={S.headerSub}>
@@ -559,7 +559,7 @@ export default function OutingStationAI() {
                   {m.from === "ai" && (
                     <>
                       <div style={S.msgAI}>
-                        <div style={S.aiAvatar}><Sparkles size={13} color={OS_PRIMARY}/></div>
+                        <div style={S.aiAvatar}><Compass size={13} color={OS_PRIMARY}/></div>
                         <div style={m.isError ? S.errorBubble : S.aiBubble}>{m.text}</div>
                       </div>
                       <ResultsBlock results={m.results} reasons={m.reasons} isGuestPreview={m.isGuestPreview} />
@@ -572,7 +572,7 @@ export default function OutingStationAI() {
               ))}
               {loading && (
                 <div style={S.msgAI} className="os-msg-in">
-                  <div style={S.aiAvatar}><Sparkles size={13} color={OS_PRIMARY}/></div>
+                  <div style={S.aiAvatar}><Compass size={13} color={OS_PRIMARY}/></div>
                   <div style={S.typingWrap}><span className="os-dot"/><span className="os-dot"/><span className="os-dot"/></div>
                 </div>
               )}
