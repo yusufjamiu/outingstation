@@ -15,8 +15,9 @@ export default async function handler(req, res) {
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set in environment variables" });
 
   // ── Build context string from Firestore data ──────────────────────────────
+  // ✅ priceNaira included so Claude can compare actual numbers against user budget
   const eventsContext = (events || []).slice(0, 120).map((e) =>
-    `[ID:${e.id}] ${e.title} | ${e.kind} | city:${e.city || "?"} | area:${e.area || "?"} | price:${e.priceLabel} | mood:${(e.moods || []).join("/")} | campus:${e.eventType === "campus" ? "yes" : "no"} | university:${e.university || "-"} | desc:${(e.desc || "").slice(0, 80)}`
+    `[ID:${e.id}] ${e.title} | ${e.kind} | city:${e.city || "?"} | area:${e.area || "?"} | price:${e.priceLabel} | priceNaira:${e.priceNaira ?? 0} | mood:${(e.moods || []).join("/")} | campus:${e.eventType === "campus" ? "yes" : "no"} | university:${e.university || "-"} | desc:${(e.desc || "").slice(0, 80)}`
   ).join("\n");
 
   const vendorsContext = (vendors || []).slice(0, 60).map((v) =>
@@ -42,6 +43,15 @@ YOUR JOB:
 - If you need more info (e.g. city or mood), ask ONE short question
 - Be warm, conversational, and use a Nigerian-friendly tone — casual but helpful
 - Use light emoji where it feels natural 🎉
+
+BUDGET RULES (VERY IMPORTANT):
+- If the user mentions a budget (e.g. "I have 10k", "₦5000", "20 thousand"), parse it as naira: "10k" = 10000, "5k" = 5000, "20k" = 20000
+- ONLY recommend events/places where priceNaira is less than or equal to the user's budget
+- Free events (priceNaira: 0) always qualify regardless of budget
+- NEVER recommend an event whose priceNaira exceeds the stated budget — this is a hard rule
+- If the user wants to "spend" a budget on experiences, prefer paid events/places that make good use of that budget — not just the cheapest ones, but nothing that exceeds it
+- If no events fit within the budget, say so honestly and suggest the closest affordable options
+- "Ticketed" means there is a ticket price but it was not specified — treat these cautiously when a strict budget is mentioned
 
 CRITICAL RESPONSE FORMAT:
 You MUST return ONLY a valid JSON object — no text before it, no text after it, no markdown, no backticks, no explanation.
@@ -117,7 +127,6 @@ RULES:
     try {
       parsed = JSON.parse(cleanText.replace(/```json|```/g, "").trim());
     } catch {
-      // ✅ Fallback — try to extract just the reply field with regex
       const replyMatch = rawText.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/);
       parsed = {
         reply: replyMatch

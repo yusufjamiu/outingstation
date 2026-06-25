@@ -1,5 +1,6 @@
 // src/components/OutingStationAI.jsx
 // Outing AI — powered by Claude Haiku via /api/ai-recommend
+// Fixes: bookmark saves to Firestore + city filter + past events filtered out
 
 import React, { useState, useRef, useEffect } from "react";
 import { collection, getDocs, doc, setDoc, deleteDoc } from "firebase/firestore";
@@ -38,6 +39,7 @@ const CATEGORY_MOODS = {
   "Education": ["learn"], "Religion & Community": ["learn", "chill"],
   "Malls": ["explore", "chill"], "Spas": ["chill"], "Halls": ["explore"], "Other": ["explore"],
 };
+
 const VIBE_KEYWORDS = {
   outdoor: ["outdoor", "open-air", "park", "garden", "beach", "nature", "rooftop"],
   "food spot": ["food", "restaurant", "dining", "eat", "cuisine", "menu"],
@@ -72,6 +74,7 @@ function normEvent(doc) {
     id: doc.id || d.id, title: d.title || "Untitled", desc: d.description || "",
     emoji: isPlace ? "📍" : "🎉", isPlace, moods, vibes, price,
     priceLabel: price === "free" ? "Free" : `₦${amount.toLocaleString()}`,
+    priceNaira: amount,
     area: (d.location || d.address || "").split(",")[0].trim() || "Lagos",
     city: cityOf(locText),
     imageUrl: d.imageUrl || (d.images && d.images[0]) || null,
@@ -79,6 +82,7 @@ function normEvent(doc) {
     status: d.status || "published",
     eventType: d.eventType || "regular", university: d.university || "",
     campusSubCategory: d.campusSubCategory || "",
+    // ✅ Store date in ms for filtering
     dateMs: d.date && d.date.seconds ? d.date.seconds * 1000 : null,
   };
 }
@@ -168,8 +172,8 @@ const STARTERS = [
   "😌 Chill spot for a date",
   "🎓 Events on my campus",
   "🍔 Campus food vendors",
-  "🎵 Live music tonight",
   "🏛️ Halls & venues near me",
+  "🧭 What's happening near me?",
 ];
 
 async function shareItem(title, url, flash) {
@@ -275,13 +279,20 @@ export default function OutingStationAI() {
           getDocs(collection(db, "universities")).catch(() => ({ docs: [] })),
         ]);
 
+        const now = Date.now();
+
         const allEvents = evSnap.docs
           .map(normEvent)
-          .filter((x) => x.title && x.status === "published");
+          .filter((x) => {
+            if (!x.title || x.status !== "published") return false;
+            if (x.isPlace) return true;       // ✅ places have no expiry — always show
+            if (!x.dateMs) return true;       // ✅ no date set (TBA) — still show
+            return x.dateMs >= now;           // ✅ only future/today events
+          });
 
         // ✅ City filter:
-        // - Campus events bypass (they're university-specific, not city-bound)
-        // - Places bypass (halls, venues, restaurants are permanent — show across all cities)
+        // - Campus events bypass (university-specific)
+        // - Places bypass (halls, venues — permanent, all cities)
         // - Regular events filtered by user's city
         const cityFilteredEvents = allEvents.filter((e) =>
           e.eventType === "campus" ||
@@ -313,8 +324,8 @@ export default function OutingStationAI() {
       const name = userProfile?.name?.split(" ")[0] || userProfile?.displayName?.split(" ")[0];
       const city = userCity ? ` in ${userCity.split(",")[0]}` : "";
       const greeting = name
-        ? `Hi ${name} 👋 I'm Outing AI. Tell me what you're looking for${city} — events, places, halls, campus vibes — and I'll find the best picks for you.`
-        : `Hi 👋 I'm Outing AI. Tell me what you're looking for — events, a chill spot, a hall, campus vendors — and I'll find the perfect match.`;
+        ? `Hi ${name} 👋 I'm Outing AI. Tell me what you're looking for${city} — events, places, campus vibes — and I'll find the best picks for you.`
+        : `Hi 👋 I'm Outing AI. Tell me what you're looking for — events, a chill spot, campus vendors — and I'll find the perfect match.`;
       setMessages([{ from:"ai", text:greeting }]);
     }
   }, [open]); // eslint-disable-line
@@ -415,8 +426,7 @@ export default function OutingStationAI() {
   const goToEvent   = (r) => { window.location.href = r.slug ? `/e/${r.slug}` : `/event/${r.id}`; };
   const getShareUrl = (r) => {
     const base = window.location.origin;
-    if (r.slug) return `${base}/e/${r.slug}`;
-    return `${base}/event/${r.id}`;
+    return r.slug ? `${base}/e/${r.slug}` : `${base}/event/${r.id}`;
   };
 
   const ResultCard = ({ r, reason }) => {
@@ -465,6 +475,7 @@ export default function OutingStationAI() {
 
   const ResultsBlock = ({ results, reasons, isGuestPreview }) => {
     if (!results || results.length === 0) return null;
+
     if (!isGuestPreview) {
       return (
         <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:8,marginLeft:36 }}>
@@ -473,8 +484,10 @@ export default function OutingStationAI() {
         </div>
       );
     }
+
     const first = results[0];
     const rest  = results.slice(1);
+
     return (
       <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:8,marginLeft:36 }}>
         <ResultCard key={first.id} r={first} reason={reasons?.[first.id]} />
@@ -521,13 +534,16 @@ export default function OutingStationAI() {
       {open && (
         <div style={isMd ? S.overlayMd : S.overlay} onClick={(e) => { if (e.target === e.currentTarget && isMd) setOpen(false); }}>
           <div style={{ ...S.window, ...(isMd ? S.windowMd : {}) }}>
+
             <div style={S.header}>
               <div style={S.headerGlow}/>
               <div style={S.headerIcon}><Sparkles size={19} color={OS_PRIMARY}/></div>
               <div style={S.headerInfo}>
                 <div style={S.headerH1}>Outing AI</div>
                 <div style={S.headerSub}>
-                  {userCity ? `Showing events & places in ${userCity.split(",")[0]} · OutingStation` : "Your personal guide to what's happening around you"}
+                  {userCity
+                    ? `Showing events in ${userCity.split(",")[0]} · OutingStation`
+                    : "Your personal guide to what's happening around you"}
                 </div>
               </div>
               <div style={S.betaBadge}><div style={S.liveDot}/> Beta</div>
@@ -570,6 +586,7 @@ export default function OutingStationAI() {
                   ))}
                 </div>
               )}
+
               {inputLocked ? (
                 <div style={{ background:`${OS_PRIMARY}10`, border:`1.5px solid ${OS_PRIMARY}44`, borderRadius:16, padding:"12px 16px", textAlign:"center" }}>
                   <p style={{ fontSize:13,color:"#0d2d36",fontWeight:600,marginBottom:8 }}>🔒 Login to ask more questions</p>
@@ -581,10 +598,17 @@ export default function OutingStationAI() {
               ) : (
                 <>
                   <div style={S.inputRow}>
-                    <textarea ref={textareaRef} className="os-input" rows={1} value={inputText}
-                      onChange={handleInputChange} onKeyDown={handleKeyDown}
+                    <textarea
+                      ref={textareaRef}
+                      className="os-input"
+                      rows={1}
+                      value={inputText}
+                      onChange={handleInputChange}
+                      onKeyDown={handleKeyDown}
                       placeholder={isLoggedIn ? "Type what you're looking for…" : "Try a question — 1 free search for guests"}
-                      style={S.textarea} disabled={loading} />
+                      style={S.textarea}
+                      disabled={loading}
+                    />
                     <button className="os-send-btn" style={S.sendBtn} onClick={() => send()} disabled={!inputText.trim() || loading}>
                       <Send size={16}/>
                     </button>
@@ -596,6 +620,7 @@ export default function OutingStationAI() {
                   )}
                 </>
               )}
+
               {isLoggedIn && (
                 <div style={S.footerHint}>
                   <Compass size={11} color={OS_PRIMARY}/> Powered by Outing AI · OutingStation
