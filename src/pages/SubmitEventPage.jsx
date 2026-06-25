@@ -4,6 +4,15 @@ import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore
 import { db } from '../firebase';
 import { Gift, X, Upload, Plus, ChevronRight, ChevronLeft, Check, Ticket, Trash2 } from 'lucide-react';
 
+
+const makeSlug = (title, id) =>
+  title.toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+  + '-' + id.slice(0, 5);
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const VENDOR_CATEGORIES = [
@@ -799,6 +808,13 @@ const SubmitEventPage = () => {
           universityName: form.universityName || null,
           status: 'pending',
           submittedAt: serverTimestamp(),
+          slug: form.eventTitle
+    ? form.eventTitle.toLowerCase().trim()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+    : null,
         });
       }
       setSubmitSuccess(true);

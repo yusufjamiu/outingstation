@@ -2,10 +2,18 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Menu, ArrowLeft, Save, Upload, Plus, X } from 'lucide-react';
 import { AmbassadorSidebar } from '../../components/AmbassadorSidebar';
-import { doc, getDoc, addDoc, updateDoc, collection, getDocs, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, addDoc, setDoc, updateDoc, collection, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { uploadWithProgress, compressImage } from '../../services/cloudinaryService';
+
+const makeSlug = (title, id) =>
+  title.toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+  + '-' + id.slice(0, 5);
 
 // ✅ Campus-specific subcategories only
 const campusSubCategories = [
@@ -208,10 +216,11 @@ export default function AmbassadorPlaceForm() {
         await updateDoc(doc(db, 'events', id), placeData);
       } else {
         placeData.createdAt = serverTimestamp();
-        placeData.savedCount = 0;
-        placeData.createdBy = auth.currentUser?.uid || null;
-        placeData.createdByAmbassador = true;
-        await addDoc(collection(db, 'events'), placeData);
+placeData.savedCount = 0;
+placeData.createdBy = auth.currentUser?.uid || null;
+placeData.createdByAmbassador = true;
+const newRef = doc(collection(db, 'events'));
+await setDoc(newRef, { ...placeData, slug: makeSlug(form.title, newRef.id) });
       }
 
       navigate('/ambassador/places');
