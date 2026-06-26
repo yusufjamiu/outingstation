@@ -227,8 +227,8 @@ export default function AdminPlaceForm() {
       } else {
         placeData.createdAt = serverTimestamp();
         placeData.savedCount = 0;
-        const newRef = doc(collection(db, 'events'));
-await setDoc(newRef, { ...placeData, slug: makeSlug(form.title, newRef.id) });
+        const newRef = await addDoc(collection(db, 'events'), placeData);
+await updateDoc(newRef, { slug: makeSlug(form.title, newRef.id) });
       }
 
       navigate('/admin/places');

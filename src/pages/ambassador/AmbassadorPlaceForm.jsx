@@ -219,8 +219,8 @@ export default function AmbassadorPlaceForm() {
 placeData.savedCount = 0;
 placeData.createdBy = auth.currentUser?.uid || null;
 placeData.createdByAmbassador = true;
-const newRef = doc(collection(db, 'events'));
-await setDoc(newRef, { ...placeData, slug: makeSlug(form.title, newRef.id) });
+const newRef = await addDoc(collection(db, 'events'), placeData);
+await updateDoc(newRef, { slug: makeSlug(form.title, newRef.id) });
       }
 
       navigate('/ambassador/places');
