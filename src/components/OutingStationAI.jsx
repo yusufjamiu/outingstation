@@ -1,637 +1,710 @@
 // src/components/OutingStationAI.jsx
-// Outing AI — powered by Claude Haiku via /api/ai-recommend
-// Fixes: bookmark saves to Firestore + city filter + past events filtered out
+// Outing AI — Web chat component
+//
+// PROMPT SYSTEM:
+//   ✅ Guests: 1 free prompt → login gate
+//   ✅ Logged-in: 3 free prompts/day tracked in Firestore
+//   ✅ After 3 free: ₦50 credits deducted per prompt
+//   ✅ No credits: message with earn options + hours until reset
+//   ✅ 24hr reset from first prompt of the day
 
-import React, { useState, useRef, useEffect } from "react";
-import { collection, getDocs, doc, setDoc, deleteDoc } from "firebase/firestore";
-import { db } from "../firebase";
-import { useAuth } from "../context/AuthContext";
+import { useState, useRef, useEffect } from 'react';
+import { Compass, X, Send, RefreshCw, RotateCcw } from 'lucide-react';
+import { db, auth } from '../firebase';
 import {
-  Sparkles, Bookmark, Share2, MapPin, Ticket,
-  Compass, Check, X, MessageCircle, Send, RotateCcw, Lock,
-} from "lucide-react";
+  collection, getDocs, doc, getDoc, updateDoc,
+  query, where, orderBy, limit
+} from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
-const OS_PRIMARY   = "#5ADAEE";
-const OS_SECONDARY = "#47A2B6";
-const OS_DARK_TEXT = "#0d2d36";
-
-const CITIES = ["Lagos", "Abuja", "Ibadan", "Port Harcourt", "Benin", "Kano"];
-
-const cityOf = (text) => {
-  const t = (text || "").toLowerCase();
-  return CITIES.find((c) => t.includes(c.toLowerCase())) || "";
-};
-
-const matchesCity = (eventCity, userCity) => {
-  if (!userCity) return true;
-  if (!eventCity) return false;
-  const ec = eventCity.toLowerCase();
-  const uc = userCity.toLowerCase().split(",")[0].trim();
-  return ec.includes(uc) || uc.includes(ec);
-};
-
-const CATEGORY_MOODS = {
-  "Nightlife & Parties": ["party"], "Music & Concerts": ["party", "chill"],
-  "Gaming & Esport": ["party", "explore"], "Art & Culture": ["explore", "chill"],
-  "Cinema & Show": ["chill"], "Food & Dining": ["chill", "explore"],
-  "Family & Kids Fun": ["chill", "explore"], "Sport & Fitness": ["explore"],
-  "Networking & Social": ["explore", "learn"], "Business & Tech": ["learn"],
-  "Education": ["learn"], "Religion & Community": ["learn", "chill"],
-  "Malls": ["explore", "chill"], "Spas": ["chill"], "Halls": ["explore"], "Other": ["explore"],
-};
-
-const VIBE_KEYWORDS = {
-  outdoor: ["outdoor", "open-air", "park", "garden", "beach", "nature", "rooftop"],
-  "food spot": ["food", "restaurant", "dining", "eat", "cuisine", "menu"],
-  café: ["café", "cafe", "coffee", "brunch"],
-  cinema: ["cinema", "movie", "film", "screening"],
-  "live music": ["live music", "concert", "band", "dj", "performance"],
-  clubbing: ["club", "rave", "nightclub"], lounge: ["lounge", "bar", "cocktail"],
-  tech: ["tech", "startup", "developer", "software", "ai"],
-  business: ["business", "ceo", "entrepreneur", "summit", "conference", "founder"],
-  career: ["career", "job", "bootcamp", "skill"],
-  religious: ["church", "mosque", "worship", "faith", "prayer", "gospel"],
-  hall: ["hall", "venue", "auditorium", "conference centre", "event centre", "banquet"],
-};
-
-function normEvent(doc) {
-  const d = doc.data ? doc.data() : doc;
-  const desc = (d.description || "").toLowerCase();
-  let price = "free";
-  const amount = Number(d.ticketPrice || d.price || 0);
-  if (d.isFree || amount === 0) price = "free";
-  else if (amount <= 10000) price = "low";
-  else if (amount <= 50000) price = "medium";
-  else price = "premium";
-  const moods = CATEGORY_MOODS[d.category] || ["explore"];
-  let vibes = [];
-  if (Array.isArray(d.tags) && d.tags.length) vibes = d.tags.map((t) => String(t).toLowerCase());
-  else for (const [v, w] of Object.entries(VIBE_KEYWORDS)) if (w.some((x) => desc.includes(x))) vibes.push(v);
-  const isPlace = d.subCategory === "places";
-  const locText = `${d.location || ""} ${d.address || ""}`;
-  return {
-    kind: isPlace ? "place" : "event",
-    id: doc.id || d.id, title: d.title || "Untitled", desc: d.description || "",
-    emoji: isPlace ? "📍" : "🎉", isPlace, moods, vibes, price,
-    priceLabel: price === "free" ? "Free" : `₦${amount.toLocaleString()}`,
-    priceNaira: amount,
-    area: (d.location || d.address || "").split(",")[0].trim() || "Lagos",
-    city: cityOf(locText),
-    imageUrl: d.imageUrl || (d.images && d.images[0]) || null,
-    mapLocation: d.mapLocation || null, slug: d.slug || null,
-    status: d.status || "published",
-    eventType: d.eventType || "regular", university: d.university || "",
-    campusSubCategory: d.campusSubCategory || "",
-    // ✅ Store date in ms for filtering
-    dateMs: d.date && d.date.seconds ? d.date.seconds * 1000 : null,
-  };
-}
-
-function normVendor(doc) {
-  const d = doc.data ? doc.data() : doc;
-  return {
-    kind: "vendor", id: doc.id || d.id,
-    title: d.shopName || d.name || "Vendor", desc: d.description || "", emoji: "🛒",
-    category: d.category || "", university: d.university || "",
-    imageUrl: d.imageUrl || (d.images && d.images[0]) || null,
-    whatsapp: (d.whatsappNumber || d.organizerPhone || "").replace(/[^0-9]/g, ""),
-    area: d.university || "", priceLabel: "Vendor",
-  };
-}
-
-if (typeof document !== "undefined" && !document.getElementById("os-ai-keyframes")) {
-  const style = document.createElement("style");
-  style.id = "os-ai-keyframes";
-  style.textContent = `
-    @keyframes os-pulse{0%{transform:scale(1);opacity:.7}70%,100%{transform:scale(1.12);opacity:0}}
-    @keyframes os-blink{0%,100%{opacity:1}50%{opacity:.3}}
-    @keyframes os-bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}
-    @keyframes os-fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-    .os-dot{width:6px;height:6px;border-radius:50%;background:${OS_PRIMARY};animation:os-bounce 1.2s ease-in-out infinite;display:inline-block}
-    .os-dot:nth-child(2){animation-delay:.15s}
-    .os-dot:nth-child(3){animation-delay:.3s}
-    .os-msg-in{animation:os-fadein 0.25s ease}
-    .os-send-btn:hover{opacity:.85}
-    .os-send-btn:disabled{opacity:.35;cursor:not-allowed}
-    .os-input:focus{border-color:${OS_PRIMARY} !important;outline:none}
-    .os-chip-btn:hover{background:${OS_PRIMARY}18 !important;border-color:${OS_PRIMARY} !important}
-  `;
-  document.head.appendChild(style);
-}
-
-const S = {
-  fabWrap:    { position:"fixed",bottom:20,right:20,zIndex:9999,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10 },
-  fab:        { display:"flex",alignItems:"center",gap:8,background:`linear-gradient(135deg,${OS_PRIMARY} 0%,${OS_SECONDARY} 100%)`,color:OS_DARK_TEXT,fontWeight:600,fontSize:14,padding:"13px 20px",borderRadius:50,border:"none",cursor:"pointer",boxShadow:`0 4px 24px ${OS_PRIMARY}55`,position:"relative" },
-  fabRing:    { position:"absolute",inset:-5,borderRadius:60,border:`2px solid ${OS_PRIMARY}55`,animation:"os-pulse 2.2s ease-out infinite",pointerEvents:"none" },
-  nudge:      { background:"#fff",border:"1px solid #e5f0f5",borderRadius:"16px 16px 16px 4px",padding:"10px 14px",maxWidth:200,position:"relative",fontSize:13,color:"#1a2a30",lineHeight:1.45,boxShadow:"0 2px 12px rgba(0,0,0,0.08)" },
-  nudgeX:     { position:"absolute",top:-9,right:-9,width:20,height:20,borderRadius:"50%",background:"#f0f4f5",border:"1px solid #d0dde0",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" },
-  overlay:    { position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center",background:"rgba(0,0,0,0.35)" },
-  overlayMd:  { position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"flex-end",padding:20,background:"transparent" },
-  window:     { width:"100%",maxWidth:460,background:"#fff",borderRadius:"28px 28px 0 0",boxShadow:"0 -8px 40px rgba(0,0,0,0.15)",display:"flex",flexDirection:"column",overflow:"hidden",height:"min(740px,90vh)" },
-  windowMd:   { borderRadius:28,boxShadow:"0 8px 50px rgba(0,0,0,0.18)" },
-  header:     { padding:"16px 18px",background:"linear-gradient(135deg,#182e38 0%,#0d1e26 100%)",display:"flex",alignItems:"center",gap:12,flexShrink:0,position:"relative",overflow:"hidden" },
-  headerGlow: { position:"absolute",top:-40,right:-40,width:140,height:140,background:`radial-gradient(circle,${OS_PRIMARY}22 0%,transparent 70%)`,borderRadius:"50%",pointerEvents:"none" },
-  headerIcon: { width:40,height:40,borderRadius:14,background:`${OS_PRIMARY}20`,border:`1px solid ${OS_PRIMARY}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,position:"relative",zIndex:1 },
-  headerInfo: { flex:1,position:"relative",zIndex:1 },
-  headerH1:   { color:"#fff",fontWeight:700,fontSize:15,lineHeight:1.2 },
-  headerSub:  { color:`${OS_PRIMARY}BB`,fontSize:11,marginTop:2 },
-  betaBadge:  { background:`${OS_PRIMARY}18`,border:`1px solid ${OS_PRIMARY}44`,color:OS_PRIMARY,fontSize:10,fontWeight:600,padding:"3px 8px",borderRadius:20,display:"flex",alignItems:"center",gap:4,position:"relative",zIndex:1 },
-  liveDot:    { width:6,height:6,borderRadius:"50%",background:OS_PRIMARY,animation:"os-blink 1.5s ease-in-out infinite" },
-  restartBtn: { display:"flex",alignItems:"center",gap:5,background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.15)",color:"rgba(255,255,255,0.9)",fontSize:11,fontWeight:600,padding:"7px 12px",borderRadius:20,cursor:"pointer",position:"relative",zIndex:1 },
-  closeBtn:   { background:"rgba(255,255,255,0.1)",border:"none",color:"rgba(255,255,255,0.85)",padding:8,borderRadius:"50%",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",zIndex:1 },
-  body:       { flex:1,overflowY:"auto",padding:"16px 14px",display:"flex",flexDirection:"column",gap:10,background:"#f4f9fb" },
-  msgAI:      { display:"flex",justifyContent:"flex-start",alignItems:"flex-end",gap:8 },
-  msgUser:    { display:"flex",justifyContent:"flex-end" },
-  aiAvatar:   { width:28,height:28,borderRadius:10,background:`linear-gradient(135deg,${OS_PRIMARY}20,${OS_SECONDARY}20)`,border:`1px solid ${OS_PRIMARY}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 },
-  aiBubble:   { maxWidth:"76%",padding:"10px 14px",background:"#fff",color:"#1a2a30",border:"0.5px solid #d8edf2",borderRadius:"16px 16px 16px 4px",fontSize:13,lineHeight:1.55,boxShadow:"0 1px 4px rgba(0,0,0,0.05)" },
-  userBubble: { maxWidth:"76%",padding:"10px 14px",background:`linear-gradient(135deg,${OS_PRIMARY},${OS_SECONDARY})`,color:OS_DARK_TEXT,borderRadius:"16px 16px 4px 16px",fontSize:13,lineHeight:1.55,fontWeight:600 },
-  typingWrap: { padding:"8px 12px",background:"#fff",border:"0.5px solid #d8edf2",borderRadius:"16px 16px 16px 4px",display:"flex",gap:4,alignItems:"center" },
-  footer:     { flexShrink:0,borderTop:"0.5px solid #e2eff3",background:"#fff",padding:"12px 14px" },
-  inputRow:   { display:"flex",alignItems:"flex-end",gap:8 },
-  textarea:   { flex:1,resize:"none",border:"1.5px solid #d8edf2",borderRadius:16,padding:"10px 14px",fontSize:13,lineHeight:1.5,color:"#1a2a30",background:"#f9fdfe",fontFamily:"inherit",maxHeight:120,overflowY:"auto" },
-  sendBtn:    { width:40,height:40,borderRadius:"50%",background:`linear-gradient(135deg,${OS_PRIMARY},${OS_SECONDARY})`,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:OS_DARK_TEXT },
-  footerHint: { fontSize:10.5,color:"#90aab5",textAlign:"center",marginTop:8,display:"flex",alignItems:"center",justifyContent:"center",gap:4 },
-  chipsRow:   { display:"flex",flexWrap:"wrap",gap:6,marginBottom:10 },
-  chip:       { padding:"6px 12px",borderRadius:50,background:"#fff",border:`1.5px solid ${OS_PRIMARY}55`,color:OS_SECONDARY,fontSize:11.5,fontWeight:600,cursor:"pointer",userSelect:"none" },
-  card:       { background:"#fff",border:"0.5px solid #d8edf2",borderRadius:16,overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.05)" },
-  cardThumb:  { width:76,flexShrink:0,background:`linear-gradient(160deg,${OS_PRIMARY}22,${OS_SECONDARY}22)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30 },
-  cardBody:   { padding:"12px 14px",flex:1,minWidth:0 },
-  cardTitle:  { fontWeight:700,color:"#0f2430",fontSize:13.5,lineHeight:1.3,marginBottom:4 },
-  cardMeta:   { display:"flex",flexWrap:"wrap",gap:8,fontSize:11,color:"#6a8e9b" },
-  whyTag:     { marginTop:8,background:`${OS_PRIMARY}14`,border:`0.5px solid ${OS_PRIMARY}44`,borderRadius:8,padding:"6px 10px",fontSize:11,color:OS_SECONDARY },
-  cardActs:   { display:"flex",flexWrap:"wrap",gap:6,marginTop:10 },
-  btnPrimary: { display:"flex",alignItems:"center",gap:4,padding:"6px 12px",borderRadius:8,background:`linear-gradient(135deg,${OS_PRIMARY},${OS_SECONDARY})`,color:OS_DARK_TEXT,fontSize:11.5,fontWeight:700,border:"none",cursor:"pointer" },
-  btnGhost:   { display:"flex",alignItems:"center",gap:4,padding:"6px 10px",borderRadius:8,background:"#f0f6f8",border:"0.5px solid #d8edf2",color:"#4a7a8a",fontSize:11.5,cursor:"pointer" },
-  restartDash:{ width:"100%",marginTop:4,padding:"12px",borderRadius:16,border:`2px dashed ${OS_PRIMARY}88`,background:"transparent",color:OS_SECONDARY,fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6 },
-  toast:      { position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#0d2d36",color:"#fff",fontSize:13,fontWeight:500,padding:"10px 18px",borderRadius:50,boxShadow:"0 4px 20px rgba(0,0,0,0.2)",display:"flex",alignItems:"center",gap:6,zIndex:10000 },
-  errorBubble:{ maxWidth:"76%",padding:"10px 14px",background:"#fff0f0",border:"0.5px solid #ffd0d0",borderRadius:"16px 16px 16px 4px",fontSize:13,color:"#a33",lineHeight:1.5 },
-};
+const API_URL               = '/api/ai-recommend';
+const BASE_URL              = 'https://www.outingstation.com';
+const FREE_PROMPTS_PER_DAY  = 3;
+const CREDIT_COST           = 50;
 
 const STARTERS = [
-  "🎉 Something fun this weekend",
-  "😌 Chill spot for a date",
-  "🎓 Events on my campus",
-  "🍔 Campus food vendors",
-  "🏛️ Halls & venues near me",
-  "🧭 What's happening near me?",
+  '🎉 Events this weekend',
+  '😌 Chill spot for a date',
+  '🏛️ Halls & venues near me',
+  '🎓 Campus events',
+  '💳 Check my credits',
+  '🎟️ Show my tickets',
 ];
 
-async function shareItem(title, url, flash) {
-  const shareData = { title, text: `Check out "${title}" on OutingStation`, url: url || window.location.origin };
-  try {
-    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-      await navigator.share(shareData);
-    } else {
-      await navigator.clipboard.writeText(shareData.url);
-      flash("Link copied to clipboard!");
-    }
-  } catch (err) {
-    if (err.name !== "AbortError") {
-      try { await navigator.clipboard.writeText(shareData.url); flash("Link copied to clipboard!"); }
-      catch { flash("Could not share — try copying the link manually."); }
-    }
-  }
+function eventUrl(r) {
+  if (r.slug) return `${BASE_URL}/e/${r.slug}`;
+  return `${BASE_URL}/event/${r.id}`;
 }
 
-function PaywallOverlay() {
+function hoursUntilReset(resetAt) {
+  if (!resetAt) return 24;
+  const resetTime = new Date(resetAt).getTime() + 24 * 60 * 60 * 1000;
+  const diff = resetTime - Date.now();
+  return Math.max(1, Math.ceil(diff / (60 * 60 * 1000)));
+}
+
+export default function OutingStationAI() {
+  const [open, setOpen]           = useState(false);
+  const [messages, setMessages]   = useState([]);
+  const [history, setHistory]     = useState([]);
+  const [input, setInput]         = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [showStarters, setShowStarters] = useState(true);
+  const [guestQueryUsed, setGuestQueryUsed] = useState(false);
+
+  // User state
+  const [user, setUser]             = useState(null);
+  const [userName, setUserName]     = useState('');
+  const [userCity, setUserCity]     = useState('Lagos');
+  const [totalCredits, setTotalCredits] = useState(0);
+
+  // ✅ Prompt system state
+  const [aiPromptsToday, setAiPromptsToday]     = useState(0);
+  const [aiPromptsResetAt, setAiPromptsResetAt] = useState(null);
+
+  // Data
+  const [events, setEvents]     = useState([]);
+  const [vendors, setVendors]   = useState([]);
+  const [uniNames, setUniNames] = useState([]);
+  const [tickets, setTickets]   = useState([]);
+
+  const bottomRef  = useRef(null);
+  const inputRef   = useRef(null);
+
+  // Auth listener
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, u => setUser(u));
+    return unsub;
+  }, []);
+
+  // Load data when chat opens
+  useEffect(() => {
+    if (open && !dataLoaded) loadData();
+  }, [open]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
+
+  async function loadData() {
+    let name = '', city = 'Lagos', credits = 0, promptsToday = 0, resetAt = null;
+
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const d = userDoc.data();
+          name    = d.name || '';
+          city    = d.city || 'Lagos';
+          credits = d.totalCredits || 0;
+
+          // ✅ Load prompt tracking
+          promptsToday = d.aiPromptsToday || 0;
+          resetAt      = d.aiPromptsResetAt || null;
+
+          setUserName(name);
+          setUserCity(city);
+          setTotalCredits(credits);
+          setAiPromptsToday(promptsToday);
+          setAiPromptsResetAt(resetAt);
+        }
+
+        // Load tickets
+        try {
+          const tSnap = await getDocs(
+            query(collection(db, 'tickets'),
+              where('userId', '==', currentUser.uid),
+              orderBy('purchasedAt', 'desc'),
+              limit(10)
+            )
+          );
+          setTickets(tSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (_) {}
+      } catch (_) {}
+    }
+
+    // Load events
+    try {
+      const cityLower = city.toLowerCase().split(',')[0].trim();
+      const evSnap = await getDocs(collection(db, 'events'));
+      const now = Date.now();
+
+      const rawEvents = evSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(e => e.status === 'published')
+        .filter(e => {
+          const isPlace  = e.subCategory === 'places';
+          const isCampus = e.eventType === 'campus';
+          if (isPlace || isCampus) return true;
+          const loc = (e.location || '').toLowerCase();
+          return cityLower && loc.includes(cityLower);
+        })
+        .filter(e => {
+          if (e.subCategory === 'places') return true;
+          if (!e.date) return true;
+          const ms = e.date?.seconds ? e.date.seconds * 1000 : new Date(e.date).getTime();
+          return ms >= now;
+        })
+        .map(e => {
+          const amount         = e.ticketPrice || e.price || 0;
+          const isFreeExplicit = e.isFree === true;
+          const hasExternalLink = (e.externalTicketLink || '').trim().length > 0;
+          const hasTiers       = Array.isArray(e.ticketTiers) && e.ticketTiers.length > 0;
+          const ticketingEnabled = e.ticketingEnabled || e.hasOutingStationTicketing;
+
+          let price = 'free', priceLabel = 'Free';
+          if (isFreeExplicit) { price = 'free'; priceLabel = 'Free'; }
+          else if (hasTiers) {
+            const min = Math.min(...e.ticketTiers.map(t => t.price || 0));
+            if (min === 0) { price = 'free'; priceLabel = 'Free'; }
+            else if (min <= 10000) { price = 'low'; priceLabel = `from ₦${min.toLocaleString()}`; }
+            else if (min <= 50000) { price = 'medium'; priceLabel = `from ₦${min.toLocaleString()}`; }
+            else { price = 'premium'; priceLabel = `from ₦${min.toLocaleString()}`; }
+          } else if (amount > 0) {
+            if (amount <= 10000) price = 'low';
+            else if (amount <= 50000) price = 'medium';
+            else price = 'premium';
+            priceLabel = `₦${Number(amount).toLocaleString()}`;
+          } else if (ticketingEnabled || hasExternalLink) {
+            price = 'low'; priceLabel = 'Ticketed';
+          }
+
+          const imageUrl = e.imageUrl || (Array.isArray(e.images) && e.images[0]) || '';
+          return {
+            id: e.id, slug: e.slug || '',
+            title: e.title || 'Untitled',
+            desc: (e.description || '').substring(0, 100),
+            kind: e.subCategory === 'places' ? 'place' : 'event',
+            city: e.location || '',
+            area: (e.location || '').split(',')[0].trim(),
+            price, priceLabel,
+            priceNaira: amount,
+            category: e.category || '',
+            campus: e.eventType === 'campus' ? 'yes' : 'no',
+            university: e.university || '',
+            imageUrl,
+            mapLocation: e.mapLocation || '',
+          };
+        });
+
+      setEvents(rawEvents);
+    } catch (_) {}
+
+    // Load vendors
+    try {
+      const vSnap = await getDocs(collection(db, 'vendors'));
+      setVendors(vSnap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id, title: data.shopName || data.name || 'Vendor',
+          desc: data.description || '', kind: 'vendor',
+          category: data.category || '', university: data.university || '',
+          whatsapp: (data.whatsappNumber || '').replace(/[^0-9]/g, ''),
+          area: data.university || '', priceLabel: 'Vendor',
+          imageUrl: data.imageUrl || '',
+        };
+      }));
+    } catch (_) {}
+
+    // Load universities
+    try {
+      const uSnap = await getDocs(collection(db, 'universities'));
+      setUniNames(uSnap.docs.map(d => d.data().name).filter(Boolean));
+    } catch (_) {}
+
+    setDataLoaded(true);
+
+    const firstName = name.split(' ')[0];
+    const cityStr   = city ? ` in ${city.split(',')[0]}` : '';
+    const greeting  = firstName
+      ? `Hi ${firstName} 👋 I'm Outing AI. What are you looking for${cityStr} — events, places, halls, campus vibes?`
+      : `Hi 👋 I'm Outing AI. Tell me what you're looking for and I'll find the perfect match.`;
+
+    setMessages([{ from: 'ai', text: greeting }]);
+  }
+
+  // ✅ Free prompts remaining
+  function getFreePromptsLeft() {
+    if (!user) return 0;
+    const now = new Date();
+    const resetTime = aiPromptsResetAt ? new Date(aiPromptsResetAt) : null;
+    if (!resetTime || (now - resetTime) >= 24 * 60 * 60 * 1000) return FREE_PROMPTS_PER_DAY;
+    return Math.max(0, FREE_PROMPTS_PER_DAY - aiPromptsToday);
+  }
+
+  // ✅ Check and consume a prompt — returns { allowed, reason }
+  async function checkAndConsumePrompt() {
+    if (!user) return { allowed: true }; // guest handled separately
+
+    const userRef = doc(db, 'users', user.uid);
+    const now     = new Date();
+
+    // Check 24hr reset
+    const resetTime = aiPromptsResetAt ? new Date(aiPromptsResetAt) : null;
+    const needsReset = !resetTime || (now - resetTime) >= 24 * 60 * 60 * 1000;
+
+    let currentPrompts = aiPromptsToday;
+    let currentResetAt = aiPromptsResetAt;
+
+    if (needsReset) {
+      currentPrompts = 0;
+      currentResetAt = now.toISOString();
+      setAiPromptsToday(0);
+      setAiPromptsResetAt(currentResetAt);
+      await updateDoc(userRef, { aiPromptsToday: 0, aiPromptsResetAt: currentResetAt });
+    }
+
+    // Free prompt available
+    if (currentPrompts < FREE_PROMPTS_PER_DAY) {
+      const newCount = currentPrompts + 1;
+      setAiPromptsToday(newCount);
+      await updateDoc(userRef, { aiPromptsToday: newCount });
+      return { allowed: true };
+    }
+
+    // Deduct credits
+    if (totalCredits >= CREDIT_COST) {
+      const newCredits = totalCredits - CREDIT_COST;
+      setTotalCredits(newCredits);
+      await updateDoc(userRef, { totalCredits: newCredits });
+      return { allowed: true };
+    }
+
+    // Blocked
+    return {
+      allowed: false,
+      hoursLeft: hoursUntilReset(currentResetAt),
+    };
+  }
+
+  function promptLimitMessage(hoursLeft) {
+    return `You've used your ${FREE_PROMPTS_PER_DAY} free prompts for today 😊\n\nTo get more prompts:\n• 👥 Refer a friend — earn ₦300 credits\n• 🎉 List an event — earn credits on approval\n• 📍 List a place — earn credits on approval\n\nOr wait ${hoursLeft} hour${hoursLeft !== 1 ? 's' : ''} for your free prompts to reset.`;
+  }
+
+  async function send(preset) {
+    const text = (preset || input).trim();
+    if (!text || loading) return;
+    if (!user && guestQueryUsed) return;
+
+    setInput('');
+    setShowStarters(false);
+    setMessages(prev => [...prev, { from: 'user', text }]);
+    setLoading(true);
+
+    if (!user) setGuestQueryUsed(true);
+
+    const lower = text.toLowerCase();
+
+    // Ticket command
+    if (lower.includes('ticket') && (lower.includes('my') || lower.includes('show') || lower.includes('check'))) {
+      await handleTicketsCommand();
+      return;
+    }
+
+    // Credits command
+    if (lower.includes('credit') || lower.includes('balance') || lower.includes('wallet')) {
+      await handleCreditsCommand();
+      return;
+    }
+
+    // ✅ Prompt check for logged-in users
+    if (user) {
+      const { allowed, hoursLeft } = await checkAndConsumePrompt();
+      if (!allowed) {
+        setMessages(prev => [...prev, {
+          from: 'ai',
+          text: promptLimitMessage(hoursLeft),
+          isPromptLimit: true,
+        }]);
+        setLoading(false);
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history,
+          events: events.slice(0, 120),
+          vendors: vendors.slice(0, 60),
+          universities: uniNames,
+          userCity,
+        }),
+      });
+
+      if (!res.ok) throw new Error('API error');
+
+      const data    = await res.json();
+      const reply   = data.reply || 'Here are some picks for you!';
+      const ids     = data.resultIds || [];
+      const reasons = data.reasons || {};
+
+      const results = ids.map(id => {
+        const ev = events.find(e => e.id === id);
+        if (ev) return ev;
+        const ve = vendors.find(v => v.id === id);
+        return ve || null;
+      }).filter(Boolean);
+
+      setMessages(prev => [...prev, {
+        from: 'ai', text: reply, results, reasons,
+        isGuestPreview: !user,
+      }]);
+      setHistory(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: reply }]);
+    } catch (e) {
+      setMessages(prev => [...prev, { from: 'ai', text: 'Couldn\'t connect right now. Please check your internet and try again 📡', isError: true }]);
+    }
+
+    setLoading(false);
+  }
+
+  async function handleTicketsCommand() {
+    await new Promise(r => setTimeout(r, 600));
+    if (!user) {
+      setMessages(prev => [...prev, { from: 'ai', text: 'You need to be logged in to view your tickets 🎟️', isLoginGate: true }]);
+      setLoading(false);
+      return;
+    }
+    if (tickets.length === 0) {
+      setMessages(prev => [...prev, { from: 'ai', text: 'You haven\'t bought any tickets yet. Browse events and get your first ticket! 🎉' }]);
+    } else {
+      const upcoming = tickets.filter(t => t.status === 'active');
+      setMessages(prev => [...prev, {
+        from: 'ai',
+        text: upcoming.length > 0 ? `You have ${upcoming.length} upcoming ticket(s) 🎟️` : `You have ${tickets.length} ticket(s) in total. No upcoming events right now.`,
+        tickets: upcoming.length > 0 ? upcoming.slice(0, 5) : tickets.slice(0, 3),
+      }]);
+    }
+    setLoading(false);
+  }
+
+  async function handleCreditsCommand() {
+    await new Promise(r => setTimeout(r, 500));
+    if (!user) {
+      setMessages(prev => [...prev, { from: 'ai', text: 'Login to check your OutingStation credits 💳', isLoginGate: true }]);
+      setLoading(false);
+      return;
+    }
+    const freeLeft = getFreePromptsLeft();
+    setMessages(prev => [...prev, {
+      from: 'ai',
+      text: totalCredits > 0
+        ? `You have ₦${totalCredits.toLocaleString()} in OutingStation credits 💳\n\nYou have ${freeLeft} free AI prompt${freeLeft !== 1 ? 's' : ''} left today. Each extra prompt costs ₦${CREDIT_COST}.`
+        : `You don't have any credits yet. Refer friends using your referral code to earn ₦300 per signup! 🎁`,
+    }]);
+    setLoading(false);
+  }
+
+  function restart() {
+    setMessages([{ from: 'ai', text: 'Fresh start 👋 What are you looking for?' }]);
+    setHistory([]);
+    setShowStarters(true);
+  }
+
+  const freePromptsLeft = getFreePromptsLeft();
+  const inputLocked = !user && guestQueryUsed;
+
+  const hintText = !user
+    ? 'Try a question — 1 free search'
+    : freePromptsLeft > 0
+    ? `Type what you're looking for… (${freePromptsLeft} free left)`
+    : `₦${CREDIT_COST} credits per prompt`;
+
   return (
-    <div style={{
-      position:"absolute", inset:0, zIndex:10,
-      background:"linear-gradient(to bottom, transparent 0%, rgba(244,249,251,0.7) 20%, rgba(244,249,251,0.97) 50%)",
-      display:"flex", flexDirection:"column", alignItems:"center",
-      justifyContent:"flex-end", padding:"16px 16px 20px", borderRadius:16,
-    }}>
-      <div style={{
-        background:"#fff", borderRadius:20, padding:"20px 20px 16px",
-        boxShadow:"0 8px 32px rgba(0,0,0,0.12)", width:"100%", maxWidth:340,
-        border:`1px solid ${OS_PRIMARY}44`, textAlign:"center",
-      }}>
-        <div style={{
-          width:44, height:44, borderRadius:"50%",
-          background:`linear-gradient(135deg,${OS_PRIMARY}22,${OS_SECONDARY}22)`,
-          border:`1.5px solid ${OS_PRIMARY}66`,
-          display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 10px",
-        }}>
-          <Lock size={20} color={OS_SECONDARY} />
+    <>
+      {/* FAB */}
+      <button
+        onClick={() => setOpen(true)}
+        className="fixed bottom-24 right-5 w-14 h-14 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 shadow-lg flex items-center justify-center z-40 animate-pulse"
+        aria-label="Open Outing AI"
+      >
+        <Compass size={24} className="text-white" />
+      </button>
+
+      {/* Chat overlay */}
+      {open && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white md:inset-auto md:bottom-4 md:right-4 md:w-96 md:h-[600px] md:rounded-2xl md:shadow-2xl overflow-hidden">
+
+          {/* Header */}
+          <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-4 py-3 flex items-center gap-3 flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center">
+              <Compass size={18} className="text-cyan-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-sm">Outing AI</p>
+              <p className="text-cyan-400 text-xs truncate">Your personal guide</p>
+            </div>
+            <span className="text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded-full font-semibold">Beta</span>
+            {messages.length > 1 && (
+              <button onClick={restart} className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition" title="Restart">
+                <RotateCcw size={14} className="text-white/70" />
+              </button>
+            )}
+            <button onClick={() => setOpen(false)} className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition" aria-label="Close">
+              <X size={16} className="text-white/70" />
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-3 bg-slate-50 space-y-3">
+            {!dataLoaded ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                {messages.map((m, i) => (
+                  <Message
+                    key={i}
+                    m={m}
+                    user={user}
+                    onRestart={restart}
+                  />
+                ))}
+                {loading && <TypingIndicator />}
+                <div ref={bottomRef} />
+              </>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="bg-white border-t border-slate-100 p-3 flex-shrink-0">
+            {/* Starters */}
+            {showStarters && (
+              <div className="flex gap-2 overflow-x-auto pb-2 mb-2 scrollbar-none">
+                {STARTERS.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => send(s)}
+                    className="flex-shrink-0 text-xs font-semibold text-cyan-600 border border-cyan-300 bg-white rounded-full px-3 py-1.5 hover:bg-cyan-50 transition"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Input locked for guests */}
+            {inputLocked ? (
+              <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-3 text-center">
+                <p className="text-sm font-bold text-slate-800 mb-2">🔒 Login to ask more questions</p>
+                <div className="flex gap-2">
+                  <a href="/login" className="flex-1 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white text-xs font-bold py-2 rounded-lg text-center">Login</a>
+                  <a href="/signup" className="flex-1 border border-cyan-400 text-cyan-600 text-xs font-bold py-2 rounded-lg text-center">Sign Up Free</a>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-2">
+                  <input
+                    ref={inputRef}
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && !loading && send()}
+                    placeholder={hintText}
+                    disabled={loading}
+                    className="flex-1 text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-cyan-400 disabled:opacity-50"
+                  />
+                  <button
+                    onClick={() => send()}
+                    disabled={loading || !input.trim()}
+                    className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center disabled:opacity-40 transition"
+                  >
+                    <Send size={16} className="text-white" />
+                  </button>
+                </div>
+
+                {/* ✅ Prompt status bar */}
+                <div className="mt-1.5 flex items-center justify-center gap-1">
+                  {user ? (
+                    <>
+                      <span className={`text-[10px] ${freePromptsLeft > 0 ? 'text-slate-400' : totalCredits >= CREDIT_COST ? 'text-orange-500' : 'text-red-400'}`}>
+                        {freePromptsLeft > 0
+                          ? `${freePromptsLeft} free prompt${freePromptsLeft !== 1 ? 's' : ''} left today`
+                          : totalCredits >= CREDIT_COST
+                          ? `₦${CREDIT_COST} credits per prompt · ₦${totalCredits.toLocaleString()} available`
+                          : `No credits — resets in ${hoursUntilReset(aiPromptsResetAt)}hrs`}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">
+                      Guest preview — <a href="/login" className="text-cyan-500 font-semibold">login</a> for unlimited access
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
-        <p style={{ fontWeight:700, fontSize:15, color:"#0d2d36", marginBottom:6 }}>
-          Login to unlock all recommendations
-        </p>
-        <p style={{ fontSize:12, color:"#6a8e9b", marginBottom:16, lineHeight:1.5 }}>
-          Create a free account to get personalised picks, save events, and buy tickets.
-        </p>
-        <div style={{ display:"flex", gap:8 }}>
-          <a href="/login" style={{ flex:1, padding:"10px 0", borderRadius:12, background:`linear-gradient(135deg,${OS_PRIMARY},${OS_SECONDARY})`, color:OS_DARK_TEXT, fontWeight:700, fontSize:13, textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center" }}>Login</a>
-          <a href="/signup" style={{ flex:1, padding:"10px 0", borderRadius:12, background:"#f0f6f8", border:`1px solid ${OS_PRIMARY}55`, color:OS_SECONDARY, fontWeight:700, fontSize:13, textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center" }}>Sign Up Free</a>
+      )}
+    </>
+  );
+}
+
+// ── Message component ─────────────────────────────────────────────────────────
+
+function Message({ m, user, onRestart }) {
+  if (m.from === 'user') {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%] bg-gradient-to-br from-cyan-400 to-cyan-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 text-sm font-semibold">
+          {m.text}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-end gap-2">
+        <div className="w-6 h-6 rounded-lg bg-cyan-100 border border-cyan-200 flex items-center justify-center flex-shrink-0">
+          <Compass size={12} className="text-cyan-600" />
+        </div>
+        <div className={`max-w-[85%] rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm leading-relaxed whitespace-pre-line ${
+          m.isError ? 'bg-red-50 border border-red-200 text-red-700'
+          : m.isPromptLimit ? 'bg-amber-50 border border-amber-200 text-amber-800'
+          : 'bg-white border border-slate-200 text-slate-800'
+        }`}>
+          {m.text}
+        </div>
+      </div>
+
+      {/* ✅ Earn more buttons when prompt limit hit */}
+      {m.isPromptLimit && (
+        <div className="flex gap-2 ml-8">
+          <a href="/create" className="flex-1 text-center text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg py-2 hover:bg-amber-100 transition">
+            🎉 List Event
+          </a>
+          <a href="/create" className="flex-1 text-center text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg py-2 hover:bg-amber-100 transition">
+            👥 Refer Friend
+          </a>
+        </div>
+      )}
+
+      {/* Results */}
+      {m.results?.length > 0 && (
+        <div className="ml-8 space-y-2">
+          {m.isGuestPreview ? (
+            <>
+              <ResultCard r={m.results[0]} reason={m.reasons?.[m.results[0].id]} />
+              {m.results.length > 1 && (
+                <div className="relative">
+                  <div className="opacity-30 blur-sm pointer-events-none">
+                    {m.results.slice(1).map((r, i) => <ResultCard key={i} r={r} reason={null} />)}
+                  </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 rounded-xl p-4 text-center">
+                    <span className="text-2xl mb-1">🔒</span>
+                    <p className="text-sm font-bold text-slate-800">Login to unlock all picks</p>
+                    <div className="flex gap-2 mt-3 w-full">
+                      <a href="/login" className="flex-1 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white text-xs font-bold py-2 rounded-lg text-center">Login</a>
+                      <a href="/signup" className="flex-1 border border-cyan-400 text-cyan-600 text-xs font-bold py-2 rounded-lg text-center">Sign Up</a>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {m.results.map((r, i) => <ResultCard key={i} r={r} reason={m.reasons?.[r.id]} />)}
+              <button onClick={onRestart} className="w-full text-xs font-bold text-cyan-600 border border-cyan-300 rounded-xl py-2.5 hover:bg-cyan-50 transition flex items-center justify-center gap-1.5">
+                <RefreshCw size={12} /> Start a new search
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Tickets */}
+      {m.tickets?.length > 0 && (
+        <div className="ml-8 space-y-2">
+          {m.tickets.map((t, i) => (
+            <div key={i} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3">
+              <div className="w-9 h-9 bg-cyan-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <span className="text-lg">🎟️</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-slate-800 truncate">{t.eventTitle || 'Event'}</p>
+                <p className="text-xs text-slate-500">{t.tierName || 'Regular'} · ₦{t.amount?.toLocaleString()}</p>
+              </div>
+              <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full">Active</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Login gate */}
+      {m.isLoginGate && (
+        <div className="ml-8 flex gap-2">
+          <a href="/login" className="flex-1 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white text-xs font-bold py-2 rounded-lg text-center">Login</a>
+          <a href="/signup" className="flex-1 border border-cyan-400 text-cyan-600 text-xs font-bold py-2 rounded-lg text-center">Sign Up Free</a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResultCard({ r, reason }) {
+  const isVendor = r.kind === 'vendor';
+  const url      = eventUrl(r);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      {r.imageUrl && (
+        <img src={r.imageUrl} alt={r.title} className="w-full h-24 object-cover" onError={e => e.target.style.display = 'none'} />
+      )}
+      {!r.imageUrl && (
+        <div className="w-full h-16 bg-cyan-50 flex items-center justify-center text-3xl">
+          {isVendor ? '🛒' : r.kind === 'place' ? '📍' : '🎉'}
+        </div>
+      )}
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <p className="text-sm font-bold text-slate-800 leading-snug">{r.title}</p>
+          <span className="text-[10px] font-semibold text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-full flex-shrink-0">
+            {r.kind === 'vendor' ? 'Vendor' : r.kind === 'place' ? 'Place' : 'Event'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
+          {r.area && <span>📍 {r.area}</span>}
+          <span>{r.priceLabel}</span>
+        </div>
+        {reason && (
+          <div className="bg-cyan-50 border border-cyan-100 rounded-lg px-2.5 py-1.5 mb-2">
+            <p className="text-[11px] text-cyan-700"><span className="font-bold">Why:</span> {reason}</p>
+          </div>
+        )}
+        <div className="flex gap-1.5">
+          {isVendor && r.whatsapp ? (
+            <a href={`https://wa.me/${r.whatsapp}`} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-green-500 rounded-lg py-1.5 text-center">WhatsApp</a>
+          ) : (
+            <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-cyan-500 rounded-lg py-1.5 text-center">View Details</a>
+          )}
+          {r.mapLocation && (
+            <a href={r.mapLocation} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-slate-600 bg-slate-100 rounded-lg py-1.5 px-2.5">Directions</a>
+          )}
+          <button onClick={() => navigator.share?.({ title: r.title, url })} className="text-[11px] font-bold text-slate-600 bg-slate-100 rounded-lg py-1.5 px-2.5">Share</button>
         </div>
       </div>
     </div>
   );
 }
 
-export default function OutingStationAI() {
-  const auth = (() => { try { return useAuth(); } catch { return {}; } })();
-  const userProfile = auth?.userProfile;
-  const currentUser = auth?.currentUser;
-
-  const [guestQueryUsed, setGuestQueryUsed] = useState(false);
-  const [open,         setOpen]         = useState(false);
-  const [showNudge,    setShowNudge]    = useState(false);
-  const [loaded,       setLoaded]       = useState(false);
-  const [events,       setEvents]       = useState([]);
-  const [vendors,      setVendors]      = useState([]);
-  const [universities, setUniversities] = useState([]);
-  const [messages,     setMessages]     = useState([]);
-  const [inputText,    setInputText]    = useState("");
-  const [loading,      setLoading]      = useState(false);
-  const [history,      setHistory]      = useState([]);
-  const [saved,        setSaved]        = useState(new Set());
-  const [toast,        setToast]        = useState("");
-  const [isMd,         setIsMd]         = useState(false);
-  const [showStarters, setShowStarters] = useState(true);
-
-  const scrollRef   = useRef(null);
-  const textareaRef = useRef(null);
-
-  const isLoggedIn  = !!currentUser;
-  const inputLocked = !isLoggedIn && guestQueryUsed;
-  const userCity    = userProfile?.city || "";
-
-  useEffect(() => {
-    const check = () => setIsMd(window.innerWidth >= 640);
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => setShowNudge(true), 3500);
-    return () => clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
-    if (!open || loaded) return;
-    (async () => {
-      try {
-        const [evSnap, vSnap, uSnap] = await Promise.all([
-          getDocs(collection(db, "events")),
-          getDocs(collection(db, "vendors")).catch(() => ({ docs: [] })),
-          getDocs(collection(db, "universities")).catch(() => ({ docs: [] })),
-        ]);
-
-        const now = Date.now();
-
-        const allEvents = evSnap.docs
-          .map(normEvent)
-          .filter((x) => {
-            if (!x.title || x.status !== "published") return false;
-            if (x.isPlace) return true;       // ✅ places have no expiry — always show
-            if (!x.dateMs) return true;       // ✅ no date set (TBA) — still show
-            return x.dateMs >= now;           // ✅ only future/today events
-          });
-
-        // ✅ City filter:
-        // - Campus events bypass (university-specific)
-        // - Places bypass (halls, venues — permanent, all cities)
-        // - Regular events filtered by user's city
-        const cityFilteredEvents = allEvents.filter((e) =>
-          e.eventType === "campus" ||
-          e.isPlace ||
-          matchesCity(e.city, userCity)
-        );
-
-        setEvents(cityFilteredEvents);
-        setVendors((vSnap.docs || []).map(normVendor));
-        setUniversities((uSnap.docs || []).map((d) => d.data().name || d.data().title || d.id).filter(Boolean));
-
-        if (currentUser) {
-          const savedSnap = await getDocs(
-            collection(db, "users", currentUser.uid, "savedEvents")
-          ).catch(() => ({ docs: [] }));
-          setSaved(new Set(savedSnap.docs.map((d) => d.id)));
-        }
-      } catch (e) {
-        console.error("Outing AI load failed", e);
-        setMessages((m) => [...m, { from:"ai", text:"I'm having trouble loading events right now. Please try again in a moment 🙏", isError:true }]);
-      } finally {
-        setLoaded(true);
-      }
-    })();
-  }, [open, loaded]); // eslint-disable-line
-
-  useEffect(() => {
-    if (open && messages.length === 0) {
-      const name = userProfile?.name?.split(" ")[0] || userProfile?.displayName?.split(" ")[0];
-      const city = userCity ? ` in ${userCity.split(",")[0]}` : "";
-      const greeting = name
-        ? `Hi ${name} 👋 I'm Outing AI. Tell me what you're looking for${city} — events, places, campus vibes — and I'll find the best picks for you.`
-        : `Hi 👋 I'm Outing AI. Tell me what you're looking for — events, a chill spot, campus vendors — and I'll find the perfect match.`;
-      setMessages([{ from:"ai", text:greeting }]);
-    }
-  }, [open]); // eslint-disable-line
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top:scrollRef.current.scrollHeight, behavior:"smooth" });
-  }, [messages, loading]);
-
-  const handleInputChange = (e) => {
-    setInputText(e.target.value);
-    const ta = textareaRef.current;
-    if (ta) { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; }
-  };
-
-  const flash = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2000); };
-
-  const toggleSave = async (id) => {
-    if (!isLoggedIn) { flash("Login to save events"); return; }
-    const isSaved = saved.has(id);
-    setSaved((prev) => {
-      const next = new Set(prev);
-      isSaved ? next.delete(id) : next.add(id);
-      return next;
-    });
-    try {
-      const ref = doc(db, "users", currentUser.uid, "savedEvents", id);
-      if (isSaved) {
-        await deleteDoc(ref);
-      } else {
-        const event = events.find((e) => e.id === id);
-        await setDoc(ref, {
-          eventId: id, savedAt: new Date(),
-          title: event?.title || "", imageUrl: event?.imageUrl || "", city: event?.city || "",
-        });
-        flash("Event saved! ✨");
-      }
-    } catch (err) {
-      console.error("Save failed:", err);
-      setSaved((prev) => {
-        const next = new Set(prev);
-        isSaved ? next.add(id) : next.delete(id);
-        return next;
-      });
-      flash("Failed to save event");
-    }
-  };
-
-  const send = async (text) => {
-    const msg = (text || inputText).trim();
-    if (!msg || loading || inputLocked) return;
-    setInputText("");
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
-    setShowStarters(false);
-    setMessages((m) => [...m, { from:"user", text:msg }]);
-    setLoading(true);
-    const newHistory = [...history, { role:"user", content:msg }];
-    if (!isLoggedIn) setGuestQueryUsed(true);
-
-    try {
-      const res = await fetch("/api/ai-recommend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: msg, history,
-          events: events.filter((e) => e.status === "published"),
-          vendors, universities, userCity,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "AI request failed");
-      const resolvedResults = (data.resultIds || [])
-        .map((id) => events.find((e) => e.id === id) || vendors.find((v) => v.id === id) || null)
-        .filter(Boolean);
-
-      setMessages((m) => [...m, {
-        from:"ai", text:data.reply,
-        results:resolvedResults, reasons:data.reasons || {},
-        isGuestPreview:!isLoggedIn,
-      }]);
-      setHistory([...newHistory, { role:"assistant", content:data.reply }]);
-    } catch (err) {
-      console.error("Outing AI error:", err);
-      setMessages((m) => [...m, { from:"ai", text:"Hmm, something went wrong on my end. Try again in a moment 😕", isError:true }]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-  };
-
-  const restart = () => {
-    setMessages([]); setHistory([]); setShowStarters(true);
-    setTimeout(() => setMessages([{ from:"ai", text:"Fresh start 👋 What are you looking for?" }]), 60);
-  };
-
-  const goToEvent   = (r) => { window.location.href = r.slug ? `/e/${r.slug}` : `/event/${r.id}`; };
-  const getShareUrl = (r) => {
-    const base = window.location.origin;
-    return r.slug ? `${base}/e/${r.slug}` : `${base}/event/${r.id}`;
-  };
-
-  const ResultCard = ({ r, reason }) => {
-    const isSaved = saved.has(r.id);
-    return (
-      <div style={S.card} className="os-msg-in">
-        <div style={{ display:"flex" }}>
-          <div style={S.cardThumb}>
-            {r.imageUrl
-              ? <img src={r.imageUrl} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} onError={(e) => { e.target.style.display="none"; }} />
-              : <span>{r.emoji}</span>}
-          </div>
-          <div style={S.cardBody}>
-            <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8 }}>
-              <h3 style={S.cardTitle}>{r.title}</h3>
-              <button onClick={() => toggleSave(r.id)} title={isSaved ? "Remove from saved" : "Save event"}
-                style={{ background:"none",border:"none",cursor:"pointer",color:isSaved?OS_PRIMARY:"#c0d4da",flexShrink:0 }}>
-                <Bookmark size={17} fill={isSaved?"currentColor":"none"} />
-              </button>
-            </div>
-            <div style={S.cardMeta}>
-              {r.area       && <span style={{ display:"flex",alignItems:"center",gap:3 }}><MapPin size={11}/>{r.area}</span>}
-              {r.priceLabel && <span style={{ display:"flex",alignItems:"center",gap:3 }}><Ticket size={11}/>{r.priceLabel}</span>}
-              <span style={{ color:"#a0bcc5",textTransform:"capitalize" }}>{r.kind}</span>
-            </div>
-            {r.desc && <p style={{ fontSize:12,color:"#4a7a8a",marginTop:6,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden" }}>{r.desc}</p>}
-            {reason && <div style={S.whyTag}><strong>Why: </strong>{reason}</div>}
-            <div style={S.cardActs}>
-              {r.kind === "vendor" ? (
-                r.whatsapp && <a href={`https://wa.me/${r.whatsapp}`} target="_blank" rel="noopener noreferrer" style={{ ...S.btnPrimary,background:"#22c55e",textDecoration:"none" }}><MessageCircle size={12}/> WhatsApp</a>
-              ) : (
-                <>
-                  <button onClick={() => goToEvent(r)} style={S.btnPrimary}>View details</button>
-                  {r.mapLocation && <a href={r.mapLocation} target="_blank" rel="noopener noreferrer" style={{ ...S.btnGhost,textDecoration:"none" }}><MapPin size={12}/> Directions</a>}
-                </>
-              )}
-              <button onClick={() => shareItem(r.title, getShareUrl(r), flash)} style={S.btnGhost}>
-                <Share2 size={12}/> Share
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const ResultsBlock = ({ results, reasons, isGuestPreview }) => {
-    if (!results || results.length === 0) return null;
-
-    if (!isGuestPreview) {
-      return (
-        <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:8,marginLeft:36 }}>
-          {results.map((r) => <ResultCard key={r.id} r={r} reason={reasons?.[r.id]}/>)}
-          <button onClick={restart} style={S.restartDash}><RotateCcw size={14}/> Start a new search</button>
-        </div>
-      );
-    }
-
-    const first = results[0];
-    const rest  = results.slice(1);
-
-    return (
-      <div style={{ display:"flex",flexDirection:"column",gap:8,marginTop:8,marginLeft:36 }}>
-        <ResultCard key={first.id} r={first} reason={reasons?.[first.id]} />
-        {rest.length > 0 && (
-          <div style={{ position:"relative", borderRadius:16, overflow:"hidden" }}>
-            <div style={{ filter:"blur(3px)", pointerEvents:"none", display:"flex", flexDirection:"column", gap:8 }}>
-              {rest.map((r) => <ResultCard key={r.id} r={r} reason={reasons?.[r.id]}/>)}
-            </div>
-            <PaywallOverlay />
-          </div>
-        )}
-        {rest.length === 0 && (
-          <div style={{ background:"#fff", borderRadius:16, padding:"16px", border:`1px solid ${OS_PRIMARY}44`, textAlign:"center" }}>
-            <Lock size={18} color={OS_SECONDARY} style={{ marginBottom:8 }} />
-            <p style={{ fontWeight:700,fontSize:14,color:"#0d2d36",marginBottom:4 }}>Want more recommendations?</p>
-            <p style={{ fontSize:12,color:"#6a8e9b",marginBottom:12 }}>Login for personalised picks, saved events and more.</p>
-            <div style={{ display:"flex",gap:8,justifyContent:"center" }}>
-              <a href="/login" style={{ padding:"8px 20px",borderRadius:10,background:`linear-gradient(135deg,${OS_PRIMARY},${OS_SECONDARY})`,color:OS_DARK_TEXT,fontWeight:700,fontSize:12,textDecoration:"none" }}>Login</a>
-              <a href="/signup" style={{ padding:"8px 20px",borderRadius:10,background:"#f0f6f8",border:`1px solid ${OS_PRIMARY}55`,color:OS_SECONDARY,fontWeight:700,fontSize:12,textDecoration:"none" }}>Sign Up Free</a>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
+function TypingIndicator() {
   return (
-    <>
-      {!open && (
-        <div style={S.fabWrap}>
-          {showNudge && (
-            <div style={S.nudge}>
-              <button onClick={() => setShowNudge(false)} style={S.nudgeX}><X size={10}/></button>
-              ✨ Not sure where to go? Ask Outing AI
-            </div>
-          )}
-          <button onClick={() => { setOpen(true); setShowNudge(false); }} style={S.fab}>
-            <div style={S.fabRing}/>
-            <Compass size={18}/> Ask Outing AI
-          </button>
-        </div>
-      )}
-
-      {open && (
-        <div style={isMd ? S.overlayMd : S.overlay} onClick={(e) => { if (e.target === e.currentTarget && isMd) setOpen(false); }}>
-          <div style={{ ...S.window, ...(isMd ? S.windowMd : {}) }}>
-
-            <div style={S.header}>
-              <div style={S.headerGlow}/>
-              <div style={S.headerIcon}><Compass size={19} color={OS_PRIMARY}/></div>
-              <div style={S.headerInfo}>
-                <div style={S.headerH1}>Outing AI</div>
-                <div style={S.headerSub}>
-                  {userCity
-                    ? `Showing events in ${userCity.split(",")[0]} · OutingStation`
-                    : "Your personal guide to what's happening around you"}
-                </div>
-              </div>
-              <div style={S.betaBadge}><div style={S.liveDot}/> Beta</div>
-              {messages.length > 1 && (
-                <button onClick={restart} style={S.restartBtn}><RotateCcw size={12}/> Restart</button>
-              )}
-              <button onClick={() => setOpen(false)} style={S.closeBtn}><X size={17}/></button>
-            </div>
-
-            <div ref={scrollRef} style={S.body}>
-              {messages.map((m, i) => (
-                <div key={i} className="os-msg-in">
-                  {m.from === "ai" && (
-                    <>
-                      <div style={S.msgAI}>
-                        <div style={S.aiAvatar}><Compass size={13} color={OS_PRIMARY}/></div>
-                        <div style={m.isError ? S.errorBubble : S.aiBubble}>{m.text}</div>
-                      </div>
-                      <ResultsBlock results={m.results} reasons={m.reasons} isGuestPreview={m.isGuestPreview} />
-                    </>
-                  )}
-                  {m.from === "user" && (
-                    <div style={S.msgUser}><div style={S.userBubble}>{m.text}</div></div>
-                  )}
-                </div>
-              ))}
-              {loading && (
-                <div style={S.msgAI} className="os-msg-in">
-                  <div style={S.aiAvatar}><Compass size={13} color={OS_PRIMARY}/></div>
-                  <div style={S.typingWrap}><span className="os-dot"/><span className="os-dot"/><span className="os-dot"/></div>
-                </div>
-              )}
-            </div>
-
-            <div style={S.footer}>
-              {showStarters && (
-                <div style={S.chipsRow}>
-                  {STARTERS.map((s) => (
-                    <button key={s} className="os-chip-btn" style={S.chip} onClick={() => send(s)}>{s}</button>
-                  ))}
-                </div>
-              )}
-
-              {inputLocked ? (
-                <div style={{ background:`${OS_PRIMARY}10`, border:`1.5px solid ${OS_PRIMARY}44`, borderRadius:16, padding:"12px 16px", textAlign:"center" }}>
-                  <p style={{ fontSize:13,color:"#0d2d36",fontWeight:600,marginBottom:8 }}>🔒 Login to ask more questions</p>
-                  <div style={{ display:"flex",gap:8,justifyContent:"center" }}>
-                    <a href="/login" style={{ padding:"8px 20px",borderRadius:10,background:`linear-gradient(135deg,${OS_PRIMARY},${OS_SECONDARY})`,color:OS_DARK_TEXT,fontWeight:700,fontSize:12,textDecoration:"none" }}>Login</a>
-                    <a href="/signup" style={{ padding:"8px 20px",borderRadius:10,background:"#f0f6f8",border:`1px solid ${OS_PRIMARY}55`,color:OS_SECONDARY,fontWeight:700,fontSize:12,textDecoration:"none" }}>Sign Up Free</a>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div style={S.inputRow}>
-                    <textarea
-                      ref={textareaRef}
-                      className="os-input"
-                      rows={1}
-                      value={inputText}
-                      onChange={handleInputChange}
-                      onKeyDown={handleKeyDown}
-                      placeholder={isLoggedIn ? "Type what you're looking for…" : "Try a question — 1 free search for guests"}
-                      style={S.textarea}
-                      disabled={loading}
-                    />
-                    <button className="os-send-btn" style={S.sendBtn} onClick={() => send()} disabled={!inputText.trim() || loading}>
-                      <Send size={16}/>
-                    </button>
-                  </div>
-                  {!isLoggedIn && (
-                    <p style={{ fontSize:10.5,color:"#90aab5",textAlign:"center",marginTop:6 }}>
-                      Guest preview — <a href="/login" style={{ color:OS_SECONDARY,fontWeight:600 }}>login</a> for unlimited access
-                    </p>
-                  )}
-                </>
-              )}
-
-              {isLoggedIn && (
-                <div style={S.footerHint}>
-                  <Compass size={11} color={OS_PRIMARY}/> Powered by Outing AI · OutingStation
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {toast && <div style={S.toast}><Check size={14} color={OS_PRIMARY}/> {toast}</div>}
-    </>
+    <div className="flex items-end gap-2">
+      <div className="w-6 h-6 rounded-lg bg-cyan-100 border border-cyan-200 flex items-center justify-center flex-shrink-0">
+        <Compass size={12} className="text-cyan-600" />
+      </div>
+      <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1">
+        {[0, 1, 2].map(i => (
+          <div key={i} className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
+        ))}
+      </div>
+    </div>
   );
 }

@@ -17,37 +17,29 @@ export function generateReferralCode(name, uid) {
  * Format credits for display
  */
 export function formatCredits(amount) {
-  return `₦${amount.toLocaleString()}`;
+  return `₦${Number(amount).toLocaleString()}`;
 }
 
 /**
- * Calculate total available credits (active + non-expired)
+ * Calculate total available credits
+ * ✅ No expiry — credits never expire
  */
 export function calculateAvailableCredits(creditsHistory) {
   if (!creditsHistory || creditsHistory.length === 0) return 0;
-  const now = new Date();
   return creditsHistory
-    .filter(credit =>
-      credit.status === 'active' &&
-      new Date(credit.expiresAt) > now &&
-      credit.amount > 0
-    )
+    .filter(credit => credit.status === 'active' && credit.amount > 0)
     .reduce((sum, credit) => sum + credit.amount, 0);
 }
 
 /**
- * Get credits sorted by expiry (oldest first - FIFO)
+ * Get active credits sorted by date earned (oldest first - FIFO)
+ * ✅ No expiry check
  */
 export function getActiveCredits(creditsHistory) {
   if (!creditsHistory || creditsHistory.length === 0) return [];
-  const now = new Date();
   return creditsHistory
-    .filter(credit =>
-      credit.status === 'active' &&
-      new Date(credit.expiresAt) > now &&
-      credit.amount > 0
-    )
-    .sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt));
+    .filter(credit => credit.status === 'active' && credit.amount > 0)
+    .sort((a, b) => new Date(a.earnedAt) - new Date(b.earnedAt));
 }
 
 /**
@@ -64,8 +56,8 @@ export function calculateMaxCreditUsage(totalAmount, availableCredits) {
 export function applyCreditsToTransaction(creditsHistory, amountToUse) {
   const activeCredits = getActiveCredits(creditsHistory);
   let remaining = amountToUse;
-  let creditsToDeduct = [];
-  for (let credit of activeCredits) {
+  const creditsToDeduct = [];
+  for (const credit of activeCredits) {
     if (remaining <= 0) break;
     const useAmount = Math.min(credit.amount, remaining);
     creditsToDeduct.push({ creditId: credit.id, amountUsed: useAmount });
@@ -73,66 +65,37 @@ export function applyCreditsToTransaction(creditsHistory, amountToUse) {
   }
   return {
     totalApplied: amountToUse - remaining,
-    creditsToDeduct: creditsToDeduct
+    creditsToDeduct,
   };
 }
 
-/**
- * Calculate days until credit expires
- */
-export function getDaysUntilExpiry(expiryDate) {
-  const now = new Date();
-  const expiry = new Date(expiryDate);
-  const diffTime = expiry - now;
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays;
-}
+// ── Referral limits ───────────────────────────────────────────────────────────
 
-// ✅ NEW — Referral limits
-export const REFERRAL_LIMIT_NORMAL = 20;      // regular users
-export const REFERRAL_LIMIT_AMBASSADOR = 100; // ambassadors
+export const REFERRAL_LIMIT_NORMAL      = 20;
+export const REFERRAL_LIMIT_AMBASSADOR  = 100;
 
-/**
- * Check if user can still refer more people
- */
 export function canStillRefer(totalReferrals, isAmbassador) {
   const limit = isAmbassador ? REFERRAL_LIMIT_AMBASSADOR : REFERRAL_LIMIT_NORMAL;
   return (totalReferrals || 0) < limit;
 }
 
-/**
- * Get remaining referral slots
- */
 export function getReferralSlotsLeft(totalReferrals, isAmbassador) {
   const limit = isAmbassador ? REFERRAL_LIMIT_AMBASSADOR : REFERRAL_LIMIT_NORMAL;
   return Math.max(0, limit - (totalReferrals || 0));
 }
 
-/**
- * Check if user's credits are usable
- * Ambassadors: always usable
- * Regular users: only if admin has unlocked them
- */
+// ── Credit usability ──────────────────────────────────────────────────────────
+
 export function areCreditsUsable(isAmbassador, creditsUnlocked) {
   if (isAmbassador) return true;
   return creditsUnlocked === true;
 }
 
-/**
- * Check if user already used credits on a specific event
- */
 export function hasUsedCreditsOnEvent(creditUsedOnEvents, eventId) {
   if (!creditUsedOnEvents || !Array.isArray(creditUsedOnEvents)) return false;
   return creditUsedOnEvents.includes(eventId);
 }
 
-/**
- * Check if credits can be applied to this purchase
- * Rules:
- * 1. Credits must be usable (unlocked)
- * 2. Quantity must be exactly 1
- * 3. User must not have already used credits on this event
- */
 export function canApplyCreditsToTicket(
   isAmbassador,
   creditsUnlocked,
