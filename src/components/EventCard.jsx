@@ -153,8 +153,10 @@ export default function EventCard({ event }) {
             <div className="flex items-center gap-1.5">
               <MapPin size={13} className="text-gray-400 shrink-0" />
               <span className="line-clamp-1">
-                {event.address || event.location || 'Location TBA'}
-              </span>
+  {event.eventType === 'webinar' || event.subCategory === 'webinar'
+    ? `via ${event.platform || 'Online'}`
+    : event.address || event.location || 'Location TBA'}
+</span>
             </div>
           </div>
         </div>

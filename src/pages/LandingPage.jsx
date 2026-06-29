@@ -38,11 +38,12 @@ export default function LandingPage() {
   const uniTextRef = useRef(null);
 
   const rotatingTexts = [
-    "From conferences in Lagos to tech meetups in Abuja, find your next unforgettable experience!",
-    "From campus parties to business summits, discover events that matter to you!",
-    "From weekend hangouts to career workshops, never miss out on what's happening!",
-    "From live concerts to food festivals, your next adventure starts here!"
-  ];
+  "Events, places, campus life and AI discovery. All in one place.",
+  "From concerts in Lagos to campus hangouts in Abuja, find your next experience.",
+  "Discover events, explore places, and let Outing AI guide your next move.",
+  "From food festivals to business summits. OutingStation has it all.",
+  "Your personal guide to what's happening around you, on and off campus.",
+];
 
   const features = [
     "Quickly find diverse events, from university gatherings to virtual webinars, happening nearby or online",
@@ -270,9 +271,10 @@ export default function LandingPage() {
             <div className="max-w-7xl mx-auto relative z-10">
               <div className="text-center mb-8">
                 <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold mb-4">
-                  Discover <span className="text-cyan-400 italic">Events</span> Happening{' '}
+                  Your City.{' '}
+                  <span className="text-cyan-400 italic">Your Vibe.</span>{' '}
                   <br className="hidden sm:block" />
-                  Near You
+                  One App.
                 </h1>
                 <p className={'text-gray-500 text-sm md:text-base lg:text-lg px-4 max-w-xl mx-auto transition-opacity duration-500 ' + (fade ? 'opacity-100' : 'opacity-0')}>
                   {rotatingTexts[currentText]}
