@@ -2,17 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useOutletContext } from 'react-router-dom';
 import {
   X, Pencil, MapPin, User, Mail, Calendar, Bookmark,
-  LogOut, Phone, Camera, CreditCard, Star, Gift,
+  LogOut, Phone, Camera, Star, Gift, Ticket,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
-import ReferralCard from '../../components/ReferralCard';
-import {
-  formatCredits,
-  calculateAvailableCredits,
-  getActiveCredits,
-} from '../../utils/referralUtils';
+import { formatCredits } from '../../utils/referralUtils';
 
 export default function Settings() {
   const navigate     = useNavigate();
@@ -20,14 +15,14 @@ export default function Settings() {
   const { searchQuery } = useOutletContext();
   const { currentUser, userProfile, logout, updateProfile } = useAuth();
 
-  const [isEditing, setIsEditing]                   = useState(false);
+  const [isEditing, setIsEditing]                         = useState(false);
   const [showSavedNotification, setShowSavedNotification] = useState(false);
-  const [showLogoutModal, setShowLogoutModal]         = useState(false);
-  const [saving, setSaving]                           = useState(false);
-  const [uploadingAvatar, setUploadingAvatar]         = useState(false);
-  const [savedCount, setSavedCount]                   = useState(0);
-  const [avatarUrl, setAvatarUrl]                     = useState('');
-  const [userData, setUserData]                       = useState(null);
+  const [showLogoutModal, setShowLogoutModal]             = useState(false);
+  const [saving, setSaving]                               = useState(false);
+  const [uploadingAvatar, setUploadingAvatar]             = useState(false);
+  const [savedCount, setSavedCount]                       = useState(0);
+  const [avatarUrl, setAvatarUrl]                         = useState('');
+  const [userData, setUserData]                           = useState(null);
 
   const displayName = userProfile?.name || currentUser?.displayName || 'User';
   const joinedDate  = userProfile?.createdAt?.toDate?.()?.toLocaleDateString('en-US', {
@@ -67,14 +62,13 @@ export default function Settings() {
     return unsub;
   }, [currentUser]);
 
-  const isAmbassador    = userData?.isAmbassador    === true;
-  const creditsUnlocked = userData?.creditsUnlocked === true;
-  const availableCredits = calculateAvailableCredits(userData?.creditsHistory || []);
-  const activeCredits    = getActiveCredits(userData?.creditsHistory || []);
+  const isAmbassador  = userData?.isAmbassador === true;
+  const totalCredits  = userData?.totalCredits || 0;
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
-
-  const handleEditClick   = () => { setFormData({ name: userProfile?.name || displayName, email: currentUser?.email || '', phone: userProfile?.phone || '', city: userProfile?.city || '' }); setIsEditing(true); };
+  const handleEditClick   = () => {
+    setFormData({ name: userProfile?.name || displayName, email: currentUser?.email || '', phone: userProfile?.phone || '', city: userProfile?.city || '' });
+    setIsEditing(true);
+  };
   const handleCancelEdit  = () => setIsEditing(false);
   const handleAvatarClick = () => { if (isEditing) fileInputRef.current?.click(); };
 
@@ -92,7 +86,7 @@ export default function Settings() {
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
     if (!file.type.startsWith('image/')) { alert('Please select an image file'); return; }
-    if (file.size > 5 * 1024 * 1024)    { alert('Image size must be less than 5MB'); return; }
+    if (file.size > 5 * 1024 * 1024) { alert('Image size must be less than 5MB'); return; }
     try {
       setUploadingAvatar(true);
       let imageUrl;
@@ -135,8 +129,6 @@ export default function Settings() {
     try { await logout(); navigate('/'); } catch (err) { console.error('Logout error:', err); }
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
 
@@ -149,14 +141,14 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Page header */}
+      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
             {isEditing ? 'Edit Profile' : 'Profile'}
           </h1>
-          <p className="text-sm sm:text-base text-gray-600 mt-1">
-            {isEditing ? 'Update your personal information' : 'Manage your personal information'}
+          <p className="text-sm text-gray-500 mt-1">
+            {isEditing ? 'Update your personal information' : 'Manage your account'}
           </p>
         </div>
         <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-gray-200 rounded-full transition">
@@ -166,8 +158,8 @@ export default function Settings() {
 
       {!isEditing ? (
         <>
-          {/* ── Profile card ───────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-200 mb-5">
+          {/* ── Profile card ─────────────────────────────────────────── */}
+          <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-200 mb-4">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
                 <div className="relative">
@@ -187,16 +179,16 @@ export default function Settings() {
                       </span>
                     )}
                   </div>
-                  <p className="text-sm sm:text-base text-gray-600 mb-1 break-all">{currentUser?.email}</p>
-                  {userProfile?.phone && <p className="text-sm text-gray-600 mb-2">{userProfile.phone}</p>}
-                  <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6 text-xs sm:text-sm">
+                  <p className="text-sm text-gray-500 mb-1 break-all">{currentUser?.email}</p>
+                  {userProfile?.phone && <p className="text-sm text-gray-500 mb-2">{userProfile.phone}</p>}
+                  <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-5 text-xs text-gray-500">
                     {userProfile?.city && (
-                      <div className="flex items-center gap-2 text-gray-700">
-                        <MapPin size={14} /><span>{userProfile.city}</span>
+                      <div className="flex items-center gap-1.5">
+                        <MapPin size={13} /><span>{userProfile.city}</span>
                       </div>
                     )}
-                    <div className="flex items-center gap-2 text-gray-700">
-                      <Calendar size={14} /><span>Joined: {joinedDate}</span>
+                    <div className="flex items-center gap-1.5">
+                      <Calendar size={13} /><span>Joined: {joinedDate}</span>
                     </div>
                   </div>
                 </div>
@@ -207,139 +199,84 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* ── Add phone banner ────────────────────────────────────────── */}
+          {/* ── Add phone banner ──────────────────────────────────────── */}
           {!userData?.phone && (
-            <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl p-4 mb-5 flex items-center justify-between">
+            <div className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl p-4 mb-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Phone size={22} />
+                <Phone size={20} />
                 <div>
                   <p className="font-semibold text-sm">Add your phone number</p>
                   <p className="text-xs text-cyan-100">Get WhatsApp notifications for your tickets</p>
                 </div>
               </div>
-              <button onClick={handleEditClick} className="bg-white text-cyan-600 px-4 py-2 rounded-lg font-semibold text-sm hover:bg-cyan-50 transition whitespace-nowrap">
+              <button onClick={handleEditClick} className="bg-white text-cyan-600 px-3 py-1.5 rounded-lg font-semibold text-sm hover:bg-cyan-50 transition whitespace-nowrap">
                 Add Now
               </button>
             </div>
           )}
 
-          {/* ── Credits balance card ────────────────────────────────────── */}
-          <div className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-2xl p-5 sm:p-6 mb-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <CreditCard size={22} />
-                <h3 className="text-lg font-bold">My Credits</h3>
-              </div>
-              {!creditsUnlocked && !isAmbassador && (
-                <span className="text-xs bg-white/20 border border-white/30 px-3 py-1 rounded-full font-semibold">
-                  🔒 Pending Approval
-                </span>
-              )}
-              {(creditsUnlocked || isAmbassador) && (
-                <span className="text-xs bg-white/20 border border-white/30 px-3 py-1 rounded-full font-semibold">
-                  ✅ Active
-                </span>
-              )}
+          {/* ── My Rewards banner ─────────────────────────────────────── */}
+          <button
+            onClick={() => navigate('/rewards')}
+            className="w-full bg-gradient-to-br from-emerald-500 to-cyan-600 text-white rounded-2xl p-5 mb-4 shadow-sm flex items-center gap-4 hover:opacity-95 transition text-left"
+          >
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Gift size={24} className="text-white" />
             </div>
-
-            {/* Balance */}
-            <div className="mb-4">
-              <p className="text-sm text-white/70 mb-1">Available Balance</p>
-              <p className="text-4xl font-black tracking-tight">{formatCredits(availableCredits)}</p>
-              {(creditsUnlocked || isAmbassador) && (
-                <p className="text-xs text-white/60 mt-1">Usable on ticket purchases at checkout</p>
-              )}
+            <div className="flex-1">
+              <p className="font-bold text-base">My Rewards</p>
+              <p className="text-xs text-white/70 mt-0.5">
+                {totalCredits > 0
+                  ? `${formatCredits(totalCredits)} credits · Referral code: ${userData?.referralCode || '—'}`
+                  : 'Credits, referral code & earnings'}
+              </p>
             </div>
+            <span className="text-white/60 text-xl">›</span>
+          </button>
 
-            {/* How to earn */}
-            <div className="bg-white/10 rounded-xl p-3 mb-4">
-              <p className="text-xs font-bold text-white/80 mb-2">HOW TO EARN MORE</p>
-              <div className="space-y-1.5">
-                {[
-                  ['👥', `Refer a friend — earn ${isAmbassador ? '₦500' : '₦300'} per signup`],
-                  ['🎉', 'List an event — earn credits on approval'],
-                  ['📍', 'List a place — earn credits on approval'],
-                ].map(([emoji, text]) => (
-                  <div key={text} className="flex items-center gap-2 text-xs text-white/80">
-                    <span>{emoji}</span><span>{text}</span>
-                  </div>
-                ))}
-              </div>
+          {/* ── My Tickets banner ─────────────────────────────────────── */}
+          {/* <button
+            onClick={() => navigate('/my-tickets')}
+            className="w-full bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-2xl p-5 mb-4 shadow-sm flex items-center gap-4 hover:opacity-95 transition text-left"
+          >
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Ticket size={24} className="text-white" />
             </div>
-
-            {/* Credit history — no expiry */}
-            {activeCredits.length > 0 ? (
-              <div>
-                <p className="text-xs font-bold text-white/70 mb-2">CREDIT HISTORY</p>
-                <div className="space-y-2">
-                  {activeCredits.slice(0, 3).map((credit) => (
-                    <div key={credit.id} className="flex items-center justify-between bg-white/10 rounded-lg px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <Gift size={13} className="text-white/70" />
-                        <p className="text-xs text-white/80 truncate max-w-[160px]">{credit.reason || 'Credit earned'}</p>
-                      </div>
-                      <p className="text-sm font-bold text-white">{formatCredits(credit.amount)}</p>
-                    </div>
-                  ))}
-                  {activeCredits.length > 3 && (
-                    <p className="text-xs text-white/50 text-center mt-1">+{activeCredits.length - 3} more</p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-2">
-                <p className="text-sm text-white/60">No credits yet — invite friends to start earning!</p>
-              </div>
-            )}
-          </div>
-
-          {/* ── Referral card ───────────────────────────────────────────── */}
-          {userData?.referralCode ? (
-            <div className="mb-5">
-              <ReferralCard
-                referralCode={userData.referralCode}
-                totalReferrals={userData.totalReferrals || 0}
-                isAmbassador={isAmbassador}
-                creditsUnlocked={creditsUnlocked}
-                creditsHistory={userData.creditsHistory || []}
-              />
+            <div className="flex-1">
+              <p className="font-bold text-base">My Tickets</p>
+              <p className="text-xs text-white/70 mt-0.5">View all your purchased tickets & QR codes</p>
             </div>
-          ) : (
-            <div className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-2xl p-5 mb-5">
-              <h3 className="text-lg font-bold mb-2">🎁 Get Your Referral Code</h3>
-              <p className="text-sm text-cyan-100 mb-3">Loading your referral link...</p>
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white" />
-            </div>
-          )}
+            <span className="text-white/60 text-xl">›</span>
+          </button> */}
 
-          {/* ── Saved events ────────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+          {/* ── Saved events ──────────────────────────────────────────── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-              <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 bg-cyan-100 rounded-lg flex items-center justify-center">
-                  <Bookmark size={20} className="text-cyan-500" />
+                  <Bookmark size={18} className="text-cyan-500" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900">{savedCount} Saved Event{savedCount !== 1 ? 's' : ''}</h3>
+                <h3 className="text-base font-bold text-gray-900">{savedCount} Saved Event{savedCount !== 1 ? 's' : ''}</h3>
               </div>
               <p className="text-gray-500 text-sm">Events you're interested in.</p>
             </div>
 
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900 mb-2">Your Collection</h3>
+              <h3 className="text-base font-bold text-gray-900 mb-2">Your Collection</h3>
               <p className="text-gray-500 text-sm mb-4">Review events you've saved and plan your next outing.</p>
-              <Link to="/saved-events" className="inline-block px-5 py-2 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition text-sm text-center">
+              <Link to="/saved-events" className="inline-block px-5 py-2 bg-cyan-400 text-white rounded-lg font-medium hover:bg-cyan-500 transition text-sm">
                 View
               </Link>
             </div>
           </div>
 
-          {/* ── Logout ──────────────────────────────────────────────────── */}
-          <button onClick={() => setShowLogoutModal(true)} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition text-sm">
+          {/* ── Logout ────────────────────────────────────────────────── */}
+          <button onClick={() => setShowLogoutModal(true)} className="flex items-center gap-2 text-gray-500 hover:text-gray-800 transition text-sm mt-2">
             <LogOut size={16} /><span className="font-medium">Logout</span>
           </button>
         </>
       ) : (
-        /* ── Edit form ──────────────────────────────────────────────────── */
+        /* ── Edit form ────────────────────────────────────────────────── */
         <div className="bg-white rounded-2xl p-5 sm:p-6 lg:p-8 shadow-sm border border-gray-200">
           {/* Avatar */}
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 mb-6 pb-6 border-b border-gray-200">
@@ -388,7 +325,6 @@ export default function Settings() {
                 <p className="text-xs text-gray-400 mt-1">Email cannot be changed</p>
               </div>
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-900 mb-2">Phone <span className="text-gray-400 text-xs">(Optional)</span></label>
               <div className="relative">
@@ -396,7 +332,6 @@ export default function Settings() {
                 <input type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="+234 800 000 0000" className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm" />
               </div>
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-900 mb-2">City *</label>
               <div className="relative">
@@ -418,7 +353,7 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ── Logout modal ─────────────────────────────────────────────────── */}
+      {/* Logout modal */}
       {showLogoutModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full relative">
@@ -430,11 +365,11 @@ export default function Settings() {
                 <LogOut size={24} className="text-cyan-500" />
               </div>
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 text-center mb-2">Logout?</h2>
-            <p className="text-sm text-gray-600 text-center mb-7">Are you sure you want to logout? You'll need to sign back in to access your saved events.</p>
+            <h2 className="text-xl font-bold text-gray-900 text-center mb-2">Logout?</h2>
+            <p className="text-sm text-gray-600 text-center mb-7">Are you sure you want to logout?</p>
             <div className="flex gap-3">
-              <button onClick={handleLogout} className="flex-1 px-4 py-2.5 bg-cyan-400 text-white rounded-full font-medium hover:bg-cyan-500 transition text-sm">Logout</button>
-              <button onClick={() => setShowLogoutModal(false)} className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-full font-medium hover:bg-gray-200 transition text-sm">Cancel</button>
+              <button onClick={handleLogout} className="flex-1 py-2.5 bg-cyan-400 text-white rounded-full font-medium hover:bg-cyan-500 transition text-sm">Logout</button>
+              <button onClick={() => setShowLogoutModal(false)} className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-full font-medium hover:bg-gray-200 transition text-sm">Cancel</button>
             </div>
           </div>
         </div>

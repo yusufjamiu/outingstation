@@ -46,6 +46,7 @@ import CreditUnlockRequestPage from './pages/CreditUnlockRequestPage';
 import UserDashboard from './pages/dashboard/UserDashboard';
 import SavedEvents from './pages/dashboard/SavedEvents';
 import Settings from './pages/dashboard/Settings';
+import RewardsPage from './pages/dashboard/RewardsPage';
 import GenericCategory from './pages/dashboard/GenericCategory';
 import WebinarEvents from './pages/dashboard/WebinarEvents';
 import CategoryBrowse from './pages/dashboard/CategoryBrowse';
@@ -144,6 +145,7 @@ function App() {
                 <Route path="/dashboard/category/:slug" element={<GenericCategory />} />
                 <Route path="/saved-events" element={<SavedEvents />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/rewards" element={<RewardsPage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />
               </Route>
 
