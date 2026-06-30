@@ -3,9 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Menu, X, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import OutingStation from '../assets/OutingStation.png';
+import googlePlayBadge from '../assets/google-play.png';
+import appStoreBadge from '../assets/app-store.svg';
+
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.outingstation&pcampaignid=web_share';
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const [showAppModal, setShowAppModal] = useState(false);
   const navigate = useNavigate();
   const { currentUser, userProfile, logout } = useAuth();
 
@@ -47,7 +52,12 @@ export default function Navbar() {
 
           {/* Desktop Right - pinned right */}
           <div className="hidden md:flex items-center space-x-3 absolute right-0">
-            <a href="https://play.google.com/store" target="_blank" rel="noopener noreferrer" className="border border-gray-800 text-gray-800 px-4 py-2 rounded-full font-medium hover:bg-gray-100 transition text-sm">Get the App</a>
+            <button
+              onClick={() => setShowAppModal(true)}
+              className="border border-gray-800 text-gray-800 px-4 py-2 rounded-full font-medium hover:bg-gray-100 transition text-sm"
+            >
+              Get the App
+            </button>
             {currentUser && (
               <div className="flex items-center space-x-3">
                 <Link to="/dashboard" className="flex items-center gap-2 text-gray-700 hover:text-cyan-500 transition">
@@ -70,7 +80,12 @@ export default function Navbar() {
 
           {/* Mobile Right - pinned right */}
           <div className="md:hidden flex items-center gap-3 absolute right-0">
-            <a href="https://play.google.com/store" target="_blank" rel="noopener noreferrer" className="border border-gray-800 text-gray-800 px-3 py-1.5 rounded-full font-medium text-sm hover:bg-gray-100 transition">Get the App</a>
+            <button
+              onClick={() => setShowAppModal(true)}
+              className="border border-gray-800 text-gray-800 px-3 py-1.5 rounded-full font-medium text-sm hover:bg-gray-100 transition"
+            >
+              Get the App
+            </button>
             <button onClick={() => setIsOpen(!isOpen)} className="text-gray-700">
               {isOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
@@ -106,6 +121,56 @@ export default function Navbar() {
         )}
 
       </div>
+
+      {/* ── Get the App Modal ─────────────────────────────────────────── */}
+      {showAppModal && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4"
+          onClick={() => setShowAppModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-sm w-full p-6 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowAppModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="text-center mb-6">
+              <img src={OutingStation} alt="OutingStation" className="h-12 w-auto mx-auto mb-3" />
+              <h3 className="text-xl font-bold text-gray-900">Get the OutingStation App</h3>
+              <p className="text-sm text-gray-500 mt-1">One App. Many Experiences.</p>
+            </div>
+
+            <div className="space-y-3">
+              {/* Google Play */}
+              <a
+                href={PLAY_STORE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center w-full bg-gray-900 rounded-xl px-4 py-2 hover:bg-gray-800 transition"
+              >
+                <img src={googlePlayBadge} alt="Get it on Google Play" className="h-20 w-auto" />
+              </a>
+
+              {/* Apple App Store — Coming Soon */}
+              <div className="flex items-center justify-center w-full bg-gray-100 rounded-xl px-4 py-3 cursor-not-allowed relative">
+                <img src={appStoreBadge} alt="Download on the App Store" className="h-10 w-auto opacity-40 grayscale" />
+                <span className="absolute -top-2 -right-2 text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-full whitespace-nowrap shadow-sm border border-amber-200">
+                  99% Ready
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-400 text-center mt-5">
+              iOS is in final review — we'll be live very soon! 🚀
+            </p>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

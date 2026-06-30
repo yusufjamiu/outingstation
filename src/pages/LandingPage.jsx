@@ -271,10 +271,8 @@ export default function LandingPage() {
             <div className="max-w-7xl mx-auto relative z-10">
               <div className="text-center mb-8">
                 <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold mb-4">
-                  Your City.{' '}
-                  <span className="text-cyan-400 italic">Your Vibe.</span>{' '}
-                  <br className="hidden sm:block" />
-                  One App.
+                  One App.{' '}
+                  <span className="text-cyan-400 italic">Many Experiences.</span>
                 </h1>
                 <p className={'text-gray-500 text-sm md:text-base lg:text-lg px-4 max-w-xl mx-auto transition-opacity duration-500 ' + (fade ? 'opacity-100' : 'opacity-0')}>
                   {rotatingTexts[currentText]}
