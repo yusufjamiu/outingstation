@@ -46,10 +46,10 @@ export default function LandingPage() {
 ];
 
   const features = [
-    "Quickly find diverse events, from university gatherings to virtual webinars, happening nearby or online",
-    "Filter events by category, city, date, and price to pinpoint exactly what you're looking for.",
-    "Get all essential information, including location, time, and pricing, with convenient options to share or save events."
-  ];
+  "Discover events, places, campus activities and opportunities, all happening nearby or online, in one app.",
+  "Filter by category, city, date, and price, or just ask Outing AI to find exactly what you're looking for.",
+  "Get full details on any event or place, with options to buy tickets, save favourites, and share with friends."
+];
 
   const fallbackTicker = [
     { name: 'Tech Summit Lagos', city: 'Lagos', date: 'Tomorrow', status: 'soon' },
@@ -141,63 +141,50 @@ export default function LandingPage() {
   // Load ticker events from Firestore
   useEffect(() => {
     const loadTickerEvents = async () => {
-      try {
-        const now = new Date();
-        const nextWeek = new Date();
-        nextWeek.setDate(now.getDate() + 7);
+  try {
+    const snapshot = await getDocs(collection(db, 'events'));
+    const now = new Date();
 
-        const q = query(
-          collection(db, 'events'),
-          where('date', '>=', now.toISOString().split('T')[0]),
-          where('date', '<=', nextWeek.toISOString().split('T')[0]),
-          orderBy('date', 'asc'),
-          limit(8)
-        );
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
 
-        const snapshot = await getDocs(q);
+    const events = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(e => e.status === 'published' && e.date)
+      .map(e => {
+        // ✅ Handle Firestore Timestamp or string
+        const d = e.date?.toDate ? e.date.toDate() : new Date(e.date);
+        return { ...e, _date: d };
+      })
+      .filter(e => e._date >= today)
+      .sort((a, b) => a._date - b._date)
+      .slice(0, 8)
+      .map(e => {
+        const d = e._date;
+        const isToday = d.toDateString() === today.toDateString();
+        const isTomorrow = d.toDateString() === tomorrow.toDateString();
 
-        if (snapshot.empty) {
-          setTickerEvents(fallbackTicker);
-          return;
-        }
+        let dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        let status = 'amber';
 
-        const today = now.toISOString().split('T')[0];
-        const tomorrow = new Date(now);
-        tomorrow.setDate(now.getDate() + 1);
-        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+        if (isToday) { dateLabel = 'Tonight'; status = 'live'; }
+        else if (isTomorrow) { dateLabel = 'Tomorrow'; status = 'soon'; }
 
-        const events = snapshot.docs.map(doc => {
-          const data = doc.data();
-          const eventDate = data.date;
-          let dateLabel = eventDate;
-          let status = 'soon';
+        return {
+          name: e.title || e.name,
+          city: (e.location || 'Lagos').split(',')[0].trim(),
+          date: dateLabel,
+          status,
+        };
+      });
 
-          if (eventDate === today) {
-            dateLabel = 'Tonight';
-            status = 'live';
-          } else if (eventDate === tomorrowStr) {
-            dateLabel = 'Tomorrow';
-            status = 'soon';
-          } else {
-            const d = new Date(eventDate);
-            dateLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            status = 'amber';
-          }
-
-          return {
-            name: data.title || data.name,
-            city: data.city || 'Lagos',
-            date: dateLabel,
-            status,
-          };
-        });
-
-        setTickerEvents(events.length >= 4 ? events : [...events, ...fallbackTicker].slice(0, 6));
-      } catch (err) {
-        console.error('Ticker load error:', err);
-        setTickerEvents(fallbackTicker);
-      }
-    };
+    setTickerEvents(events.length >= 3 ? events : [...events, ...fallbackTicker].slice(0, 6));
+  } catch (err) {
+    console.error('Ticker load error:', err);
+    setTickerEvents(fallbackTicker);
+  }
+};
 
     loadTickerEvents();
   }, []);
@@ -377,16 +364,16 @@ export default function LandingPage() {
 
               <div ref={aboutRef} className="overflow-hidden">
                 <p className={'text-gray-500 text-sm md:text-base mb-3 transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4')}>
-                  We bring you the events happening near you
+                  Your AI-powered guide to experiences around you
                 </p>
                 <h2 className={'text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-8 transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5')} style={{ transitionDelay: '100ms' }}>
-                  Discover Local Happenings
+                  Discover More Than Just Events
                 </h2>
                 <h3 className={'text-xl md:text-2xl font-semibold text-cyan-400 mb-4 transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-5')} style={{ transitionDelay: '200ms' }}>
                   What Outing Station Does.
                 </h3>
                 <p className={'text-gray-600 text-base md:text-lg mb-6 leading-relaxed transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3')} style={{ transitionDelay: '300ms' }}>
-                  Outing Station is a platform for discovering, browsing, and managing diverse events, from local gatherings to virtual webinars, with features like city-based search, category filters, and detailed event information.
+                  OutingStation is an AI-powered discovery platform that helps you find events, places, campus activities, and opportunities, all in one app. Whether you're planning a night out, exploring your city, or wondering what to do today, OutingStation has you covered.
                 </p>
 
                 <p className={'text-xs text-gray-400 tracking-widest mb-2 transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2')} style={{ transitionDelay: '400ms' }}>
