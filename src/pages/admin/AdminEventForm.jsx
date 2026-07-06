@@ -24,7 +24,6 @@ const generateSlug = (title) => {
     .substring(0, 80);
 };
 
-// ✅ Tier presets for quick selection
 const TIER_PRESETS = [
   { name: 'Regular', emoji: '🎫' },
   { name: 'Early Bird', emoji: '🐦' },
@@ -35,7 +34,22 @@ const TIER_PRESETS = [
   { name: 'Couple', emoji: '💑' },
 ];
 
-// ✅ Ticket Tier Builder component
+const CAMPUS_EVENT_CATEGORIES = [
+  'Lectures & Seminars', 'Competitions', 'Social Events',
+  'Religious Programs', 'Sports Events', 'Career & Opportunities',
+  'Cultural Events', 'Other',
+];
+
+const CAMPUS_PLACE_SUBCATEGORIES = [
+  'Cafeteria', 'Food Vendors', 'Library', 'Auditorium',
+  'Faculty Building', 'Health Center', 'Sport Center',
+  'Hostel', 'Chapel / Mosque', 'Admin Block', 'Market', 'Other',
+];
+
+const OPPORTUNITY_TYPES = ['Internship', 'Scholarship', 'Competition', 'Career Event', 'Volunteering'];
+const LOCATION_TYPES = ['On-site', 'Remote', 'International'];
+const OPPORTUNITY_CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
+
 function TicketTierBuilder({ tiers, onChange }) {
   const addTier = () => {
     if (tiers.length >= 5) return;
@@ -76,7 +90,6 @@ function TicketTierBuilder({ tiers, onChange }) {
             )}
           </div>
 
-          {/* Quick presets */}
           <div className="flex flex-wrap gap-1.5 mb-3">
             {TIER_PRESETS.map(p => (
               <button key={p.name} type="button"
@@ -158,22 +171,18 @@ export default function AdminEventForm() {
   const [showManageLinkModal, setShowManageLinkModal] = useState(false);
   const [createdEvent, setCreatedEvent] = useState(null);
 
-  // ✅ Extra images state
   const [uploadingExtra, setUploadingExtra] = useState(false);
   const [uploadExtraProgress, setUploadExtraProgress] = useState(0);
 
-  // ✅ Ticketing state
   const [ticketingOption, setTicketingOption] = useState('none');
   const [ticketPrice, setTicketPrice] = useState('');
   const [ticketsAvailable, setTicketsAvailable] = useState(100);
   const [externalTicketLink, setExternalTicketLink] = useState('');
 
-  // ✅ Service fee state
   const [serviceFeeType, setServiceFeeType] = useState('fixed');
   const [serviceFeeAmount, setServiceFeeAmount] = useState(100);
   const [serviceFeePercentage, setServiceFeePercentage] = useState(2);
 
-  // ✅ Ticket tiers state
   const [useTicketTiers, setUseTicketTiers] = useState(false);
   const [ticketTiers, setTicketTiers] = useState([{
     id: `tier_${Date.now()}`,
@@ -198,7 +207,13 @@ export default function AdminEventForm() {
     price: '', isFree: false, capacity: '',
     imageUrl: '',
     images: [],
-    status: 'published', isFeatured: false, isTrending: false
+    status: 'published', isFeatured: false, isTrending: false,
+    campusSubCategory: '',
+    campusEventCategory: '',
+    opportunityType: '',
+    locationType: 'On-site',
+    deadline: '',
+    country: '',
   });
 
   const calculateServiceFee = () => {
@@ -249,6 +264,7 @@ export default function AdminEventForm() {
             if (data.date instanceof Timestamp) formattedData.date = data.date.toDate().toISOString().split('T')[0];
             if (data.startDate instanceof Timestamp) formattedData.startDate = data.startDate.toDate().toISOString().split('T')[0];
             if (data.endDate instanceof Timestamp) formattedData.endDate = data.endDate.toDate().toISOString().split('T')[0];
+            if (data.deadline instanceof Timestamp) formattedData.deadline = data.deadline.toDate().toISOString().split('T')[0];
             if (!formattedData.images) formattedData.images = [];
             setFormData(prev => ({ ...prev, ...formattedData }));
             if (data.ticketingOption) {
@@ -260,7 +276,6 @@ export default function AdminEventForm() {
               setServiceFeeAmount(data.serviceFeeAmount || 100);
               setServiceFeePercentage(data.serviceFeePercentage || 2);
             }
-            // ✅ Load ticket tiers if they exist
             if (data.hasTicketTiers && data.ticketTiers?.length > 0) {
               setUseTicketTiers(true);
               setTicketTiers(data.ticketTiers.map(t => ({
@@ -295,7 +310,6 @@ export default function AdminEventForm() {
     setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
-  // ✅ Main image upload
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -315,7 +329,6 @@ export default function AdminEventForm() {
     }
   };
 
-  // ✅ Additional images upload
   const handleExtraImagesUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -359,7 +372,6 @@ export default function AdminEventForm() {
     }
   };
 
-  // ✅ Remove extra image
   const removeExtraImage = (index) => {
     setFormData(prev => ({
       ...prev,
@@ -373,11 +385,16 @@ export default function AdminEventForm() {
     catch { return null; }
   };
 
+  const isOpportunity = formData.eventType === 'opportunities';
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.category) { alert('Please select a category'); return; }
+    if (!formData.category && !isOpportunity) { alert('Please select a category'); return; }
+    if (isOpportunity && !formData.opportunityType) { alert('Please select an opportunity type'); return; }
+    if (isOpportunity && formData.locationType === 'On-site' && !formData.location) { alert('Please select a city'); return; }
+    if (isOpportunity && formData.locationType === 'International' && !formData.country?.trim()) { alert('Please enter a country'); return; }
     if (!formData.imageUrl) { alert('Please upload a main image'); return; }
-    if (ticketingOption === 'outingstation') {
+    if (!isOpportunity && ticketingOption === 'outingstation') {
       if (useTicketTiers) {
         if (ticketTiers.length === 0) { alert('Please add at least 1 ticket tier'); return; }
         for (const tier of ticketTiers) {
@@ -388,11 +405,10 @@ export default function AdminEventForm() {
         if (!ticketPrice) { alert('Please enter a ticket price'); return; }
       }
     }
-    if (ticketingOption === 'external' && !externalTicketLink) { alert('Please enter an external ticket link'); return; }
+    if (!isOpportunity && ticketingOption === 'external' && !externalTicketLink) { alert('Please enter an external ticket link'); return; }
 
     setLoading(true);
     try {
-      // ✅ Build tiers data
       const tiersData = useTicketTiers && ticketingOption === 'outingstation'
         ? ticketTiers.map((t, i) => ({
             id: `tier_${i + 1}`,
@@ -409,38 +425,44 @@ export default function AdminEventForm() {
 
       const eventData = {
         ...formData,
-        subCategory: 'events',
+        subCategory: isOpportunity ? 'opportunities' : 'events',
         slug: generateSlug(formData.title),
         price: formData.isFree ? 0 : Number(formData.price) || 0,
         capacity: Number(formData.capacity) || 0,
         date: stringToTimestamp(formData.date),
         startDate: stringToTimestamp(formData.startDate),
         endDate: stringToTimestamp(formData.endDate),
+        deadline: isOpportunity ? stringToTimestamp(formData.deadline) : null,
+        opportunityType: isOpportunity ? formData.opportunityType : null,
+        locationType: isOpportunity ? formData.locationType : null,
+        country: isOpportunity && formData.locationType === 'International' ? formData.country : null,
         images: formData.images || [],
-        ticketingOption,
-        ticketingEnabled: ticketingOption === 'outingstation',
-        hasOutingStationTicketing: ticketingOption === 'outingstation',
-        // ✅ Single price or lowest tier price
-        ticketPrice: ticketingOption === 'outingstation'
+        ticketingOption: isOpportunity ? 'none' : ticketingOption,
+        ticketingEnabled: !isOpportunity && ticketingOption === 'outingstation',
+        hasOutingStationTicketing: !isOpportunity && ticketingOption === 'outingstation',
+        ticketPrice: !isOpportunity && ticketingOption === 'outingstation'
           ? (useTicketTiers && tiersData.length > 0
               ? Math.min(...tiersData.map(t => t.price))
               : Number(ticketPrice))
           : 0,
-        ticketsAvailable: ticketingOption === 'outingstation'
+        ticketsAvailable: !isOpportunity && ticketingOption === 'outingstation'
           ? (useTicketTiers
               ? tiersData.reduce((sum, t) => sum + (t.quantity || 0), 0) || Number(ticketsAvailable)
               : Number(ticketsAvailable))
           : 0,
         ticketsSold: isEdit ? formData.ticketsSold || 0 : 0,
-        ...(ticketingOption === 'outingstation' && !isEdit && { manageKey: generateManageKey() }),
+        ...(!isOpportunity && ticketingOption === 'outingstation' && !isEdit && { manageKey: generateManageKey() }),
         serviceFeeType,
         serviceFeeAmount: serviceFeeType === 'fixed' ? Number(serviceFeeAmount) : 0,
         serviceFeePercentage: serviceFeeType === 'percentage' ? Number(serviceFeePercentage) : 0,
         serviceFee: calculateServiceFee(),
-        externalTicketLink: ticketingOption === 'external' ? externalTicketLink : null,
-        // ✅ Save ticket tiers
-        hasTicketTiers: useTicketTiers && ticketingOption === 'outingstation' && tiersData.length > 0,
+        externalTicketLink: !isOpportunity && ticketingOption === 'external' ? externalTicketLink : null,
+        hasTicketTiers: !isOpportunity && useTicketTiers && ticketingOption === 'outingstation' && tiersData.length > 0,
         ticketTiers: tiersData,
+        campusSubCategory: formData.eventType === 'campus' && formData.subCategory === 'places'
+          ? (formData.campusSubCategory || '') : '',
+        campusEventCategory: formData.eventType === 'campus' && formData.subCategory !== 'places'
+          ? (formData.campusEventCategory || '') : '',
         updatedAt: serverTimestamp()
       };
 
@@ -497,16 +519,17 @@ export default function AdminEventForm() {
           <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
 
-              {/* Basic Info */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Event Title *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {isOpportunity ? 'Opportunity Title *' : 'Event Title *'}
+                    </label>
                     <input
                       type="text" name="title" value={formData.title} onChange={handleChange} required
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                      placeholder="e.g. Tech Innovation Summit 2025"
+                      placeholder={isOpportunity ? 'e.g. MTN Foundation Scholarship 2026' : 'e.g. Tech Innovation Summit 2025'}
                     />
                   </div>
 
@@ -515,7 +538,7 @@ export default function AdminEventForm() {
                     <textarea
                       name="description" value={formData.description} onChange={handleChange} required rows={4}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                      placeholder="Describe your event..."
+                      placeholder={isOpportunity ? 'Eligibility, what it covers, how to apply...' : 'Describe your event...'}
                     />
                   </div>
 
@@ -528,21 +551,52 @@ export default function AdminEventForm() {
                       <option value="regular">🎉 Regular Event</option>
                       <option value="campus">🎓 Campus Event</option>
                       <option value="webinar">📹 Webinar / Virtual</option>
+                      <option value="opportunities">💼 Opportunity</option>
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-                    <select
-                      name="category" value={formData.category} onChange={handleChange} required
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
-                    >
-                      <option value="">Select a category</option>
-                      {allCategories.map(category => (
-                        <option key={category} value={category}>{category}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {!isOpportunity && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
+                      <select
+                        name="category" value={formData.category} onChange={handleChange} required={!isOpportunity}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
+                      >
+                        <option value="">Select a category</option>
+                        {allCategories.map(category => (
+                          <option key={category} value={category}>{category}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {formData.eventType === 'campus' && formData.subCategory !== 'places' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Campus Event Category
+                      </label>
+                      <select name="campusEventCategory" value={formData.campusEventCategory || ''}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                        <option value="">Select campus category</option>
+                        {CAMPUS_EVENT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {formData.eventType === 'campus' && formData.subCategory === 'places' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Place Type <span className="text-red-500">*</span>
+                      </label>
+                      <select name="campusSubCategory" value={formData.campusSubCategory || ''}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-transparent">
+                        <option value="">Select place type</option>
+                        {CAMPUS_PLACE_SUBCATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  )}
 
                   {showReligionType && (
                     <div>
@@ -561,7 +615,66 @@ export default function AdminEventForm() {
                 </div>
               </div>
 
-              {/* Campus Details */}
+              {isOpportunity && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Opportunity Details</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Opportunity Type *</label>
+                      <select name="opportunityType" value={formData.opportunityType} onChange={handleChange} required
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none">
+                        <option value="">Select a type</option>
+                        {OPPORTUNITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Location Type *</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {LOCATION_TYPES.map(lt => (
+                          <button key={lt} type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, locationType: lt }))}
+                            className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition ${
+                              formData.locationType === lt
+                                ? 'bg-cyan-500 text-white border-cyan-500'
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-cyan-400'
+                            }`}>
+                            {lt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {formData.locationType === 'On-site' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">City *</label>
+                        <select name="location" value={formData.location} onChange={handleChange}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none">
+                          <option value="">Select a city</option>
+                          {OPPORTUNITY_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    {formData.locationType === 'International' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Country *</label>
+                        <input type="text" name="country" value={formData.country} onChange={handleChange}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
+                          placeholder="e.g. United Kingdom" />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Application Deadline</label>
+                      <input type="date" name="deadline" value={formData.deadline} onChange={handleChange}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
+                      <p className="text-xs text-gray-500 mt-1">Leave blank for a rolling deadline</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {formData.eventType === 'campus' && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Campus Event Details</h3>
@@ -577,7 +690,6 @@ export default function AdminEventForm() {
                 </div>
               )}
 
-              {/* Webinar Details */}
               {formData.eventType === 'webinar' && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Webinar Details</h3>
@@ -598,7 +710,7 @@ export default function AdminEventForm() {
                 </div>
               )}
 
-              {/* ✅ Ticketing — with tiers support */}
+              {!isOpportunity && (
               <div>
                 <h3 className="text-lg font-bold mb-4">💳 Ticketing Options</h3>
 
@@ -622,7 +734,6 @@ export default function AdminEventForm() {
                       {ticketingOption === 'outingstation' && (
                         <div className="mt-4 space-y-4 border-l-2 border-cyan-500 pl-4">
 
-                          {/* ✅ Toggle: Single price vs tiers */}
                           <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200">
                             <div className="flex items-center gap-2">
                               <Layers size={16} className="text-cyan-600" />
@@ -640,12 +751,10 @@ export default function AdminEventForm() {
                           </div>
 
                           {useTicketTiers ? (
-                            /* ✅ Tier builder */
                             <div>
                               <p className="text-sm font-medium text-gray-700 mb-3">Configure ticket tiers (max 5):</p>
                               <TicketTierBuilder tiers={ticketTiers} onChange={setTicketTiers} />
 
-                              {/* Tier pricing preview */}
                               {ticketTiers.some(t => t.price) && (
                                 <div className="mt-4 bg-cyan-50 p-4 rounded-lg text-sm border border-cyan-200">
                                   <p className="font-medium mb-2">🎟️ Tiers Summary:</p>
@@ -661,7 +770,6 @@ export default function AdminEventForm() {
                               )}
                             </div>
                           ) : (
-                            /* Single price */
                             <div className="space-y-4">
                               <div>
                                 <label className="block text-sm font-medium mb-1">Ticket Price (₦) *</label>
@@ -674,7 +782,6 @@ export default function AdminEventForm() {
                             </div>
                           )}
 
-                          {/* Service fee — always shown for OutingStation ticketing */}
                           <div className="bg-gray-50 p-4 rounded-lg">
                             <label className="block text-sm font-medium mb-3">Service Fee Structure</label>
                             <div className="space-y-3">
@@ -705,7 +812,6 @@ export default function AdminEventForm() {
                             </div>
                           </div>
 
-                          {/* Pricing breakdown — single price only */}
                           {!useTicketTiers && ticketPrice > 0 && (
                             <div className="bg-cyan-50 p-4 rounded-lg text-sm">
                               <p className="font-medium mb-2">💰 Pricing Breakdown:</p>
@@ -751,8 +857,9 @@ export default function AdminEventForm() {
                   </label>
                 </div>
               </div>
+              )}
 
-              {/* Schedule */}
+              {!isOpportunity && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Event Schedule</h3>
                 <div className="space-y-4">
@@ -831,14 +938,14 @@ export default function AdminEventForm() {
                   )}
                 </div>
               </div>
+              )}
 
-              {/* Organizer */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  Organizer Information <span className="text-sm font-normal text-gray-500">(Optional)</span>
+                  {isOpportunity ? 'Provider Information' : 'Organizer Information'} <span className="text-sm font-normal text-gray-500">(Optional)</span>
                 </h3>
                 <div className="space-y-4">
-                  <input type="text" name="organizerName" value={formData.organizerName} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Organizer name" />
+                  <input type="text" name="organizerName" value={formData.organizerName} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder={isOpportunity ? 'Organization offering this (e.g. MTN Foundation)' : 'Organizer name'} />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <input type="tel" name="organizerPhone" value={formData.organizerPhone} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Phone number" />
                     <input type="email" name="organizerEmail" value={formData.organizerEmail} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Email address" />
@@ -846,8 +953,7 @@ export default function AdminEventForm() {
                 </div>
               </div>
 
-              {/* Location */}
-              {formData.eventType !== 'webinar' && (
+              {formData.eventType !== 'webinar' && !isOpportunity && (
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Location</h3>
                   <div className="space-y-4">
@@ -858,7 +964,7 @@ export default function AdminEventForm() {
                 </div>
               )}
 
-              {/* Pricing */}
+              {!isOpportunity && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Pricing</h3>
                 <div className="space-y-4">
@@ -876,13 +982,12 @@ export default function AdminEventForm() {
                   <input type="number" name="capacity" value={formData.capacity} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Capacity (max attendees)" />
                 </div>
               </div>
+              )}
 
-              {/* ✅ Image Upload — Main + Additional */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">Event Images *</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">{isOpportunity ? 'Opportunity Image' : 'Event Images'} *</h3>
                 <p className="text-sm text-gray-500 mb-4">Add up to 10 photos. Users can swipe through all photos on the event page.</p>
 
-                {/* Main image */}
                 <div className="mb-4">
                   <p className="text-sm font-medium text-gray-700 mb-2">
                     Main Photo *
@@ -928,7 +1033,6 @@ export default function AdminEventForm() {
                   </div>
                 </div>
 
-                {/* Additional photos */}
                 {formData.imageUrl && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-2">
@@ -994,7 +1098,6 @@ export default function AdminEventForm() {
                 )}
               </div>
 
-              {/* Visibility */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Visibility</h3>
                 <div className="space-y-4">
@@ -1016,13 +1119,12 @@ export default function AdminEventForm() {
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200">
                 <button type="submit" disabled={loading || uploading || uploadingExtra}
                   className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition font-medium disabled:opacity-50"
                 >
                   <Save size={20} />
-                  {loading ? 'Saving...' : isEdit ? 'Update Event' : 'Create Event'}
+                  {loading ? 'Saving...' : isEdit ? 'Update' : isOpportunity ? 'Create Opportunity' : 'Create Event'}
                 </button>
                 <button type="button" onClick={() => navigate('/admin/events')}
                   className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"

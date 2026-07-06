@@ -36,9 +36,11 @@ export function UserSidebar({ activeTab = 'home', user, isOpen, onClose }) {
         </button>
 
         {/* Logo */}
-        <div className="p-6">
-          <img src={OutingStation} alt="Outing Station" className="h-12 w-auto" />
-        </div>
+<div className="p-6">
+  <Link to="/" onClick={onClose}>
+    <img src={OutingStation} alt="Outing Station" className="h-12 w-auto cursor-pointer" />
+  </Link>
+</div>
 
         {/* User Info - FIXED */}
         <div className="px-6 py-4 border-b border-gray-200">

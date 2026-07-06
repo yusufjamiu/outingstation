@@ -15,6 +15,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
+import VendorStandsSection from '../../components/VendorStandsSection';
 import { formatEventDateFull, formatEventTime } from '../../utils/dateTimeHelpers';
 import { PaystackButton } from 'react-paystack';
 import {
@@ -1320,6 +1321,9 @@ export default function EventDetails() {
                   <TicketPurchaseSection event={event} currentUser={currentUser} navigate={navigate} onPurchaseComplete={handlePurchaseComplete} />
                 </div>
               )}
+
+              {/* ✅ Vendor Stands — public browse/apply/pay section, self-hides if not enabled */}
+              <VendorStandsSection event={event} currentUser={currentUser} navigate={navigate} />
 
               {(event.university || event.platform || event.religionType) && (
                 <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">

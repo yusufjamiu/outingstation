@@ -121,6 +121,11 @@ export default function EventSubmissionsPage() {
       eventType: submission.isUniversityEvent ? 'campus'
         : (submission.eventType === 'webinar' ? 'webinar' : 'regular'),
       subCategory: submission.subCategory || (isPlace ? 'places' : 'events'),
+      // ✅ Campus category fields — carried over from submission
+      campusEventCategory: submission.isUniversityEvent && !isPlace
+        ? (submission.campusEventCategory || '') : '',
+      campusSubCategory: submission.isUniversityEvent && isPlace
+        ? (submission.campusSubCategory || '') : '',
       imageUrl: submission.imageUrl || '',
       images: submission.images || [],
       location: submission.city || '',
@@ -148,7 +153,11 @@ export default function EventSubmissionsPage() {
       slug: generateSlug(submission.eventTitle || ''),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      createdBy: 'admin_approved',
+      // ✅ FIX: use the submitter's real account (ownerId, stamped by
+      // SubmitEventPage.jsx) if it exists, so their event actually shows up
+      // in their "Manage Events" dashboard. Falls back to the old placeholder
+      // string for submissions made before that fix, or by a logged-out user.
+      createdBy: submission.ownerId || 'admin_approved',
       submissionId: submission.id,
       ticketingEnabled: false,
       ticketingOption: 'none',

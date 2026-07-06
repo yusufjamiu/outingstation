@@ -35,7 +35,7 @@ export default function SignupPage() {
   const { signup, loginWithGoogle, currentUser } = useAuth();
 
   useEffect(() => {
-    if (currentUser && !showPhoneModal) navigate('/dashboard');
+    if (currentUser && !showPhoneModal) navigate('/');
   }, [currentUser, navigate, showPhoneModal]);
 
   const carouselImages = [
@@ -209,8 +209,8 @@ export default function SignupPage() {
           }
         }
 
-        // ✅ Navigate to dashboard
-        navigate('/dashboard');
+        // ✅ Navigate to landing page
+        navigate('/');
       }
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
@@ -251,8 +251,8 @@ export default function SignupPage() {
           setLoading(false);
           setShowPhoneModal(true);
         } else {
-          // Existing user, go straight to dashboard
-          navigate('/dashboard');
+          // Existing user, go straight to landing page
+          navigate('/');
         }
       }
     } catch (err) {
@@ -640,7 +640,7 @@ export default function SignupPage() {
               <button
                 onClick={async () => {
                   const success = await savePhoneNumber(currentUser?.uid);
-                  if (success) navigate('/dashboard');
+                  if (success) navigate('/');
                 }}
                 disabled={savingPhone || !phoneNumber}
                 className="flex-1 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50"
@@ -653,7 +653,7 @@ export default function SignupPage() {
                 ) : 'Continue'}
               </button>
               <button
-                onClick={() => { setShowPhoneModal(false); navigate('/dashboard'); }}
+                onClick={() => { setShowPhoneModal(false); navigate('/'); }}
                 disabled={savingPhone}
                 className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition disabled:opacity-50"
               >

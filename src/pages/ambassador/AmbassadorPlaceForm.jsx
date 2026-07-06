@@ -15,10 +15,11 @@ const makeSlug = (title, id) =>
     .replace(/^-|-$/g, '')
   + '-' + id.slice(0, 5);
 
-// ✅ Campus-specific subcategories only
+// ✅ Campus-specific subcategories only — mirrors AdminEventForm's CAMPUS_PLACE_SUBCATEGORIES
 const campusSubCategories = [
-  'Library', 'Auditorium', 'Cafeteria', 'Campus Market',
-  'Shortlets', 'Chapel / Mosque', 'Gym', 'Computer Lab'
+  'Cafeteria', 'Food Vendors', 'Library', 'Auditorium',
+  'Faculty Building', 'Health Center', 'Sport Center',
+  'Hostel', 'Chapel / Mosque', 'Admin Block', 'Market', 'Other'
 ];
 
 export default function AmbassadorPlaceForm() {
@@ -499,7 +500,7 @@ await updateDoc(newRef, { slug: makeSlug(form.title, newRef.id) });
                       ))}
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
-                      This is where the place appears under Campus Places (Library, Gym, etc.)
+                      This is where the place appears under Campus Places (Library, Cafeteria, etc.)
                     </p>
                   </div>
                 </div>
@@ -757,4 +758,4 @@ await updateDoc(newRef, { slug: makeSlug(form.title, newRef.id) });
       </main>
     </div>
   );
-}
+}  

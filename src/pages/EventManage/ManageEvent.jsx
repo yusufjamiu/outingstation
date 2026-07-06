@@ -9,6 +9,7 @@ import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/fire
 import { db } from '../../firebase';
 import PublicNavbar from '../../components/PublicNavbar';
 import Footer from '../../components/Footer';
+import VendorStandsManager from '../../components/VendorStandsManager';
 import { formatEventDateFull, formatEventTime } from '../../utils/dateTimeHelpers';
 
 export default function ManageEvent() {
@@ -324,6 +325,11 @@ export default function ManageEvent() {
             </div>
           </div>
         )}
+
+        {/* ✅ Vendor Stands — organizer's stand builder + application review */}
+        <div className="mb-6">
+          <VendorStandsManager event={event} onEventUpdate={setEvent} />
+        </div>
 
         {/* Search and Filter */}
         <div className="bg-white rounded-xl p-6 shadow-sm mb-6">

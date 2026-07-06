@@ -17,7 +17,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (currentUser) navigate('/dashboard');
+    if (currentUser) navigate('/');
   }, [currentUser, navigate]);
 
   const carouselImages = [
@@ -51,7 +51,7 @@ export default function LoginPage() {
       setError('');
       setLoading(true);
       await login(email, password);
-      navigate('/dashboard');
+      navigate('/');
     } catch (err) {
       console.error('❌ Login error:', err);
       if (
@@ -74,7 +74,7 @@ export default function LoginPage() {
       setError('');
       setLoading(true);
       await loginWithGoogle();
-      navigate('/dashboard');
+      navigate('/');
     } catch (err) {
       console.error('❌ Google login error:', err);
       setError('Failed to sign in with Google. Please try again.');

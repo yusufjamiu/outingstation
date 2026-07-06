@@ -8,47 +8,42 @@ import FeaturedEvents from '../components/FeaturedEvents';
 import UniversitySelector from '../components/UniversitySelector';
 import WebinarSection from '../components/WebinarSection';
 import HowItWorks from '../components/HowItWorks';
-import campusImage from '../assets/campus.jpg';
-import studentsImage from '../assets/students.jpg';
+import EcosystemSection from '../components/EcosystemSection';
+import PlanEventCTA from '../components/PlanEventCTA';
+import CreateEventCTA from '../components/CreateEventCTA';
+import GrowYourBusinessCTA from '../components/GrowYourBusinessCTA';
+import AppDownloadSection from '../components/AppDownloadSection';
+import EventsCarousel from '../components/EventsCarousel';
 import concertImage from '../assets/concertImage.jpg';
-import heroImage3 from '../assets/heroImage3.jpg';
-import heroImage2 from '../assets/heroImage2.jpg';
-import heroImage01 from '../assets/heroImage01.jpg';
-import { MapPin, Grid } from 'lucide-react';
+import { MapPin, Calendar, ShieldCheck } from 'lucide-react';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [userCount, setUserCount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCity, setSelectedCity] = useState('Lagos');
   const [currentText, setCurrentText] = useState(0);
   const [fade, setFade] = useState(true);
   const [tickerEvents, setTickerEvents] = useState([]);
+  const [totalUpcomingEvents, setTotalUpcomingEvents] = useState(0);
   const [aboutVisible, setAboutVisible] = useState(false);
   const [featuresVisible, setFeaturesVisible] = useState([false, false, false]);
-  const [uniImgVisible, setUniImgVisible] = useState(false);
-  const [uniTextVisible, setUniTextVisible] = useState(false);
-
   const aboutRef = useRef(null);
   const featuresRef = useRef([]);
-  const uniImgRef = useRef(null);
-  const uniTextRef = useRef(null);
 
   const rotatingTexts = [
-  "Events, places, campus life and AI discovery. All in one place.",
-  "From concerts in Lagos to campus hangouts in Abuja, find your next experience.",
-  "Discover events, explore places, and let Outing AI guide your next move.",
-  "From food festivals to business summits. OutingStation has it all.",
-  "Your personal guide to what's happening around you, on and off campus.",
+  "Find what's happening near you, or plan your own event from scratch.",
+  "From concerts in Lagos to hangouts in Abuja, find your next experience.",
+  "Ask Outing AI, and let it find your next move.",
+  "Book a hall, decorator, caterer and DJ in one flow with Plan My Event.",
+  "Your guide to what's happening around you, on and off campus.",
 ];
 
   const features = [
-  "Discover events, places, campus activities and opportunities, all happening nearby or online, in one app.",
-  "Filter by category, city, date, and price, or just ask Outing AI to find exactly what you're looking for.",
-  "Get full details on any event or place, with options to buy tickets, save favourites, and share with friends."
+  "Search or filter by category, city, date and price, or just ask Outing AI to find exactly what you're looking for.",
+  "See full details on any event or place, then buy tickets, save favourites, and share with friends.",
+  "Ready to host something yourself? Start a plan and we'll help you book the pieces, one step at a time."
 ];
 
   const fallbackTicker = [
@@ -60,7 +55,6 @@ export default function LandingPage() {
     { name: 'Career Fair 2026', city: 'Lagos', date: 'Wed, Apr 23', status: 'amber' },
   ];
 
-  // About section observer
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -76,7 +70,6 @@ export default function LandingPage() {
     return () => observer.disconnect();
   }, []);
 
-  // Feature bullets observer
   useEffect(() => {
     const observers = featuresRef.current.map((el, i) => {
       if (!el) return null;
@@ -106,39 +99,6 @@ export default function LandingPage() {
     return () => observers.forEach(o => o && o.disconnect());
   }, []);
 
-  // University image observer
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setUniImgVisible(true);
-        } else {
-          setUniImgVisible(false);
-        }
-      },
-      { threshold: 0.2 }
-    );
-    if (uniImgRef.current) observer.observe(uniImgRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  // University text observer
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setUniTextVisible(true);
-        } else {
-          setUniTextVisible(false);
-        }
-      },
-      { threshold: 0.2 }
-    );
-    if (uniTextRef.current) observer.observe(uniTextRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  // Load ticker events from Firestore
   useEffect(() => {
     const loadTickerEvents = async () => {
   try {
@@ -153,12 +113,15 @@ export default function LandingPage() {
       .map(doc => ({ id: doc.id, ...doc.data() }))
       .filter(e => e.status === 'published' && e.date)
       .map(e => {
-        // ✅ Handle Firestore Timestamp or string
         const d = e.date?.toDate ? e.date.toDate() : new Date(e.date);
         return { ...e, _date: d };
       })
       .filter(e => e._date >= today)
-      .sort((a, b) => a._date - b._date)
+      .sort((a, b) => a._date - b._date);
+
+    setTotalUpcomingEvents(events.length);
+
+    const eventsForTicker = events
       .slice(0, 8)
       .map(e => {
         const d = e._date;
@@ -179,7 +142,7 @@ export default function LandingPage() {
         };
       });
 
-    setTickerEvents(events.length >= 3 ? events : [...events, ...fallbackTicker].slice(0, 6));
+    setTickerEvents(eventsForTicker.length >= 3 ? eventsForTicker : [...eventsForTicker, ...fallbackTicker].slice(0, 6));
   } catch (err) {
     console.error('Ticker load error:', err);
     setTickerEvents(fallbackTicker);
@@ -187,10 +150,6 @@ export default function LandingPage() {
 };
 
     loadTickerEvents();
-  }, []);
-
-  useEffect(() => {
-    loadUserCount();
   }, []);
 
   useEffect(() => {
@@ -204,29 +163,12 @@ export default function LandingPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const loadUserCount = async () => {
-    try {
-      const snapshot = await getDocs(collection(db, 'users'));
-      setUserCount(snapshot.size);
-    } catch (err) {
-      console.error('Error loading user count:', err);
-      setUserCount(0);
-    }
-    setLoading(false);
-  };
-
   const handleSearch = () => {
     if (searchQuery.trim()) {
       navigate('/events?search=' + searchQuery + '&city=' + selectedCity);
     } else {
       navigate('/events?city=' + selectedCity);
     }
-  };
-
-  const formatNumber = (num) => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-    return num.toString();
   };
 
   return (
@@ -248,7 +190,6 @@ export default function LandingPage() {
       <div className="min-h-screen bg-gray-50">
         <Navbar />
 
-        {/* Hero Section */}
         <section className="bg-gradient-to-br from-cyan-50 to-white px-4">
           <div className="bg-gradient-to-br from-cyan-50 via-white to-cyan-50 pt-8 pb-8 px-4 md:px-6 relative overflow-hidden">
             <div className="absolute top-40 left-10 w-64 h-64 bg-cyan-100 rounded-full opacity-30 blur-3xl"></div>
@@ -299,52 +240,39 @@ export default function LandingPage() {
                 >
                   Explore
                 </button>
-                <Link to="/categories">
-                  <button className="w-auto mx-auto lg:w-auto bg-white text-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center gap-2">
-                    <Grid size={20} />
-                    Browse by Category
+                <Link to="/events">
+                  <button className="w-auto mx-auto lg:w-auto bg-gray-900 text-cyan-400 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl hover:shadow-cyan-500/20 transition-shadow flex items-center justify-center gap-2">
+                    <Calendar size={20} />
+                    View All Events
                   </button>
                 </Link>
               </div>
 
-              {/* Images Grid */}
-              <div className="flex items-start justify-center gap-4 md:gap-6 pb-10 md:pb-0">
-                <div className="relative flex-shrink-0">
-                  <div className="w-44 h-52 sm:w-56 sm:h-60 md:w-64 md:h-64 bg-gradient-to-br from-orange-200 to-pink-200 rounded-2xl overflow-hidden shadow-xl">
-                    <img src={heroImage01} alt="Friends outdoors" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-3 sm:px-6 py-2 sm:py-3 rounded-2xl shadow-xl whitespace-nowrap">
-                    <div className="flex items-center gap-2 md:gap-4">
-                      <div>
-                        {loading ? (
-                          <div className="text-xl sm:text-2xl md:text-3xl font-bold">...</div>
-                        ) : (
-                          <div className="text-xl sm:text-2xl md:text-3xl font-bold">{formatNumber(userCount)}</div>
-                        )}
-                        <div className="text-xs opacity-90">Trusted Users</div>
-                      </div>
-                      <div className="flex -space-x-2">
-                        <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-red-400 border-2 border-white"></div>
-                        <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 border-2 border-white"></div>
-                        <div className="w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full bg-blue-400 border-2 border-white"></div>
-                      </div>
+              <div className="pb-14 md:pb-6 relative">
+                <EventsCarousel />
+                {totalUpcomingEvents > 0 && (
+                  <div className="absolute -bottom-3 left-4 md:left-8 bg-white rounded-2xl shadow-lg px-4 py-2.5 flex items-center gap-2 z-20">
+                    <ShieldCheck size={18} className="text-cyan-500 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-gray-900 leading-tight">{totalUpcomingEvents}+</p>
+                      <p className="text-[10px] text-gray-500 leading-tight">Live & Upcoming Events</p>
                     </div>
                   </div>
-                </div>
-                <div className="flex flex-col gap-3 md:gap-6 flex-shrink-0">
-                  <div className="w-44 h-32 sm:w-56 sm:h-36 md:w-64 md:h-40 bg-gradient-to-br from-blue-200 to-purple-200 rounded-2xl overflow-hidden shadow-xl">
-                    <img src={heroImage2} alt="Conference" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="w-44 h-32 sm:w-56 sm:h-36 md:w-64 md:h-40 bg-gradient-to-br from-amber-200 to-orange-200 rounded-2xl overflow-hidden shadow-xl">
-                    <img src={heroImage3} alt="Workshop" className="w-full h-full object-cover" />
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
         </section>
 
-        {/* About Section */}
+        {/* Create Event CTA */}
+        <CreateEventCTA />
+
+        {/* Plan My Event CTA */}
+        <PlanEventCTA />
+
+        {/* Grow Your Business CTA */}
+        <GrowYourBusinessCTA />
+
         <section className="bg-gray-50 py-16 md:py-24 px-4 md:px-6">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -373,7 +301,7 @@ export default function LandingPage() {
                   What Outing Station Does.
                 </h3>
                 <p className={'text-gray-600 text-base md:text-lg mb-6 leading-relaxed transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3')} style={{ transitionDelay: '300ms' }}>
-                  OutingStation is an AI-powered discovery platform that helps you find events, places, campus activities, and opportunities, all in one app. Whether you're planning a night out, exploring your city, or wondering what to do today, OutingStation has you covered.
+                  OutingStation started as a way to find out what's happening around you. It's grown into a place where you can plan your own, too, from a hall to a DJ, without juggling five different people.
                 </p>
 
                 <p className={'text-xs text-gray-400 tracking-widest mb-2 transition-all duration-500 ' + (aboutVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2')} style={{ transitionDelay: '400ms' }}>
@@ -430,55 +358,20 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Categories */}
+        <EcosystemSection />
+
         <section className="py-2 px-4 bg-white">
           <div className="max-w-7xl mx-auto">
             <CategoryGrid />
           </div>
         </section>
 
-        {/* University Events */}
-        <section className="bg-gradient-to-br from-gray-100 to-gray-50 py-16 md:py-24 px-4 md:px-6">
-          <div className="max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-
-              <div className="relative order-1 lg:order-1 pb-12 md:pb-0">
-                <div
-                  ref={uniImgRef}
-                  className={'rounded-3xl overflow-hidden shadow-2xl transition-all duration-700 ' + (uniImgVisible ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-8')}
-                >
-                  <img src={campusImage} alt="University campus" className="w-full h-64 md:h-80 lg:h-96 object-cover" />
-                </div>
-                <div className={'absolute bottom-0 right-0 lg:right-12 transform translate-y-8 w-56 md:w-80 rounded-3xl overflow-hidden shadow-2xl border-4 border-white transition-all duration-700 delay-300 ' + (uniImgVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-8')}>
-                  <img src={studentsImage} alt="Students hanging out" className="w-full h-40 md:h-56 object-cover" />
-                </div>
-              </div>
-
-              <div ref={uniTextRef} className="order-2 lg:order-2">
-                <h2 className={'text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-6 leading-tight transition-all duration-700 ' + (uniTextVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6')}>
-                  Discover University Events
-                </h2>
-                <p className={'text-gray-600 text-base md:text-lg mb-8 leading-relaxed transition-all duration-700 ' + (uniTextVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4')} style={{ transitionDelay: '150ms' }}>
-                  From guest lectures to campus parties, find out what's happening at your school. Connect with your community and never miss a beat.
-                </p>
-                <div className={'transition-all duration-700 ' + (uniTextVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4')} style={{ transitionDelay: '300ms' }}>
-                  <Link to="/campus-events" className="inline-block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-10 py-4 rounded-full font-medium shadow-lg hover:shadow-xl transition-shadow text-base md:text-lg">
-                    Select University
-                  </Link>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </section>
-
-        <div className="mt-12">
-          <UniversitySelector />
-        </div>
-
         <FeaturedEvents />
         <WebinarSection />
         <HowItWorks />
+
+        <AppDownloadSection />
+
         <Footer />
       </div>
     </>

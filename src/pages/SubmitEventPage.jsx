@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 import { Gift, X, Upload, Plus, ChevronRight, ChevronLeft, Check, Ticket, Trash2, Building2 } from 'lucide-react';
 
 const makeSlug = (title, id) =>
@@ -44,6 +45,19 @@ const PLACE_CATEGORIES = [
   'Art & Culture', 'Food & Dining', 'Sport & Fitness',
   'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
   'Malls', 'Spas', 'Other',
+];
+
+// ✅ Campus category lists — mirrors AdminEventForm
+const CAMPUS_EVENT_CATEGORIES = [
+  'Lectures & Seminars', 'Competitions', 'Social Events',
+  'Religious Programs', 'Sports Events', 'Career & Opportunities',
+  'Cultural Events', 'Other',
+];
+
+const CAMPUS_PLACE_SUBCATEGORIES = [
+  'Cafeteria', 'Food Vendors', 'Library', 'Auditorium',
+  'Faculty Building', 'Health Center', 'Sport Center',
+  'Hostel', 'Chapel / Mosque', 'Admin Block', 'Market', 'Other',
 ];
 
 const CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
@@ -402,6 +416,8 @@ function NavButtons({ onBack, onNext, nextLabel = 'Continue', isSubmitting = fal
 
 const SubmitEventPage = () => {
   const topRef = useRef(null);
+  // ✅ FIX: useAuth() must be called inside the component, not at module top level
+  const { currentUser } = useAuth();
   const [listingType, setListingType] = useState('');
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
@@ -421,6 +437,7 @@ const SubmitEventPage = () => {
     eventTitle: '', eventCategory: '', customCategory: '',
     eventType: 'physical', eventDescription: '',
     isUniversityEvent: false, universityName: '',
+    campusEventCategory: '', campusSubCategory: '',
     startDate: '', startTime: '', endDate: '', endTime: '',
     operatingHours: '', alwaysOpen: false,
     city: '', customCity: '', venueName: '', address: '', mapsLink: '',
@@ -510,7 +527,8 @@ const SubmitEventPage = () => {
       if (!form.eventCategory) e.eventCategory = 'Select a category';
       if (form.eventCategory === 'Other' && !form.customCategory.trim()) e.customCategory = 'Please specify your category';
       if (form.eventDescription.length < 100) e.eventDescription = 'At least 100 characters required';
-      if (isEvent && form.isUniversityEvent && !form.universityName.trim()) e.universityName = 'Enter the university name';
+      // ✅ Campus checkbox now applies to both events and places
+      if ((isEvent || isPlace) && form.isUniversityEvent && !form.universityName.trim()) e.universityName = 'Enter the university name';
     }
     if (isEvent && s === S.datetime) {
       if (!form.startDate) e.startDate = 'Start date is required';
@@ -595,6 +613,9 @@ const SubmitEventPage = () => {
           description: form.vendorDescription, whatsappNumber: form.whatsappNumber,
           imageUrl, images: additionalImages, schoolIdImageUrl: schoolIdImage[0] || '',
           referralCode: form.referralCode.trim().toUpperCase() || null,
+          // ✅ FIX: link this submission to the logged-in account, if any, so
+          // CampusVendorPage.jsx can reliably find "my shop" later.
+          ownerId: currentUser?.uid || null,
           status: 'pending', submittedAt: serverTimestamp(),
         });
       } else {
@@ -636,6 +657,9 @@ const SubmitEventPage = () => {
           imageUrl, images: additionalImages,
           additionalInfo: form.additionalInfo || null,
           isUniversityEvent: form.isUniversityEvent || false, universityName: form.universityName || null,
+          // ✅ Campus category fields — event category vs place type
+          campusEventCategory: isEvent && form.isUniversityEvent ? (form.campusEventCategory || '') : null,
+          campusSubCategory: isPlace && form.isUniversityEvent ? (form.campusSubCategory || '') : null,
           status: 'pending', submittedAt: serverTimestamp(),
           slug: form.eventTitle ? form.eventTitle.toLowerCase().trim()
             .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') : null,
@@ -905,22 +929,37 @@ const SubmitEventPage = () => {
                   {isPureVirtual && <p className="text-xs text-blue-500 mt-2 font-medium">💡 Virtual events skip the location step</p>}
                 </FormField>
               )}
-              {isEvent && (
+              {/* ✅ Campus toggle — now applies to both events and places */}
+              {(isEvent || isPlace) && (
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-4">
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input type="checkbox" name="isUniversityEvent" checked={form.isUniversityEvent} onChange={handle} className="mt-0.5 h-4 w-4 rounded text-blue-600" />
                     <div>
-                      <p className="text-sm font-bold text-gray-800">🎓 This is a University/Campus Event</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Check if your event is happening at a university campus</p>
+                      <p className="text-sm font-bold text-gray-800">🎓 This is a University/Campus {isPlace ? 'Place' : 'Event'}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Check if this {isPlace ? 'place' : 'event'} is located at a university campus</p>
                     </div>
                   </label>
                   {form.isUniversityEvent && (
-                    <div className="mt-3">
+                    <div className="mt-3 space-y-3">
                       <StyledSelect name="universityName" value={form.universityName} onChange={handle} error={errors.universityName}>
                         <option value="">Select your university</option>
                         {universities.map(u => <option key={u} value={u}>{u}</option>)}
                       </StyledSelect>
                       {errors.universityName && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.universityName}</p>}
+
+                      {isEvent && (
+                        <StyledSelect name="campusEventCategory" value={form.campusEventCategory} onChange={handle}>
+                          <option value="">Select campus event category (optional)</option>
+                          {CAMPUS_EVENT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </StyledSelect>
+                      )}
+
+                      {isPlace && (
+                        <StyledSelect name="campusSubCategory" value={form.campusSubCategory} onChange={handle}>
+                          <option value="">Select place type (optional)</option>
+                          {CAMPUS_PLACE_SUBCATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </StyledSelect>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1171,6 +1210,10 @@ const SubmitEventPage = () => {
                   isVendor ? { label: '🎓 University', value: form.vendorUniversity === 'Other' ? form.vendorUniversityOther : form.vendorUniversity }
                     : { label: '🏙️ City', value: form.city === 'Others' ? form.customCity : form.city },
                   { label: '📸 Photos', value: isVendor ? `${vendorImages.length} shop photo${vendorImages.length !== 1 ? 's' : ''}` : `${eventImages.length} photo${eventImages.length !== 1 ? 's' : ''}` },
+                  !isVendor && form.isUniversityEvent && isEvent && form.campusEventCategory
+                    ? { label: '🎓 Campus Category', value: form.campusEventCategory } : null,
+                  !isVendor && form.isUniversityEvent && isPlace && form.campusSubCategory
+                    ? { label: '🎓 Place Type', value: form.campusSubCategory } : null,
                   isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers && ticketTiers.length > 0
                     ? { label: '🎟️ Ticket Tiers', value: `${ticketTiers.length} tier${ticketTiers.length !== 1 ? 's' : ''}: ${ticketTiers.map(t => t.name).join(', ')}` }
                     : isEvent && form.isFree === 'no' && form.ticketPrice

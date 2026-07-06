@@ -34,6 +34,13 @@ const TIER_PRESETS = [
   { name: 'Couple', emoji: '💑' },
 ];
 
+// ✅ Campus event categories — mirrors AdminEventForm's CAMPUS_EVENT_CATEGORIES
+const CAMPUS_EVENT_CATEGORIES = [
+  'Lectures & Seminars', 'Competitions', 'Social Events',
+  'Religious Programs', 'Sports Events', 'Career & Opportunities',
+  'Cultural Events', 'Other',
+];
+
 // ✅ Ticket Tier Builder component
 function TicketTierBuilder({ tiers, onChange }) {
   const addTier = () => {
@@ -186,6 +193,7 @@ export default function AmbassadorEventForm() {
     title: '', description: '', category: '',
     subCategory: 'events',
     religionType: '', eventType: 'campus',
+    campusEventCategory: '',
     eventDuration: 'single', date: '', time: '',
     startDate: '', endDate: '',
     dailyStartTime: '', dailyEndTime: '',
@@ -400,6 +408,8 @@ export default function AmbassadorEventForm() {
         isFeatured: false,
         isTrending: false,
         subCategory: 'events',
+        // ✅ Campus event category — ambassador events are always campus events
+        campusEventCategory: formData.campusEventCategory || '',
         slug: generateSlug(formData.title),
         price: formData.isFree ? 0 : Number(formData.price) || 0,
         capacity: Number(formData.capacity) || 0,
@@ -543,6 +553,19 @@ export default function AmbassadorEventForm() {
                       {allCategories.map(category => (
                         <option key={category} value={category}>{category}</option>
                       ))}
+                    </select>
+                  </div>
+                  {/* ✅ Campus Event Category */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Campus Event Category <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <select
+                      name="campusEventCategory" value={formData.campusEventCategory} onChange={handleChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
+                    >
+                      <option value="">Select campus event category</option>
+                      {CAMPUS_EVENT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                   {showReligionType && (

@@ -19,19 +19,31 @@ import AmbassadorRoute from './components/AmbassadorRoute';
 import ComingSoon from './pages/ComingSoon';
 import LandingPage from './pages/LandingPage';
 import EventsPage from './pages/EventsPage';
+import PlacesPage from './pages/PlacesPage';
 import EventDetails from "./pages/events/EventDetails";
+import PublicHallsPage from './pages/HallsPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import GenericCategoryPage from './pages/categories/GenericCategoryPage';
 import CategoryBrowsePage from './pages/categories/CategoryBrowsePage';
+import CampusPage from './pages/CampusPage';
 import CampusEventsPage from './pages/categories/CampusEventsPage';
 import WebinarEventsPage from './pages/categories/WebinarEventsPage';
 import CampusPlacesPage from './pages/categories/CampusPlacesPage';
+import CampusVendorPage from './pages/CampusVendorPage';
+import ManageEventsPage from './pages/ManageEventsPage';
 import ContactUs from './pages/ContactUs';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import RestaurantsPage from './pages/RestaurantsPage';
+import OpportunitiesPage from './pages/OpportunitiesPage';
+import ResortsPage from './pages/ResortsPage';
+import RentARidePage from './pages/RentARidePage';
+import PlanEventPage from './pages/PlanEventPage';
 import CityEventsPage from './pages/events/CityEventsPage';
+import MyEventsPage from './pages/MyEventsPage';
+import OSBDashboard from './pages/osb/OSBDashboard';
 import CookiePolicy from './pages/CookiePolicy';
 import FAQ from './pages/FAQ';
 import AboutUs from './pages/AboutUs';
@@ -54,6 +66,10 @@ import CampusEvents from './pages/dashboard/CampusEvents';
 import CampusPlaces from './pages/dashboard/CampusPlaces';
 import HallsPage from './pages/dashboard/HallsPage';
 
+
+// osb
+import BecomeABusinessPage from './pages/osb/BecomeABusinessPage';
+
 // Ambassador Dashboard Pages
 import AmbassadorDashboard from './pages/ambassador/AmbassadorDashboard';
 import AmbassadorEventForm from './pages/ambassador/AmbassadorEventForm';
@@ -65,6 +81,7 @@ import AmbassadorVendorForm from './pages/ambassador/AmbassadorVendorForm';
 import AmbassadorNotifications from './pages/ambassador/AmbassadorNotifications';
 import SubmittedEvents from './pages/ambassador/SubmittedEvents';
 import AmbassadorEarnings from './pages/ambassador/AmbassadorEarnings';
+import AdminBusinesses from './pages/admin/AdminBusinesses';
 import CityAmbassadorCreate from './pages/ambassador/CityAmbassadorCreate';
 
 // Event Management
@@ -114,17 +131,29 @@ function App() {
               <Route path="/forgot-password" element={<ResetPasswordPage />} />
               <Route path="/credit-unlock-request" element={<CreditUnlockRequestPage />} />
               <Route path="/events" element={<EventsPage />} />
+              <Route path="/places" element={<PlacesPage />} />
+              <Route path="/halls" element={<PublicHallsPage />} />
               <Route path="/category/:slug" element={<GenericCategoryPage />} />
               <Route path="/categories" element={<CategoryBrowsePage />} />
+              <Route path="/campus" element={<CampusPage />} />
               <Route path="/campus-events" element={<CampusEventsPage />} />
               <Route path="/webinar-events" element={<WebinarEventsPage />} />
               <Route path="/campus-places" element={<CampusPlacesPage />} />
+              <Route path="/campus-vendor" element={<CampusVendorPage />} />
               <Route path="/city/:city" element={<CityEventsPage />} />
               <Route path="/event/:id" element={<EventDetails />} />
               <Route path="/e/:slug" element={<EventDetails />} />
               <Route path="/contact" element={<ContactUs />} />
               <Route path="/terms" element={<TermsOfService />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/restaurants" element={<RestaurantsPage />} />
+              <Route path="/opportunities" element={<OpportunitiesPage />} />
+              <Route path="/resorts" element={<ResortsPage />} />
+              <Route path="/rent-a-ride" element={<RentARidePage />} />
+              <Route path="/plan-event" element={<PlanEventPage />} />
+              <Route path="/my-events" element={<MyEventsPage />} />
+              <Route path="/manage-events" element={<ManageEventsPage />} />
+              <Route path="/business" element={<OSBDashboard />} />
               <Route path="/cookies" element={<CookiePolicy />} />
               <Route path="/faqs" element={<FAQ />} />
               <Route path="/about" element={<AboutUs />} />
@@ -148,6 +177,10 @@ function App() {
                 <Route path="/rewards" element={<RewardsPage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />
               </Route>
+
+
+              {/* OutingStation Business */}
+              <Route path="/business/register" element={<BecomeABusinessPage />} />
 
               {/* AMBASSADOR ROUTES - PROTECTED (campus ambassadors only) */}
               <Route path="/ambassador" element={
@@ -366,6 +399,11 @@ function App() {
               <Route path="/admin/ambassador-payouts" element={
                 <AdminRoute>
                   <AdminAmbassadorPayouts />
+                </AdminRoute>
+              } />
+              <Route path="/admin/businesses" element={
+                <AdminRoute>
+                  <AdminBusinesses />
                 </AdminRoute>
               } />
 

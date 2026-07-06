@@ -3,8 +3,8 @@ import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc } 
 import { db } from '../firebase';
 import { Link } from 'react-router-dom';
 import {
-  Search, SlidersHorizontal, X, Calendar, MapPin,
-  ChevronLeft, ChevronRight, Heart, Tag
+  Search, SlidersHorizontal, X, MapPin,
+  ChevronLeft, ChevronRight, Heart, Clock, Tag
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
@@ -12,13 +12,11 @@ import Footer from '../components/Footer';
 
 const CITIES = ['All Cities', 'Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
 const CATEGORIES = [
-  'All', 'Business & Tech', 'Art & Culture', 'Food & Dining',
-  'Sport & Fitness', 'Education', 'Religion & Community',
-  'Nightlife & Parties', 'Family & Kids Fun', 'Networking & Social',
-  'Gaming & Esport', 'Music & Concerts', 'Cinema & Show', 'Other',
+  'All', 'Mall', 'Cinema', 'Museum', 'Park', 'Spa',
+  'Hotel', 'Bar & Lounge', 'Event Hall', 'Resort', 'Restaurant', 'Other',
 ];
 const PRICES = ['All', 'Free', 'Paid'];
-const EVENTS_PER_PAGE = 12;
+const PLACES_PER_PAGE = 12;
 
 const SkeletonCard = () => (
   <div className="bg-white rounded-2xl overflow-hidden shadow-sm animate-pulse">
@@ -34,11 +32,11 @@ const SkeletonCard = () => (
 const EmptyState = ({ onReset }) => (
   <div className="col-span-full flex flex-col items-center justify-center py-20 px-4">
     <div className="w-20 h-20 bg-cyan-50 rounded-full flex items-center justify-center mb-4">
-      <Calendar size={36} className="text-cyan-400" />
+      <MapPin size={36} className="text-cyan-400" />
     </div>
-    <h3 className="text-xl font-bold text-gray-900 mb-2">No events found</h3>
+    <h3 className="text-xl font-bold text-gray-900 mb-2">No places found</h3>
     <p className="text-gray-500 text-center max-w-sm mb-6">
-      Try adjusting your filters or check back later for new events.
+      Try adjusting your filters or check back later for new places.
     </p>
     <button
       onClick={onReset}
@@ -49,9 +47,9 @@ const EmptyState = ({ onReset }) => (
   </div>
 );
 
-export default function EventsPage() {
+export default function PlacesPage() {
   const { currentUser } = useAuth();
-  const [events, setEvents] = useState([]);
+  const [places, setPlaces] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savedEvents, setSavedEvents] = useState([]);
@@ -59,33 +57,25 @@ export default function EventsPage() {
   const [city, setCity] = useState('All Cities');
   const [category, setCategory] = useState('All');
   const [price, setPrice] = useState('All');
-  const [date, setDate] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
 
-  useEffect(() => { loadEvents(); }, []);
+  useEffect(() => { loadPlaces(); }, []);
   useEffect(() => { if (currentUser) loadSaved(); }, [currentUser]);
-  useEffect(() => { applyFilters(); }, [events, search, city, category, price, date]);
+  useEffect(() => { applyFilters(); }, [places, search, city, category, price]);
 
-  const loadEvents = async () => {
+  const loadPlaces = async () => {
     try {
       const snap = await getDocs(collection(db, 'events'));
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(e =>
           e.status === 'published' &&
-          e.subCategory !== 'places' &&
-          e.eventType !== 'webinar' &&
-          e.eventType !== 'campus'
+          e.subCategory === 'places'
         )
-        .map(e => ({
-          ...e,
-          _date: e.date?.toDate ? e.date.toDate() : new Date(e.date),
-        }))
-        .filter(e => e._date >= new Date(new Date().setHours(0, 0, 0, 0)))
-        .sort((a, b) => a._date - b._date);
-      setEvents(all);
+        .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      setPlaces(all);
     } catch (err) {
-      console.error('Error loading events:', err);
+      console.error('Error loading places:', err);
     }
     setLoading(false);
   };
@@ -97,47 +87,43 @@ export default function EventsPage() {
     } catch (err) { console.error(err); }
   };
 
-  const toggleSave = async (eventId) => {
+  const toggleSave = async (placeId) => {
     if (!currentUser) return;
-    const isSaved = savedEvents.includes(eventId);
-    setSavedEvents(prev => isSaved ? prev.filter(id => id !== eventId) : [...prev, eventId]);
+    const isSaved = savedEvents.includes(placeId);
+    setSavedEvents(prev => isSaved ? prev.filter(id => id !== placeId) : [...prev, placeId]);
     try {
       await updateDoc(doc(db, 'users', currentUser.uid), {
-        savedEvents: isSaved ? arrayRemove(eventId) : arrayUnion(eventId),
+        savedEvents: isSaved ? arrayRemove(placeId) : arrayUnion(placeId),
       });
     } catch (err) { console.error(err); }
   };
 
   const applyFilters = () => {
-    let result = [...events];
+    let result = [...places];
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(e =>
         e.title?.toLowerCase().includes(q) ||
         e.location?.toLowerCase().includes(q) ||
-        e.category?.toLowerCase().includes(q)
+        e.category?.toLowerCase().includes(q) ||
+        e.address?.toLowerCase().includes(q)
       );
     }
     if (city !== 'All Cities') result = result.filter(e => e.city === city);
     if (category !== 'All') result = result.filter(e => e.category === category || e.eventCategory === category);
     if (price === 'Free') result = result.filter(e => e.isFree || e.ticketPrice === 0);
     if (price === 'Paid') result = result.filter(e => !e.isFree && e.ticketPrice > 0);
-    if (date) {
-      const selected = new Date(date);
-      result = result.filter(e => e._date?.toDateString() === selected.toDateString());
-    }
     setFiltered(result);
     setPage(1);
   };
 
   const resetFilters = () => {
-    setSearch(''); setCity('All Cities'); setCategory('All');
-    setPrice('All'); setDate(''); setPage(1);
+    setSearch(''); setCity('All Cities'); setCategory('All'); setPrice('All'); setPage(1);
   };
 
-  const totalPages = Math.ceil(filtered.length / EVENTS_PER_PAGE);
-  const paginated = filtered.slice((page - 1) * EVENTS_PER_PAGE, page * EVENTS_PER_PAGE);
-  const activeFilterCount = [city !== 'All Cities', category !== 'All', price !== 'All', date].filter(Boolean).length;
+  const totalPages = Math.ceil(filtered.length / PLACES_PER_PAGE);
+  const paginated = filtered.slice((page - 1) * PLACES_PER_PAGE, page * PLACES_PER_PAGE);
+  const activeFilterCount = [city !== 'All Cities', category !== 'All', price !== 'All'].filter(Boolean).length;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -146,8 +132,8 @@ export default function EventsPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-100 py-8 px-4">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Discover Events</h1>
-          <p className="text-gray-500">Concerts, festivals, workshops and more happening around you</p>
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Explore Places</h1>
+          <p className="text-gray-500">Restaurants, cinemas, museums, parks, malls and more around you</p>
 
           {/* Search */}
           <div className="mt-6 flex gap-3">
@@ -157,7 +143,7 @@ export default function EventsPage() {
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search events..."
+                placeholder="Search places..."
                 className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition"
               />
             </div>
@@ -181,7 +167,7 @@ export default function EventsPage() {
 
           {/* Filters */}
           {showFilters && (
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
               <select value={city} onChange={e => setCity(e.target.value)}
                 className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
                 {CITIES.map(c => <option key={c}>{c}</option>)}
@@ -194,8 +180,6 @@ export default function EventsPage() {
                 className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
                 {PRICES.map(p => <option key={p}>{p}</option>)}
               </select>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500" />
             </div>
           )}
         </div>
@@ -206,7 +190,7 @@ export default function EventsPage() {
         {!loading && (
           <div className="flex items-center justify-between mb-6">
             <p className="text-sm text-gray-500">
-              {filtered.length} event{filtered.length !== 1 ? 's' : ''} found
+              {filtered.length} place{filtered.length !== 1 ? 's' : ''} found
             </p>
             {activeFilterCount > 0 && (
               <button onClick={resetFilters} className="flex items-center gap-1 text-sm text-red-500 hover:text-red-600">
@@ -221,23 +205,23 @@ export default function EventsPage() {
             ? [...Array(8)].map((_, i) => <SkeletonCard key={i} />)
             : paginated.length === 0
             ? <EmptyState onReset={resetFilters} />
-            : paginated.map(event => {
-                const isSaved = savedEvents.includes(event.id);
-                const dateLabel = event._date?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                const isFree = event.isFree || event.ticketPrice === 0;
+            : paginated.map(place => {
+                const isSaved = savedEvents.includes(place.id);
+                const isFree = place.isFree || place.ticketPrice === 0;
+                const hours = place.alwaysOpen ? '24/7 Open' : (place.operatingHours || 'Check hours');
                 return (
-                  <div key={event.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
+                  <div key={place.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
                     <div className="relative h-48 overflow-hidden flex-shrink-0">
-                      <Link to={`/e/${event.slug || event.id}`}>
+                      <Link to={`/e/${place.slug || place.id}`}>
                         <img
-                          src={event.imageUrl || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&h=300&fit=crop'}
-                          alt={event.title}
+                          src={place.imageUrl || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=400&h=300&fit=crop'}
+                          alt={place.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                       </Link>
                       {currentUser && (
                         <button
-                          onClick={() => toggleSave(event.id)}
+                          onClick={() => toggleSave(place.id)}
                           className="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow hover:scale-110 transition"
                         >
                           <Heart size={14} className={isSaved ? 'fill-red-500 text-red-500' : 'text-gray-400'} />
@@ -247,29 +231,29 @@ export default function EventsPage() {
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
                           isFree ? 'bg-green-500 text-white' : 'bg-white text-gray-800'
                         }`}>
-                          {isFree ? 'Free' : `₦${Number(event.ticketPrice).toLocaleString()}`}
+                          {isFree ? 'Free Entry' : `₦${Number(place.ticketPrice).toLocaleString()} entry`}
                         </span>
                       </div>
                     </div>
                     <div className="p-4 flex flex-col flex-1">
-                      <Link to={`/e/${event.slug || event.id}`}>
+                      <Link to={`/e/${place.slug || place.id}`}>
                         <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-cyan-500 transition">
-                          {event.title}
+                          {place.title}
                         </h3>
                       </Link>
                       <div className="space-y-1.5 mt-auto">
                         <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <Calendar size={12} className="text-cyan-400 flex-shrink-0" />
-                          <span>{dateLabel}</span>
+                          <Clock size={12} className="text-cyan-400 flex-shrink-0" />
+                          <span className="line-clamp-1">{hours}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-xs text-gray-500">
                           <MapPin size={12} className="text-cyan-400 flex-shrink-0" />
-                          <span className="line-clamp-1">{event.location || event.city || 'Lagos'}</span>
+                          <span className="line-clamp-1">{place.address || place.location || place.city || 'Lagos'}</span>
                         </div>
-                        {(event.category || event.eventCategory) && (
+                        {(place.category || place.eventCategory) && (
                           <div className="flex items-center gap-1.5 text-xs text-gray-500">
                             <Tag size={12} className="text-cyan-400 flex-shrink-0" />
-                            <span>{event.category || event.eventCategory}</span>
+                            <span>{place.category || place.eventCategory}</span>
                           </div>
                         )}
                       </div>

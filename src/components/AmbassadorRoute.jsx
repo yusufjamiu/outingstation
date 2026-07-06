@@ -13,8 +13,9 @@ export default function AmbassadorRoute({ children }) {
   const isCampusAmbassador = userProfile?.isCampusAmbassador === true;
   const isCityAmbassador = userProfile?.isAmbassador === true && userProfile?.ambassadorType === 'city';
 
+  // ✅ FIX: not an ambassador yet → send to the application page, not the dashboard
   if (!isCampusAmbassador && !isCityAmbassador) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/join" replace />;
   }
 
   return children;

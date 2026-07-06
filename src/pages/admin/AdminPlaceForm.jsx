@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Menu, ArrowLeft, Save, Upload, Plus, X } from 'lucide-react';
@@ -15,10 +14,11 @@ const makeSlug = (title, id) =>
     .replace(/^-|-$/g, '')
   + '-' + id.slice(0, 5);
 
-// ✅ Campus-specific subcategories only
+// ✅ Campus-specific subcategories only — mirrors AdminEventForm's CAMPUS_PLACE_SUBCATEGORIES
 const campusSubCategories = [
-  'Library', 'Auditorium', 'Cafeteria', 'Campus Market',
-  'Shortlets', 'Chapel / Mosque', 'Gym', 'Computer Lab'
+  'Cafeteria', 'Food Vendors', 'Library', 'Auditorium',
+  'Faculty Building', 'Health Center', 'Sport Center',
+  'Hostel', 'Chapel / Mosque', 'Admin Block', 'Market', 'Other'
 ];
 
 // ✅ Main categories that support places (REGULAR places only)
@@ -499,7 +499,7 @@ await updateDoc(newRef, { slug: makeSlug(form.title, newRef.id) });
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
                       {form.eventType === 'campus'
-                        ? 'Campus places appear in Campus Places section (Library, Gym, etc.)'
+                        ? 'Campus places appear in Campus Places section (Library, Cafeteria, etc.)'
                         : 'Regular places appear under their main category in the Places tab'}
                     </p>
                   </div>

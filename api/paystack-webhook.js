@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { initializeApp, getApps } from 'firebase/app';
 import {
-  getFirestore, doc, getDoc, setDoc, updateDoc,
+  getFirestore, doc, getDoc, setDoc, updateDoc, addDoc,
   increment, serverTimestamp, collection, query, where, getDocs
 } from 'firebase/firestore';
 
@@ -116,14 +116,8 @@ async function findUserByEmail(email) {
   }
 }
 
-// ✅ FIXED: Now matches by tierName as fallback when tierId is null/missing
-// Root cause of sold count not updating: tier objects in Firestore often don't
-// have an `id` field, so tierId is null and the old code returned early.
-// Now we fall back to matching by tierName which is always available.
 async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
   if (!eventId) return;
-
-  // Need at least one identifier to match the tier
   if (!tierId && !tierName) {
     console.log('⚠️ updateTierSoldCount: no tierId or tierName — skipping');
     return;
@@ -138,18 +132,12 @@ async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
     const tiers = eventData.ticketTiers || [];
     if (tiers.length === 0) return;
 
-    console.log(`🔍 Matching tier — tierId: "${tierId}", tierName: "${tierName}"`);
-    console.log(`🔍 Firestore tiers:`, tiers.map(t => `id="${t.id}" name="${t.name}"`));
-
     let matched = false;
     const updatedTiers = tiers.map(tier => {
-      // ✅ Match by id first (exact), then fall back to name
       const matchById = tierId && tier.id && tier.id === tierId;
       const matchByName = !matchById && tierName && tier.name === tierName;
-
       if (matchById || matchByName) {
         matched = true;
-        console.log(`✅ Matched tier "${tier.name}" by ${matchById ? 'id' : 'name'} → sold: ${tier.sold || 0} → ${(tier.sold || 0) + quantity}`);
         return { ...tier, sold: (tier.sold || 0) + quantity };
       }
       return tier;
@@ -167,10 +155,42 @@ async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
   }
 }
 
-// ✅ Distribute ambassador commission after ticket purchase
-// Campus events → campus ambassadors at that university only
-// City/regular events → city ambassadors in that city only
-// The two NEVER mix — each earns from their own scope
+// ✅ NEW: same pattern as updateTierSoldCount, but for vendor stand "filled" counts
+async function updateStandFilledCount(eventId, standId) {
+  if (!eventId || !standId) {
+    console.log('⚠️ updateStandFilledCount: missing eventId or standId — skipping');
+    return;
+  }
+  try {
+    const eventRef = doc(db, 'events', eventId);
+    const eventSnap = await getDoc(eventRef);
+    if (!eventSnap.exists()) return;
+
+    const eventData = eventSnap.data();
+    const stands = eventData.vendorStands || [];
+    if (stands.length === 0) return;
+
+    let matched = false;
+    const updatedStands = stands.map(stand => {
+      if (stand.id === standId) {
+        matched = true;
+        return { ...stand, filled: (stand.filled || 0) + 1 };
+      }
+      return stand;
+    });
+
+    if (!matched) {
+      console.log(`⚠️ No stand matched for standId="${standId}" — filled count NOT updated`);
+      return;
+    }
+
+    await updateDoc(eventRef, { vendorStands: updatedStands });
+    console.log(`✅ Stand filled count saved to Firestore`);
+  } catch (err) {
+    console.error('❌ Error updating stand filled count:', err);
+  }
+}
+
 async function distributeAmbassadorCommission(eventData, eventId, serviceFee, quantity) {
   if (!serviceFee || serviceFee <= 0) return;
 
@@ -187,8 +207,6 @@ async function distributeAmbassadorCommission(eventData, eventId, serviceFee, qu
     const eventUniversity = (eventData.university || '').toLowerCase().trim();
     const eventCity = (eventData.location || eventData.city || '').toLowerCase().trim();
 
-    console.log(`💰 Commission pool: ₦${commissionPool} | ${isCampusEvent ? 'Campus' : 'City'} event | ${isCampusEvent ? eventUniversity : eventCity}`);
-
     const ambassadorsSnap = await getDocs(
       query(collection(db, 'users'), where('isAmbassador', '==', true))
     );
@@ -197,7 +215,6 @@ async function distributeAmbassadorCommission(eventData, eventId, serviceFee, qu
     let qualifiedAmbassadors = [];
 
     if (isCampusEvent) {
-      // ✅ Campus event → only campus ambassadors assigned to this university
       qualifiedAmbassadors = allAmbassadors.filter(amb => {
         if (!amb.isCampusAmbassador) return false;
         if ((amb.totalReferrals || 0) < 100) return false;
@@ -208,7 +225,6 @@ async function distributeAmbassadorCommission(eventData, eventId, serviceFee, qu
         ) || (amb.university || '').toLowerCase().trim() === eventUniversity;
       });
     } else {
-      // ✅ City/regular/webinar event → only city ambassadors (NOT campus ambassadors)
       qualifiedAmbassadors = allAmbassadors.filter(amb => {
         if (amb.isCampusAmbassador) return false;
         if ((amb.totalReferrals || 0) < 100) return false;
@@ -218,8 +234,6 @@ async function distributeAmbassadorCommission(eventData, eventId, serviceFee, qu
       });
     }
 
-    console.log(`${isCampusEvent ? '🎓' : '🏙️'} Qualified ambassadors: ${qualifiedAmbassadors.length}`);
-
     if (qualifiedAmbassadors.length === 0) {
       console.log('ℹ️ No qualified ambassadors — commission not distributed');
       return;
@@ -227,8 +241,6 @@ async function distributeAmbassadorCommission(eventData, eventId, serviceFee, qu
 
     const sharePerAmbassador = Math.floor(commissionPool / qualifiedAmbassadors.length);
     if (sharePerAmbassador <= 0) return;
-
-    console.log(`💸 ₦${sharePerAmbassador} each to ${qualifiedAmbassadors.length} ambassadors`);
 
     for (const amb of qualifiedAmbassadors) {
       try {
@@ -264,28 +276,23 @@ async function distributeAmbassadorCommission(eventData, eventId, serviceFee, qu
             transactions: [transaction],
           });
         }
-        console.log(`✅ Credited ₦${sharePerAmbassador} to ${isCampusEvent ? 'campus' : 'city'} ambassador: ${amb.name || amb.id}`);
       } catch (err) {
         console.error(`❌ Failed to credit ambassador ${amb.id}:`, err);
       }
     }
-    console.log(`✅ Commission distribution complete`);
   } catch (err) {
     console.error('❌ Commission distribution error:', err);
   }
 }
 
-// ✅ Extract metadata — extracts tierName and tierId from all 3 metadata formats
+// ✅ Extract metadata — now also extracts purchase_type + vendor stand fields
 function extractMetadata(paymentData) {
   let rawMetadata = paymentData.metadata || {};
 
   if (typeof rawMetadata === 'string') {
     try {
       rawMetadata = JSON.parse(rawMetadata);
-      console.log('✅ Parsed metadata string successfully');
     } catch (e) {
-      console.log('⚠️ Metadata truncated — using regex fallback');
-
       const str = rawMetadata;
       const extract = (key) => {
         const match = str.match(new RegExp(`"variable_name":"${key}","value":"([^"]+)"`));
@@ -304,9 +311,14 @@ function extractMetadata(paymentData) {
       const totalAmount = extract('total_amount');
       const tierId = extract('tier_id');
       const tierName = extract('tier_name');
-
-      console.log('📦 Regex extracted eventId:', eventId);
-      console.log('📦 Regex extracted tierId:', tierId, 'tierName:', tierName);
+      const purchaseType = extract('purchase_type');
+      const standId = extract('stand_id');
+      const standName = extract('stand_name');
+      const standPrice = extract('stand_price');
+      const businessName = extract('business_name');
+      const businessType = extract('business_type');
+      const whatsappNumber = extract('whatsapp_number');
+      const applicationId = extract('application_id');
 
       return {
         ticketId,
@@ -324,20 +336,23 @@ function extractMetadata(paymentData) {
           : Math.round(paymentData.amount / 100),
         tierId: tierId || null,
         tierName: tierName || null,
+        purchaseType: purchaseType || 'ticket',
+        standId: standId || null,
+        standName: standName || null,
+        standPrice: parseInt(standPrice) || 0,
+        businessName: businessName || null,
+        businessType: businessType || null,
+        whatsappNumber: whatsappNumber || null,
+        applicationId: applicationId || null,
       };
     }
   }
 
-  console.log('🔍 Raw metadata:', JSON.stringify(rawMetadata, null, 2));
-
-  // ✅ custom_fields array path
   if (rawMetadata.custom_fields && Array.isArray(rawMetadata.custom_fields)) {
     const fields = rawMetadata.custom_fields.reduce((acc, field) => {
       acc[field.variable_name] = field.value;
       return acc;
     }, {});
-
-    console.log('📦 Parsed custom_fields:', JSON.stringify(fields, null, 2));
 
     const eventId = fields.eid || fields.event_id || fields.eventId ||
                     rawMetadata.event_id || rawMetadata.eventId;
@@ -345,8 +360,14 @@ function extractMetadata(paymentData) {
     const totalAmount = parseInt(fields.total_amount || fields.tot || fields.totalAmount) || 0;
     const tierId = fields.tier_id || fields.tierId || rawMetadata.tier_id || rawMetadata.tierId || null;
     const tierName = fields.tier_name || fields.tierName || rawMetadata.tier_name || rawMetadata.tierName || null;
-
-    console.log('📦 Extracted tierId:', tierId, 'tierName:', tierName);
+    const purchaseType = fields.purchase_type || rawMetadata.purchase_type || 'ticket';
+    const standId = fields.stand_id || null;
+    const standName = fields.stand_name || null;
+    const standPrice = parseInt(fields.stand_price) || 0;
+    const businessName = fields.business_name || null;
+    const businessType = fields.business_type || null;
+    const whatsappNumber = fields.whatsapp_number || null;
+    const applicationId = fields.application_id || rawMetadata.application_id || null;
 
     return {
       ticketId,
@@ -362,10 +383,17 @@ function extractMetadata(paymentData) {
       totalAmount: totalAmount > 0 ? totalAmount : Math.round(paymentData.amount / 100),
       tierId,
       tierName,
+      purchaseType,
+      standId,
+      standName,
+      standPrice,
+      businessName,
+      businessType,
+      whatsappNumber,
+      applicationId,
     };
   }
 
-  // ✅ Direct fields fallback
   const eventId = rawMetadata.event_id || rawMetadata.eventId;
   return {
     ticketId: rawMetadata.ticket_id || rawMetadata.ticketId || null,
@@ -381,6 +409,13 @@ function extractMetadata(paymentData) {
     totalAmount: parseInt(rawMetadata.total_amount || rawMetadata.totalAmount || rawMetadata.totalPaid) || 0,
     tierId: rawMetadata.tier_id || rawMetadata.tierId || null,
     tierName: rawMetadata.tier_name || rawMetadata.tierName || null,
+    purchaseType: rawMetadata.purchase_type || 'ticket',
+    standId: rawMetadata.stand_id || null,
+    standName: rawMetadata.stand_name || null,
+    standPrice: parseInt(rawMetadata.stand_price) || 0,
+    businessName: rawMetadata.business_name || null,
+    businessType: rawMetadata.business_type || null,
+    whatsappNumber: rawMetadata.whatsapp_number || null,
   };
 }
 
@@ -552,6 +587,47 @@ function generateTicketEmail(ticketData, eventData) {
 </html>`;
 }
 
+// ✅ NEW: simple confirmation email for vendor stand applications
+function generateStandConfirmationEmail(appData, eventData) {
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Vendor Stand Application</title></head>
+<body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f0f9ff;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f9ff;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#06b6d4,#0e7490);padding:36px;text-align:center;">
+            <p style="color:rgba(255,255,255,0.75);margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:3px;text-transform:uppercase;">OutingStation</p>
+            <h1 style="color:#ffffff;margin:0;font-size:26px;font-weight:900;">🛒 Application Received!</h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 32px;">
+            <h2 style="margin:0 0 10px;color:#0f172a;font-size:20px;font-weight:800;">${eventData.title}</h2>
+            <p style="margin:0 0 16px;color:#475569;font-size:14px;">Your vendor stand application for <strong>${appData.standName}</strong> has been received and payment confirmed.</p>
+            <div style="background:#f8fafc;border-radius:12px;padding:16px;margin-bottom:16px;">
+              <p style="margin:0 0 6px;font-size:13px;color:#6b7280;">Business: <strong style="color:#111827;">${appData.businessName}</strong></p>
+              <p style="margin:0 0 6px;font-size:13px;color:#6b7280;">What you sell: <strong style="color:#111827;">${appData.businessType}</strong></p>
+              <p style="margin:0;font-size:13px;color:#6b7280;">Amount paid: <strong style="color:#0891b2;">₦${appData.amountPaid?.toLocaleString()}</strong></p>
+            </div>
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:14px 16px;">
+              <p style="margin:0;font-size:13px;color:#92400e;line-height:1.6;">⏳ <strong>Next step:</strong> The event organizer will review your application. You'll be contacted on WhatsApp once approved.</p>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:linear-gradient(135deg,#0891b2,#0e7490);padding:24px 32px;text-align:center;">
+            <p style="margin:0;color:rgba(255,255,255,0.75);font-size:12px;">© ${new Date().getFullYear()} OutingStation</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -575,9 +651,93 @@ export default async function handler(req, res) {
     }
 
     const paymentData = event.data;
-    console.log('📦 Processing payment:', paymentData.customer.email);
+    const metadata = extractMetadata(paymentData);
+    console.log('📦 Processing payment:', paymentData.customer.email, '| type:', metadata.purchaseType);
 
-    // Idempotency check
+    if (!metadata.eventId) {
+      console.error('❌ CRITICAL: eventId missing from metadata!');
+      return res.status(400).json({ error: 'Missing eventId in metadata' });
+    }
+
+    // ─── VENDOR STAND branch ──────────────────────────────────────────────
+    if (metadata.purchaseType === 'vendor_stand') {
+      // ✅ REWORKED: applications now exist BEFORE payment (created free at
+      // apply-time, approved/rejected by the organizer with no money moved).
+      // This webhook now confirms PAYMENT on an already-approved application,
+      // rather than creating a brand new one.
+      if (!metadata.applicationId) {
+        console.error('❌ CRITICAL: applicationId missing from vendor_stand payment metadata!');
+        return res.status(400).json({ error: 'Missing applicationId in metadata' });
+      }
+
+      const appRef = doc(db, 'standApplications', metadata.applicationId);
+      const appSnap = await getDoc(appRef);
+      if (!appSnap.exists()) {
+        console.error('❌ Stand application not found:', metadata.applicationId);
+        return res.status(404).json({ error: 'Application not found' });
+      }
+      const appData = appSnap.data();
+
+      // Idempotency — don't double-process the same payment
+      if (appData.paymentStatus === 'paid') {
+        console.log('⚠️ This application was already marked paid');
+        return res.status(200).json({ success: true, message: 'Already processed' });
+      }
+
+      // Safety — only accept payment on an approved application
+      if (appData.organizerApprovalStatus !== 'approved') {
+        console.error('❌ Payment received for a non-approved application:', metadata.applicationId);
+        return res.status(400).json({ error: 'Application is not approved for payment' });
+      }
+
+      const amountPaid = appData.standPrice > 0 ? appData.standPrice : Math.round(paymentData.amount / 100);
+
+      // ✅ NEW: OutingStation takes a 10% platform fee on vendor stand fees;
+      // the rest is what's owed to the organizer. Vendor still pays exactly
+      // the stand price shown — this split doesn't change what they pay,
+      // it's just how the money is accounted for once it's in.
+      const PLATFORM_FEE_PERCENTAGE = 0.10;
+      const platformFee = Math.round(amountPaid * PLATFORM_FEE_PERCENTAGE);
+      const organizerPayout = amountPaid - platformFee;
+
+      await updateDoc(appRef, {
+        paymentStatus: 'paid',
+        amountPaid,
+        platformFee,
+        organizerPayout,
+        paymentReference: paymentData.reference,
+        paidAt: serverTimestamp(),
+      });
+      console.log(`✅ Stand application ${metadata.applicationId} marked paid — organizer owed ₦${organizerPayout}, platform fee ₦${platformFee}`);
+
+      await updateStandFilledCount(appData.eventId, appData.standId);
+
+      const eventDoc = await getDoc(doc(db, 'events', appData.eventId));
+      const eventData = eventDoc.exists() ? eventDoc.data() : { title: appData.eventTitle };
+
+      try {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+        });
+        await transporter.sendMail({
+          from: `"OutingStation" <${process.env.GMAIL_USER}>`,
+          to: paymentData.customer.email,
+          subject: `✅ Payment Confirmed — Your Vendor Stand at ${eventData.title}`,
+          html: generateStandConfirmationEmail({ ...appData, amountPaid, paymentReference: paymentData.reference }, eventData)
+        });
+        console.log(`📧 Stand confirmation email sent to: ${paymentData.customer.email}`);
+      } catch (emailErr) {
+        console.error('❌ Failed to send stand confirmation email:', emailErr);
+      }
+
+      // Note: vendor stand fees do not generate ambassador commission —
+      // that's a design choice, not an oversight; revisit if that changes.
+
+      return res.status(200).json({ success: true, purchaseType: 'vendor_stand' });
+    }
+
+    // ─── TICKET branch (unchanged) ─────────────────────────────────────────
     const existingQuery = query(
       collection(db, 'tickets'),
       where('paymentReference', '==', paymentData.reference)
@@ -586,14 +746,6 @@ export default async function handler(req, res) {
     if (!existingSnapshot.empty) {
       console.log('⚠️ Ticket already exists for this payment');
       return res.status(200).json({ success: true, message: 'Already processed' });
-    }
-
-    const metadata = extractMetadata(paymentData);
-    console.log('📦 Extracted metadata:', JSON.stringify(metadata, null, 2));
-
-    if (!metadata.eventId) {
-      console.error('❌ CRITICAL: eventId missing from metadata!');
-      return res.status(400).json({ error: 'Missing eventId in metadata' });
     }
 
     const userId = await findUserByEmail(paymentData.customer.email);
@@ -645,14 +797,10 @@ export default async function handler(req, res) {
     await setDoc(doc(db, 'tickets', ticketId), ticketData);
     console.log(`✅ Ticket saved: ${ticketId}${metadata.tierName ? ` (${metadata.tierName})` : ''}`);
 
-    // Update total ticketsSold count
     await updateDoc(doc(db, 'events', metadata.eventId), {
       ticketsSold: increment(metadata.quantity)
     });
 
-    // ✅ FIXED: Now passes tierName as fallback — matches tier even when tierId is null
-    // Previously: only ran when tierId was truthy → never updated sold count
-    // Now: runs when either tierId OR tierName is present, matches by name if id missing
     if (metadata.tierId || metadata.tierName) {
       await updateTierSoldCount(
         metadata.eventId,
@@ -680,8 +828,6 @@ export default async function handler(req, res) {
     console.log(`✅ Ticket created: ${ticketId}`);
     console.log(`📧 Email sent to: ${paymentData.customer.email}`);
 
-    // ✅ Distribute ambassador commission (50% of service fee split among qualified ambassadors)
-    // Runs async — does not block ticket creation or email
     distributeAmbassadorCommission(
       { ...eventData, id: metadata.eventId },
       metadata.serviceFee,
