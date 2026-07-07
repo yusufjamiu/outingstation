@@ -27,6 +27,7 @@ export default function LandingPage() {
   const [fade, setFade] = useState(true);
   const [tickerEvents, setTickerEvents] = useState([]);
   const [totalUpcomingEvents, setTotalUpcomingEvents] = useState(0);
+  const [upcomingEvents, setUpcomingEvents] = useState([]); // ✅ shared with EventsCarousel — one fetch, not two
   const [aboutVisible, setAboutVisible] = useState(false);
   const [featuresVisible, setFeaturesVisible] = useState([false, false, false]);
   const aboutRef = useRef(null);
@@ -120,6 +121,7 @@ export default function LandingPage() {
       .sort((a, b) => a._date - b._date);
 
     setTotalUpcomingEvents(events.length);
+    setUpcomingEvents(events); // ✅ EventsCarousel now derives its display from this, no second fetch
 
     const eventsForTicker = events
       .slice(0, 8)
@@ -249,7 +251,7 @@ export default function LandingPage() {
               </div>
 
               <div className="pb-14 md:pb-6 relative">
-                <EventsCarousel />
+                <EventsCarousel events={upcomingEvents} />
                 {totalUpcomingEvents > 0 && (
                   <div className="absolute -bottom-3 left-4 md:left-8 bg-white rounded-2xl shadow-lg px-4 py-2.5 flex items-center gap-2 z-20">
                     <ShieldCheck size={18} className="text-cyan-500 flex-shrink-0" />

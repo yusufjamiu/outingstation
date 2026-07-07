@@ -1,54 +1,30 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
 import { Calendar, MapPin, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
 
-export default function EventsCarousel() {
-  const [events, setEvents] = useState([]);
+// ✅ FIX: this used to run its own getDocs(collection(db, 'events')) fetch,
+// completely separately from LandingPage's ticker — meaning every landing
+// page load read the entire events collection TWICE. Now the parent fetches
+// once and passes the already-filtered list down as `events`.
+export default function EventsCarousel({ events: rawEvents = [] }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [itemsPerView, setItemsPerView] = useState(1);
   const intervalRef = useRef(null);
 
-  useEffect(() => {
-    const loadEvents = async () => {
-      try {
-        const snapshot = await getDocs(collection(db, 'events'));
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const events = useMemo(() => {
+    return rawEvents.slice(0, 8).map(e => ({
+      id: e.id,
+      slug: e.slug || null,
+      title: e.title || e.name,
+      image: e.imageUrl || e.image || e.coverImage || '',
+      category: e.category || 'Event',
+      city: (e.location || 'Lagos').split(',')[0].trim(),
+      date: e._date
+        ? e._date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+        : '',
+    }));
+  }, [rawEvents]);
 
-        const upcoming = snapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(e => e.status === 'published' && e.date)
-          .map(e => {
-            const d = e.date?.toDate ? e.date.toDate() : new Date(e.date);
-            return { ...e, _date: d };
-          })
-          .filter(e => e._date >= today)
-          .sort((a, b) => a._date - b._date)
-          .slice(0, 8)
-          .map(e => ({
-            id: e.id,
-            // ✅ FIX: capture slug so the link can use the same /e/{slug}
-            // pattern the rest of the app uses, falling back to /event/{id}
-            slug: e.slug || null,
-            title: e.title || e.name,
-            image: e.imageUrl || e.image || e.coverImage || '',
-            category: e.category || 'Event',
-            city: (e.location || 'Lagos').split(',')[0].trim(),
-            date: e._date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-          }));
-
-        setEvents(upcoming);
-      } catch (err) {
-        console.error('Carousel load error:', err);
-        setEvents([]);
-      }
-    };
-    loadEvents();
-  }, []);
-
-  // Watch viewport: 1 card on mobile, 3 on desktop (md breakpoint = 768px)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
     const update = () => setItemsPerView(mq.matches ? 3 : 1);
@@ -57,7 +33,6 @@ export default function EventsCarousel() {
     return () => mq.removeEventListener('change', update);
   }, []);
 
-  // Clamp activeIndex whenever itemsPerView or events length changes
   useEffect(() => {
     const maxIndex = Math.max(0, events.length - itemsPerView);
     setActiveIndex(prev => Math.min(prev, maxIndex));

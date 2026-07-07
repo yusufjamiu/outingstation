@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PaystackButton } from 'react-paystack';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import OSBSidebar from '../../components/OSBSidebar';
+import SwitchingOverlay from '../../components/SwitchingOverlay';
 import {
   Store, Clock, Tag, CheckCircle2, Clock as ClockIcon, XCircle, Inbox, MapPin,
   Upload, Plus, Trash2, LayoutDashboard, User, ClipboardList, MessageSquare,
@@ -13,6 +14,13 @@ import {
 
 const HOURLY_TYPES = ['DJ', 'MC', 'Musician', 'Photographer'];
 const MAX_ITEMS = 10;
+// ✅ Fallback list — businessCategory alone isn't reliable on older docs
+// saved before that field existed, so this infers from businessType instead.
+const SERVICE_PROVIDER_TYPE_VALUES = [
+  'Event Hall', 'DJ', 'MC', 'Caterer', 'Decorator', 'Photographer', 'Musician',
+  'Furniture Rental', 'Ride Provider', 'Experience Host', 'Security',
+  'Restaurant', 'Livestock Seller', 'Other Service',
+];
 const CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
 
 const SERVICE_PROVIDER_NAV = [
@@ -124,10 +132,12 @@ function StatCard({ label, value, icon: Icon }) {
 
 export default function OSBDashboard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currentUser } = useAuth();
 
   const [businesses, setBusinesses] = useState([]);
   const [selectedId, setSelectedId] = useState('');
+  const [switchingBusiness, setSwitchingBusiness] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
@@ -171,37 +181,70 @@ export default function OSBDashboard() {
       const snap = await getDocs(query(collection(db, 'businesses'), where('ownerId', '==', currentUser.uid)));
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setBusinesses(list);
-      if (list.length > 0) selectBusiness(list[0].id, list);
+      if (list.length > 0) {
+        // ✅ FIX: honor ?business={id} from the URL (set when navigating here
+        // from the Navbar's account dropdown) — previously this always
+        // defaulted to list[0], ignoring which business was actually clicked.
+        const requestedId = searchParams.get('business');
+        const target = (requestedId && list.some(b => b.id === requestedId)) ? requestedId : list[0].id;
+        // ✅ FIX: first arrival now plays the same "Switching to..." overlay
+        // as any later switch, instead of skipping it. Safe this time because
+        // `loading` stays true (see onDone below) until the switch actually
+        // completes — the dashboard never gets a chance to render with no
+        // business selected yet, which is what caused the earlier crash.
+        selectBusiness(target, list, false, () => setLoading(false));
+      } else {
+        setLoading(false);
+      }
     } catch (err) {
       console.error(err);
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const selectBusiness = (id, list = businesses) => {
-    setSelectedId(id);
-    setActiveSection('overview');
+  const switchTimeoutRef = useRef(null);
+
+  const selectBusiness = (id, list = businesses, immediate = false, onDone = null) => {
     const b = list.find(x => x.id === id);
-    setPricingTiers(b?.pricingTiers || []);
-    setHourlyPackages(b?.hourlyPackages || []);
-    setSettingsForm(b ? {
-      businessName: b.businessName || '', description: b.description || '',
-      city: b.city || '', whatsappNumber: b.whatsappNumber || '',
-      pricingInfo: b.pricingInfo || '', logoUrl: b.logoUrl || '',
-    } : null);
+    if (!b) { if (onDone) onDone(); return; }
+
+    // ✅ Cancel any switch already in flight. Without this, clicking a
+    // second business before the first one's 900ms transition finishes let
+    // both timeouts fire — the earlier one could overwrite the later one's
+    // selection after the fact, making the switch look like it "didn't work."
+    if (switchTimeoutRef.current) {
+      clearTimeout(switchTimeoutRef.current);
+      switchTimeoutRef.current = null;
+    }
+
+    const applySwitch = () => {
+      setSelectedId(id);
+      setActiveSection('overview');
+      setPricingTiers(b?.pricingTiers || []);
+      setHourlyPackages(b?.hourlyPackages || []);
+      setSettingsForm(b ? {
+        businessName: b.businessName || '', description: b.description || '',
+        city: b.city || '', whatsappNumber: b.whatsappNumber || '',
+        pricingInfo: b.pricingInfo || '', logoUrl: b.logoUrl || '',
+      } : null);
+    };
+
+    if (immediate) {
+      applySwitch();
+      if (onDone) onDone();
+      return;
+    }
+
+    setSwitchingBusiness(b);
+    switchTimeoutRef.current = setTimeout(() => {
+      applySwitch();
+      setSwitchingBusiness(null);
+      switchTimeoutRef.current = null;
+      if (onDone) onDone();
+    }, 900);
   };
 
   const selectedBusiness = businesses.find(b => b.id === selectedId);
-  // ✅ FIX: businessCategory alone isn't reliable — older business docs (or
-  // anything saved before this field existed) don't have it, and the old
-  // two-way check silently defaulted everything without it to Event Vendor.
-  // Fall back to inferring from businessType, which can only ever belong to
-  // one category.
-  const SERVICE_PROVIDER_TYPE_VALUES = [
-    'Event Hall', 'DJ', 'MC', 'Caterer', 'Decorator', 'Photographer', 'Musician',
-    'Furniture Rental', 'Ride Provider', 'Experience Host', 'Security',
-    'Restaurant', 'Livestock Seller', 'Other Service',
-  ];
   const isServiceProvider = selectedBusiness?.businessCategory === 'Service Provider' ||
     (!selectedBusiness?.businessCategory && SERVICE_PROVIDER_TYPE_VALUES.includes(selectedBusiness?.businessType));
   const isEventVendor = selectedBusiness && !isServiceProvider;
@@ -383,6 +426,18 @@ export default function OSBDashboard() {
   };
 
   if (loading) {
+    if (switchingBusiness) {
+      return (
+        <SwitchingOverlay
+          business={switchingBusiness}
+          category={
+            switchingBusiness?.businessCategory === 'Service Provider' || SERVICE_PROVIDER_TYPE_VALUES.includes(switchingBusiness?.businessType)
+              ? 'Service Provider'
+              : 'Event Vendor'
+          }
+        />
+      );
+    }
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500" />
@@ -409,6 +464,14 @@ export default function OSBDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
+      <SwitchingOverlay
+        business={switchingBusiness}
+        category={
+          switchingBusiness?.businessCategory === 'Service Provider' || SERVICE_PROVIDER_TYPE_VALUES.includes(switchingBusiness?.businessType)
+            ? 'Service Provider'
+            : 'Event Vendor'
+        }
+      />
       <OSBSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -442,7 +505,7 @@ export default function OSBDashboard() {
             <div className="bg-white rounded-3xl border-2 border-gray-100 p-8 text-center">
               <ClockIcon size={32} className="text-amber-500 mx-auto mb-3" />
               <h2 className="font-bold text-gray-900 mb-1">Awaiting Approval</h2>
-              <p className="text-sm text-gray-500">Your dashboard unlocks once "{selectedBusiness.businessName}" is approved (usually within 24–48 hours).</p>
+              <p className="text-sm text-gray-500">Your dashboard unlocks once "{selectedBusiness?.businessName}" is approved (usually within 24–48 hours).</p>
             </div>
           ) : isRejected ? (
             <div className="bg-white rounded-3xl border-2 border-gray-100 p-8 text-center">
@@ -454,7 +517,7 @@ export default function OSBDashboard() {
             <>
               {activeSection === 'overview' && (
                 <div className="space-y-4">
-                  <h2 className="text-xl font-black text-gray-900">{selectedBusiness.businessName} — Overview</h2>
+                  <h2 className="text-xl font-black text-gray-900">{selectedBusiness?.businessName} — Overview</h2>
                   {isServiceProvider ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                       <StatCard label="Pricing Packages" value={isHourly ? hourlyPackages.length : pricingTiers.length} icon={Tag} />
