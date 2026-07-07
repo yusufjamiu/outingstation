@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-import { Calendar, MapPin, Clock, CheckCircle2, XCircle, ChevronDown, ChevronUp, ListPlus, MessageSquare, Phone, Image as ImageIcon } from 'lucide-react';
+import { Calendar, MapPin, Clock, CheckCircle2, XCircle, ChevronDown, ChevronUp, ListPlus, MessageSquare, Phone, Image as ImageIcon, Trash2 } from 'lucide-react';
 
 const CATEGORY_LABELS = {
   venue: 'Venue', rentals: 'Rentals', decorator: 'Decorator', catering: 'Catering',
@@ -168,6 +168,28 @@ export default function MyEventsPage() {
     setLoading(false);
   };
 
+  const deletePlan = async (planId) => {
+    if (!confirm('Delete this event plan? This also removes any requests and quotes tied to it, and cannot be undone.')) return;
+    try {
+      // ✅ Clean up related serviceRequests + serviceQuotes first, so
+      // businesses don't keep seeing requests/quotes tied to a plan that
+      // no longer exists.
+      const relatedRequests = requestsByPlan[planId] || [];
+      for (const req of relatedRequests) {
+        const quotes = quotesByRequest[req.id] || [];
+        for (const q of quotes) {
+          await deleteDoc(doc(db, 'serviceQuotes', q.id));
+        }
+        await deleteDoc(doc(db, 'serviceRequests', req.id));
+      }
+      await deleteDoc(doc(db, 'event_plans', planId));
+      setPlans(prev => prev.filter(p => p.id !== planId));
+    } catch (err) {
+      console.error('Error deleting plan:', err);
+      alert('Failed to delete plan. Please try again.');
+    }
+  };
+
   const acceptQuote = async (quote, requestId) => {
     setAcceptingQuoteId(quote.id);
     try {
@@ -231,9 +253,9 @@ export default function MyEventsPage() {
 
               return (
                 <div key={plan.id} className="bg-white rounded-2xl border-2 border-gray-100 overflow-hidden">
-                  <button
+                  <div
                     onClick={() => setExpandedId(isExpanded ? null : plan.id)}
-                    className="w-full text-left p-5 flex items-center justify-between"
+                    className="w-full text-left p-5 flex items-center justify-between cursor-pointer"
                   >
                     <div>
                       <p className="font-bold text-gray-900">{plan.eventName}</p>
@@ -248,9 +270,16 @@ export default function MyEventsPage() {
                           {resolvedCount}/{requests.length} resolved
                         </span>
                       )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deletePlan(plan.id); }}
+                        className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                        aria-label="Delete plan"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                       {isExpanded ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
                     </div>
-                  </button>
+                  </div>
 
                   {isExpanded && (
                     <div className="border-t border-gray-100 p-5 space-y-3">

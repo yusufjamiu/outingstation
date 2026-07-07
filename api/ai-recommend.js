@@ -9,27 +9,43 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { message, history, events, vendors, universities } = req.body || {};
+  // ✅ NEW: services (Service Provider businesses — DJ, Caterer, Decorator,
+  // Ride Provider, etc.) and standEvents (events with open vendor stands,
+  // for the "I'm an event vendor" flow) alongside the existing data.
+  const { message, history, events, vendors, universities, services, standEvents, userCity } = req.body || {};
 
   if (!message) return res.status(400).json({ error: "message is required" });
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set in environment variables" });
 
-  // ── Build context string from Firestore data ──────────────────────────────
-  // ✅ priceNaira included so Claude can compare actual numbers against user budget
+  // ── Build context strings from Firestore data ──────────────────────────────
   const eventsContext = (events || []).slice(0, 120).map((e) =>
     `[ID:${e.id}] ${e.title} | ${e.kind} | city:${e.city || "?"} | area:${e.area || "?"} | price:${e.priceLabel} | priceNaira:${e.priceNaira ?? 0} | mood:${(e.moods || []).join("/")} | campus:${e.eventType === "campus" ? "yes" : "no"} | university:${e.university || "-"} | desc:${(e.desc || "").slice(0, 80)}`
   ).join("\n");
 
   const vendorsContext = (vendors || []).slice(0, 60).map((v) =>
-    `[ID:${v.id}] ${v.title} | vendor | university:${v.university || "?"} | category:${v.category} | whatsapp:${v.whatsapp || "-"}`
+    `[ID:${v.id}] ${v.title} | campus vendor | university:${v.university || "?"} | category:${v.category} | whatsapp:${v.whatsapp || "-"}`
+  ).join("\n");
+
+  // ✅ NEW: Service Providers — DJ, MC, Caterer, Decorator, Photographer,
+  // Musician, Event Hall, Ride Provider, Furniture Rental, etc.
+  const servicesContext = (services || []).slice(0, 80).map((s) =>
+    `[ID:${s.id}] ${s.title} | service:${s.category} | city:${s.city || "?"} | price:${s.priceLabel} | priceNaira:${s.priceNaira ?? 0} | whatsapp:${s.whatsapp || "-"} | desc:${(s.desc || "").slice(0, 80)}`
+  ).join("\n");
+
+  // ✅ NEW: Events currently accepting vendor stand applications, with how
+  // many stands are still open and their price range — for event vendors
+  // (food/fashion/accessories sellers) looking for a stand to apply for.
+  const standEventsContext = (standEvents || []).slice(0, 60).map((e) =>
+    `[ID:${e.id}] ${e.title} | vendor stand event | city:${e.city || "?"} | area:${e.area || "?"} | standsOpen:${e.standsAvailable} | standPriceRange:${e.standPriceRange || "?"}`
   ).join("\n");
 
   const uniList = (universities || []).join(", ");
 
-  const systemPrompt = `You are Outing AI, a smart and friendly Nigerian event & experience guide built into the OutingStation app. You help users find events, places, and campus vendors that match their vibe.
+  const systemPrompt = `You are Outing AI, a smart and friendly Nigerian event & experience guide built into the OutingStation app. You help users find events, places, campus vendors, hired services (DJs, caterers, decorators, ride providers, halls, etc.), and vendor stand opportunities — and you help guide people toward the right part of the app for what they need.
 
 AVAILABLE DATA:
 Universities: ${uniList || "none listed"}
+User's city (if known): ${userCity || "unknown"}
 
 EVENTS & PLACES:
 ${eventsContext || "No events loaded yet."}
@@ -37,21 +53,31 @@ ${eventsContext || "No events loaded yet."}
 CAMPUS VENDORS:
 ${vendorsContext || "No vendors loaded yet."}
 
-YOUR JOB:
-- Understand what the user wants (city, mood, budget, who they're going with, campus or town, etc.)
-- Recommend the best matching items from the data above
-- If you need more info (e.g. city or mood), ask ONE short question
-- Be warm, conversational, and use a Nigerian-friendly tone — casual but helpful
-- Use light emoji where it feels natural 🎉
+SERVICE PROVIDERS (hired for events — DJ, MC, Caterer, Decorator, Photographer, Musician, Event Hall, Ride Provider, Furniture Rental, Security, etc.):
+${servicesContext || "No service providers loaded yet."}
+
+EVENTS WITH OPEN VENDOR STANDS (for event vendors — food/fashion/accessories sellers looking to rent a stand at someone else's event):
+${standEventsContext || "No events with open stands loaded yet."}
+
+INTENT TYPES YOU MUST RECOGNIZE:
+1. "Attend an event" — wants to find events/places to go to. Use EVENTS & PLACES data.
+2. "Plan a private event" (birthday, wedding, private party, etc.) — this is a MULTI-STEP planning need (venue + decorator + caterer + DJ, etc.), not a single lookup. Your reply should recommend they use OutingStation's "Plan My Event" wizard (mention it by name, and that it's reachable from the navbar/homepage), while still optionally surfacing 1-2 relevant Service Providers or Event Halls as a taste of what's available. Don't try to fully plan the event yourself in chat — point them to the proper tool.
+3. "Hire a specific service" (DJ, caterer, decorator, photographer, ride, hall, etc.) — use SERVICE PROVIDERS data. If they haven't said a city, ask for one before recommending (a DJ in Lagos is useless to someone in Abuja).
+4. "I'm an event vendor looking for a stand" (sells food, fashion, accessories, etc. and wants to rent a stand at an event) — use EVENTS WITH OPEN VENDOR STANDS data. If you don't know their city yet, your reply must ask for their city and you must return an EMPTY results array with needsMoreInfo:true — do not guess or show stands from the wrong city. Once you know the city, only show stand events matching that city.
 
 BUDGET RULES (VERY IMPORTANT):
 - If the user mentions a budget (e.g. "I have 10k", "₦5000", "20 thousand"), parse it as naira: "10k" = 10000, "5k" = 5000, "20k" = 20000
-- ONLY recommend events/places where priceNaira is less than or equal to the user's budget
+- ONLY recommend events/places/services where priceNaira is less than or equal to the user's budget
 - Free events (priceNaira: 0) always qualify regardless of budget
-- NEVER recommend an event whose priceNaira exceeds the stated budget — this is a hard rule
-- If the user wants to "spend" a budget on experiences, prefer paid events/places that make good use of that budget — not just the cheapest ones, but nothing that exceeds it
-- If no events fit within the budget, say so honestly and suggest the closest affordable options
-- "Ticketed" means there is a ticket price but it was not specified — treat these cautiously when a strict budget is mentioned
+- NEVER recommend something whose priceNaira exceeds the stated budget — this is a hard rule
+- If nothing fits within the budget, say so honestly and suggest the closest affordable options
+- "Ticketed" or "Contact for pricing" means the exact price wasn't specified — treat these cautiously when a strict budget is mentioned
+
+GENERAL RULES:
+- Understand what the user wants (city, mood, budget, who they're going with, campus or town, service type, etc.)
+- If you need more info (e.g. city, mood, or which service type), ask ONE short question and set needsMoreInfo:true with an empty results array
+- Be warm, conversational, and use a Nigerian-friendly tone — casual but helpful
+- Use light emoji where it feels natural 🎉
 
 CRITICAL RESPONSE FORMAT:
 You MUST return ONLY a valid JSON object — no text before it, no text after it, no markdown, no backticks, no explanation.

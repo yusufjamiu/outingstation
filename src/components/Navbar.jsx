@@ -23,10 +23,9 @@ const DISCOVER_ITEMS = [
   { icon: Building2,      label: 'Event Halls',    to: '/halls',          live: true  },
   { icon: UtensilsCrossed,label: 'Restaurants',    to: '/restaurants',    live: true  },
   { icon: Palmtree,       label: 'Resorts',        to: '/resorts',        live: true  },
-  { icon: Car,          label: 'Rent a Ride',    to: '/rent-a-ride',    live: true  },
-  { icon: Briefcase,      label: 'Opportunities',  to: '/opportunities',  live: false  },
+  { icon: Briefcase,      label: 'Opportunities',  to: '/opportunities',  live: true  },
   { icon: Sparkles,       label: 'Experiences',    to: '/experiences',    live: false },
-  
+  { icon: Car,          label: 'Rent a Ride',    to: '/rent-a-ride',    live: true  },
 ];
 
 const PLAN_ITEMS = [
@@ -234,7 +233,7 @@ export default function Navbar() {
 
           <div className="hidden md:flex items-center gap-2 absolute right-0">
             <button
-              onClick={() => {}}
+              onClick={() => window.dispatchEvent(new CustomEvent('open-outing-ai'))}
               className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-cyan-500 transition px-3 py-1.5 rounded-full hover:bg-cyan-50"
             >
               <Compass size={16} className="text-cyan-500" />
@@ -284,7 +283,7 @@ export default function Navbar() {
                           {myBusinesses.map((biz) => (
                             <Link
                               key={biz.id}
-                              to="/business"
+                              to={`/business?business=${biz.id}`}
                               onClick={() => setAccountOpen(false)}
                               className="flex items-center gap-3 px-4 py-2.5 hover:bg-cyan-50 transition"
                             >
@@ -346,7 +345,7 @@ export default function Navbar() {
 
             <div className="px-1 pt-3 pb-2">
               <button
-                onClick={() => {}}
+                onClick={() => window.dispatchEvent(new CustomEvent('open-outing-ai'))}
                 className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200 text-cyan-600 font-bold text-sm py-3 rounded-xl hover:from-cyan-100 hover:to-blue-100 transition"
               >
                 <Compass size={16} />
@@ -376,7 +375,7 @@ export default function Navbar() {
                       {myBusinesses.map((biz) => (
                         <Link
                           key={biz.id}
-                          to="/business"
+                          to={`/business?business=${biz.id}`}
                           onClick={closeMobile}
                           className="flex flex-col items-center gap-1 flex-shrink-0 w-16"
                         >

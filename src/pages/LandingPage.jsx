@@ -15,14 +15,28 @@ import GrowYourBusinessCTA from '../components/GrowYourBusinessCTA';
 import AppDownloadSection from '../components/AppDownloadSection';
 import EventsCarousel from '../components/EventsCarousel';
 import concertImage from '../assets/concertImage.jpg';
-import { MapPin, Calendar, ShieldCheck } from 'lucide-react';
+import {
+  Calendar, MapPin, ShieldCheck, ClipboardList, Ticket, Store,
+  School, Car, Sparkles,
+} from 'lucide-react';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 
+// ✅ Replaces the old search bar — direct shortcuts into the 8 things people
+// actually come to OutingStation to do.
+const QUICK_ACTIONS = [
+  { label: 'Find an Event', to: '/events', icon: Calendar },
+  { label: 'Find Places', to: '/places', icon: MapPin },
+  { label: 'Plan a Private Event', to: '/plan-event', icon: ClipboardList },
+  { label: 'Host an Event', to: '/create', icon: Ticket },
+  { label: 'List My Service', to: '/business/register', icon: Store },
+  { label: 'Find Campus Events', to: '/campus-events', icon: School },
+  { label: 'Rent a Ride', to: '/rent-a-ride', icon: Car },
+  { label: 'Ask Outing AI', to: '/', icon: Sparkles, isAI: true },
+];
+
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCity, setSelectedCity] = useState('Lagos');
   const [currentText, setCurrentText] = useState(0);
   const [fade, setFade] = useState(true);
   const [tickerEvents, setTickerEvents] = useState([]);
@@ -34,11 +48,12 @@ export default function LandingPage() {
   const featuresRef = useRef([]);
 
   const rotatingTexts = [
-  "Find what's happening near you, or plan your own event from scratch.",
-  "From concerts in Lagos to hangouts in Abuja, find your next experience.",
+  "Nigeria's entire event ecosystem, in one app.",
+  "Find an event, hire a vendor, or sell tickets — all in one place.",
+  "List your hall or venue on OutingStation today.",
+  "List your services and get discovered by people who need them.",
   "Ask Outing AI, and let it find your next move.",
   "Book a hall, decorator, caterer and DJ in one flow with Plan My Event.",
-  "Your guide to what's happening around you, on and off campus.",
 ];
 
   const features = [
@@ -121,7 +136,7 @@ export default function LandingPage() {
       .sort((a, b) => a._date - b._date);
 
     setTotalUpcomingEvents(events.length);
-    setUpcomingEvents(events); // ✅ EventsCarousel now derives its display from this, no second fetch
+    setUpcomingEvents(events);
 
     const eventsForTicker = events
       .slice(0, 8)
@@ -165,14 +180,6 @@ export default function LandingPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSearch = () => {
-    if (searchQuery.trim()) {
-      navigate('/events?search=' + searchQuery + '&city=' + selectedCity);
-    } else {
-      navigate('/events?city=' + selectedCity);
-    }
-  };
-
   return (
     <>
       <SEO />
@@ -209,45 +216,39 @@ export default function LandingPage() {
                 </p>
               </div>
 
-              <div className="flex flex-col lg:flex-row items-center justify-center gap-4 mb-8 md:mb-16">
-                <div className="flex items-center bg-white rounded-full shadow-lg px-4 md:px-6 py-3 md:py-4 w-full lg:max-w-2xl">
-                  <MapPin className="text-cyan-400 mr-2 md:mr-3 flex-shrink-0" size={20} />
-                  <input
-                    type="text"
-                    placeholder="Search address, event"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                    className="flex-1 outline-none text-gray-600 text-sm md:text-base min-w-0"
-                  />
-                  <span className="text-gray-400 mx-2 md:mx-4">|</span>
-                  <select
-                    value={selectedCity}
-                    onChange={(e) => setSelectedCity(e.target.value)}
-                    className="outline-none text-gray-600 bg-transparent text-sm md:text-base mr-2 md:mr-6"
-                  >
-                    <option>Lagos</option>
-                    <option>Abuja</option>
-                  </select>
-                  <button
-                    onClick={handleSearch}
-                    className="hidden md:block bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full hover:shadow-lg transition"
-                  >
-                    Explore
-                  </button>
-                </div>
-                <button
-                  onClick={handleSearch}
-                  className="md:hidden w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white px-8 py-3 rounded-full hover:shadow-lg transition"
-                >
-                  Explore
-                </button>
-                <Link to="/events">
-                  <button className="w-auto mx-auto lg:w-auto bg-gray-900 text-cyan-400 px-6 md:px-8 py-3 md:py-4 rounded-full font-medium shadow-lg hover:shadow-xl hover:shadow-cyan-500/20 transition-shadow flex items-center justify-center gap-2">
-                    <Calendar size={20} />
-                    View All Events
-                  </button>
-                </Link>
+              {/* ✅ Quick action grid — replaces the old search bar + Explore button */}
+              <div className="grid grid-cols-3 md:grid-cols-4 gap-3 md:gap-4 max-w-4xl mx-auto mb-10 md:mb-16">
+                {QUICK_ACTIONS.map((item) => {
+                  const Icon = item.icon;
+                  const tileClasses = "group relative overflow-hidden rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all p-4 md:p-5 flex flex-col items-center justify-center text-center gap-2";
+                  const tileContent = (
+                    <>
+                      <div className="absolute -bottom-8 -right-8 w-24 h-24 bg-cyan-100 rounded-full opacity-40 blur-xl group-hover:opacity-60 transition-opacity"></div>
+                      <Icon size={20} className="relative z-10 text-cyan-500" />
+                      <span className="relative z-10 font-bold text-gray-900 text-xs md:text-sm leading-tight">{item.label}</span>
+                    </>
+                  );
+
+                  // ✅ FIX: this tile used to just link to '/', doing nothing.
+                  // It now actually opens the AI widget, same as the Navbar buttons.
+                  if (item.isAI) {
+                    return (
+                      <button
+                        key={item.label}
+                        onClick={() => window.dispatchEvent(new CustomEvent('open-outing-ai'))}
+                        className={tileClasses}
+                      >
+                        {tileContent}
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <Link key={item.label} to={item.to} className={tileClasses}>
+                      {tileContent}
+                    </Link>
+                  );
+                })}
               </div>
 
               <div className="pb-14 md:pb-6 relative">

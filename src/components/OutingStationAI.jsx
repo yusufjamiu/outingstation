@@ -27,6 +27,10 @@ const STARTERS = [
   '😌 Chill spot for a date',
   '🏛️ Halls & venues near me',
   '🎓 Campus events',
+  '🥳 Plan a private party',
+  '🎧 Find a DJ',
+  '🚗 Find a ride',
+  '🎪 I sell stuff — find me a stand',
   '💳 Check my credits',
   '🎟️ Show my tickets',
 ];
@@ -53,7 +57,6 @@ export default function OutingStationAI() {
   const [showStarters, setShowStarters] = useState(true);
   const [guestQueryUsed, setGuestQueryUsed] = useState(false);
 
-  // Nudge state
   const [showNudge, setShowNudge]         = useState(false);
   const [nudgeDismissed, setNudgeDismissed] = useState(false);
   const [nudgeText, setNudgeText]         = useState('');
@@ -62,7 +65,6 @@ export default function OutingStationAI() {
   const cycleTimerRef  = useRef(null);
   const typeTimerRef   = useRef(null);
 
-  // User state
   const [user, setUser]               = useState(null);
   const [userName, setUserName]       = useState('');
   const [userCity, setUserCity]       = useState('Lagos');
@@ -70,16 +72,16 @@ export default function OutingStationAI() {
   const [aiPromptsToday, setAiPromptsToday]     = useState(0);
   const [aiPromptsResetAt, setAiPromptsResetAt] = useState(null);
 
-  // Data
   const [events, setEvents]   = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [services, setServices] = useState([]); // ✅ NEW: Service Provider businesses
+  const [standEvents, setStandEvents] = useState([]); // ✅ NEW: events with open vendor stands
   const [uniNames, setUniNames] = useState([]);
   const [tickets, setTickets] = useState([]);
 
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
 
-  // ── Typewriter nudge ────────────────────────────────────────────────────────
   const typewrite = useCallback((text) => {
     clearInterval(typeTimerRef.current);
     let i = 0;
@@ -119,7 +121,15 @@ export default function OutingStationAI() {
     };
   }, [startNudge]);
 
-  // ── Auth listener ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    const handleOpenRequest = () => {
+      dismissNudge();
+      setOpen(true);
+    };
+    window.addEventListener('open-outing-ai', handleOpenRequest);
+    return () => window.removeEventListener('open-outing-ai', handleOpenRequest);
+  }, [dismissNudge]);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, u => setUser(u));
     return unsub;
@@ -133,7 +143,6 @@ export default function OutingStationAI() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // ── Load data ───────────────────────────────────────────────────────────────
   async function loadData() {
     let name = '', city = 'Lagos', credits = 0, promptsToday = 0, resetAt = null;
 
@@ -206,6 +215,28 @@ export default function OutingStationAI() {
           };
         });
       setEvents(rawEvents);
+
+      // ✅ NEW: derive events with open vendor stands from the SAME evSnap
+      // already fetched above — no second Firestore read needed.
+      const rawStandEvents = evSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(e => e.status === 'published' && e.vendorStandsEnabled && Array.isArray(e.vendorStands))
+        .map(e => {
+          const openStands = (e.vendorStands || []).filter(s => (s.filled || 0) < s.quantityAvailable);
+          if (openStands.length === 0) return null;
+          const prices = openStands.map(s => s.price || 0);
+          return {
+            id: e.id, slug: e.slug || '', title: e.title || 'Untitled',
+            kind: 'stand_event',
+            city: e.location || '', area: (e.location || '').split(',')[0].trim(),
+            standsAvailable: openStands.length,
+            standPriceRange: prices.length ? `₦${Math.min(...prices).toLocaleString()}–₦${Math.max(...prices).toLocaleString()}` : '',
+            priceLabel: `${openStands.length} stand${openStands.length !== 1 ? 's' : ''} open`,
+            priceNaira: prices.length ? Math.min(...prices) : 0,
+            imageUrl: e.imageUrl || (Array.isArray(e.images) && e.images[0]) || '',
+          };
+        })
+        .filter(Boolean);
+      setStandEvents(rawStandEvents);
     } catch (e) { console.error('AI events load error:', e); }
 
     try {
@@ -216,6 +247,34 @@ export default function OutingStationAI() {
           kind: 'vendor', category: data.category || '', university: data.university || '',
           whatsapp: (data.whatsappNumber || '').replace(/[^0-9]/g, ''),
           area: data.university || '', priceLabel: 'Vendor', imageUrl: data.imageUrl || '' };
+      }));
+    } catch (_) {}
+
+    // ✅ NEW: Service Provider businesses — DJ, MC, Caterer, Decorator,
+    // Photographer, Musician, Event Hall, Ride Provider, Furniture Rental, etc.
+    try {
+      const SERVICE_PROVIDER_TYPE_VALUES = [
+        'Event Hall', 'DJ', 'MC', 'Caterer', 'Decorator', 'Photographer', 'Musician',
+        'Furniture Rental', 'Ride Provider', 'Experience Host', 'Security',
+        'Restaurant', 'Livestock Seller', 'Other Service',
+      ];
+      const bizSnap = await getDocs(collection(db, 'businesses'));
+      const serviceBusinesses = bizSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(b => b.status === 'approved')
+        .filter(b => b.businessCategory === 'Service Provider' || SERVICE_PROVIDER_TYPE_VALUES.includes(b.businessType));
+      setServices(serviceBusinesses.map(b => {
+        const packages = (b.pricingTiers?.length ? b.pricingTiers : (b.hourlyPackages || []).map(p => ({ price: p.price })));
+        const minPrice = packages.length ? Math.min(...packages.map(p => p.price || 0)) : 0;
+        return {
+          id: b.id, title: b.businessName || 'Business', kind: 'service',
+          category: b.customTypeName || b.businessType || 'Service', desc: b.description || '',
+          city: b.city || '', area: b.city || '',
+          priceLabel: minPrice > 0 ? `from ₦${minPrice.toLocaleString()}` : 'Contact for pricing',
+          priceNaira: minPrice,
+          whatsapp: (b.whatsappNumber || '').replace(/[^0-9]/g, ''),
+          imageUrl: b.logoUrl || (packages[0]?.image) || '',
+        };
       }));
     } catch (_) {}
 
@@ -233,7 +292,6 @@ export default function OutingStationAI() {
     setMessages([{ from: 'ai', text: greeting }]);
   }
 
-  // ── Prompt system ───────────────────────────────────────────────────────────
   function getFreePromptsLeft() {
     if (!user) return 0;
     const resetTime = aiPromptsResetAt ? new Date(aiPromptsResetAt) : null;
@@ -274,7 +332,6 @@ export default function OutingStationAI() {
     return { allowed: false, hoursLeft: hoursUntilReset(currentResetAt) };
   }
 
-  // ── Send ────────────────────────────────────────────────────────────────────
   async function send(preset) {
     const text = (preset || input).trim();
     if (!text || loading) return;
@@ -309,14 +366,25 @@ export default function OutingStationAI() {
       const res = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history, events: events.slice(0, 120), vendors: vendors.slice(0, 60), universities: uniNames, userCity }),
+        body: JSON.stringify({
+          message: text, history,
+          events: events.slice(0, 120), vendors: vendors.slice(0, 60),
+          services: services.slice(0, 80), standEvents: standEvents.slice(0, 60),
+          universities: uniNames, userCity,
+        }),
       });
       if (!res.ok) throw new Error('API error');
       const data    = await res.json();
       const reply   = data.reply || 'Here are some picks for you!';
       const ids     = data.resultIds || [];
       const reasons = data.reasons || {};
-      const results = ids.map(id => events.find(e => e.id === id) || vendors.find(v => v.id === id) || null).filter(Boolean);
+      const results = ids.map(id =>
+        events.find(e => e.id === id) ||
+        vendors.find(v => v.id === id) ||
+        services.find(s => s.id === id) ||
+        standEvents.find(se => se.id === id) ||
+        null
+      ).filter(Boolean);
       setMessages(prev => [...prev, { from: 'ai', text: reply, results, reasons, isGuestPreview: !user }]);
       setHistory(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: reply }]);
     } catch (_) {
@@ -378,10 +446,8 @@ export default function OutingStationAI() {
 
   return (
     <>
-      {/* ── FAB + Nudge bubble ──────────────────────────────────────────────── */}
       <div className="fixed bottom-24 right-5 z-[999] flex flex-col items-end gap-2">
 
-        {/* Nudge bubble */}
         {showNudge && !open && (
           <div
             onClick={openChat}
@@ -397,22 +463,18 @@ export default function OutingStationAI() {
           </div>
         )}
 
-        {/* FAB button */}
         <button
           onClick={openChat}
           className="w-14 h-14 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 shadow-xl flex items-center justify-center relative"
           aria-label="Open Outing AI"
         >
-          {/* Pulse ring */}
           <span className="absolute inset-0 rounded-full bg-cyan-400 animate-ping opacity-20" />
           <Compass size={24} className="text-white relative z-10" />
         </button>
       </div>
 
-      {/* ── Chat overlay ────────────────────────────────────────────────────── */}
       {open && (
         <>
-          {/* Backdrop on mobile */}
           <div
             className="fixed inset-0 bg-black/40 z-[1000] md:hidden"
             onClick={() => setOpen(false)}
@@ -426,7 +488,6 @@ export default function OutingStationAI() {
             flex flex-col overflow-hidden
             h-[88dvh] md:h-[600px]
           ">
-            {/* Header */}
             <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-4 py-3 flex items-center gap-3 flex-shrink-0 rounded-t-3xl md:rounded-t-2xl">
               <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center">
                 <Compass size={18} className="text-cyan-400" />
@@ -446,7 +507,6 @@ export default function OutingStationAI() {
               </button>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-3 bg-slate-50 space-y-3">
               {!dataLoaded ? (
                 <div className="flex items-center justify-center h-full">
@@ -463,7 +523,6 @@ export default function OutingStationAI() {
               )}
             </div>
 
-            {/* Footer */}
             <div className="bg-white border-t border-slate-100 p-3 flex-shrink-0">
               {showStarters && (
                 <div className="flex gap-2 overflow-x-auto pb-2 mb-2 scrollbar-hide">
@@ -528,8 +587,6 @@ export default function OutingStationAI() {
     </>
   );
 }
-
-// ── Message ───────────────────────────────────────────────────────────────────
 
 function Message({ m, user, onRestart }) {
   if (m.from === 'user') {
@@ -625,23 +682,29 @@ function Message({ m, user, onRestart }) {
 
 function ResultCard({ r, reason }) {
   const isVendor = r.kind === 'vendor';
-  const url      = eventUrl(r);
+  const isService = r.kind === 'service';
+  const isStandEvent = r.kind === 'stand_event';
+  const hasContactAction = isVendor || isService;
+  const url = eventUrl(r);
+  const kindLabel = isVendor ? 'Vendor' : isService ? r.category : isStandEvent ? 'Stand Available' : r.kind === 'place' ? 'Place' : 'Event';
+  const emoji = isVendor ? '🛒' : isService ? '💼' : isStandEvent ? '🎪' : r.kind === 'place' ? '📍' : '🎉';
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       {r.imageUrl
         ? <img src={r.imageUrl} alt={r.title} className="w-full h-24 object-cover" onError={e => e.target.style.display='none'} />
-        : <div className="w-full h-16 bg-cyan-50 flex items-center justify-center text-3xl">{isVendor ? '🛒' : r.kind === 'place' ? '📍' : '🎉'}</div>
+        : <div className="w-full h-16 bg-cyan-50 flex items-center justify-center text-3xl">{emoji}</div>
       }
       <div className="p-3">
         <div className="flex items-start justify-between gap-2 mb-1">
           <p className="text-sm font-bold text-slate-800 leading-snug">{r.title}</p>
           <span className="text-[10px] font-semibold text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-full flex-shrink-0">
-            {r.kind === 'vendor' ? 'Vendor' : r.kind === 'place' ? 'Place' : 'Event'}
+            {kindLabel}
           </span>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
           {r.area && <span>📍 {r.area}</span>}
-          <span>{r.priceLabel}</span>
+          <span>{isStandEvent ? r.standPriceRange : r.priceLabel}</span>
         </div>
         {reason && (
           <div className="bg-cyan-50 border border-cyan-100 rounded-lg px-2.5 py-1.5 mb-2">
@@ -649,8 +712,10 @@ function ResultCard({ r, reason }) {
           </div>
         )}
         <div className="flex gap-1.5">
-          {isVendor && r.whatsapp
+          {hasContactAction && r.whatsapp
             ? <a href={`https://wa.me/${r.whatsapp}`} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-green-500 rounded-lg py-1.5 text-center">WhatsApp</a>
+            : isStandEvent
+            ? <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-cyan-500 rounded-lg py-1.5 text-center">View Event & Apply</a>
             : <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-cyan-500 rounded-lg py-1.5 text-center">View Details</a>
           }
           {r.mapLocation && <a href={r.mapLocation} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-slate-600 bg-slate-100 rounded-lg py-1.5 px-2.5">Directions</a>}

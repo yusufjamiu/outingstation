@@ -103,6 +103,21 @@ export default function CampusVendorPage() {
           found = byEmail.docs
             .map(d => ({ id: d.id, ...d.data() }))
             .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0))[0];
+
+          // ✅ FIX: this shop only ever matched by email, not ownerId — meaning
+          // it was never actually claimed. Editing would fail Firestore's
+          // permission check (which requires ownerId === your account) since
+          // ownerId was still empty. Silently claim it now, same effect as
+          // the explicit "claim by phone" button, since matching by their own
+          // login email already establishes it's really theirs.
+          if (found && !found.ownerId) {
+            try {
+              await updateDoc(doc(db, 'vendor_submissions', found.id), { ownerId: currentUser.uid });
+              found = { ...found, ownerId: currentUser.uid };
+            } catch (claimErr) {
+              console.error('Auto-claim failed:', claimErr);
+            }
+          }
         }
       }
 
