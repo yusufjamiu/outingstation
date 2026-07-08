@@ -19,7 +19,8 @@ const MAX_ITEMS = 10;
 const SERVICE_PROVIDER_TYPE_VALUES = [
   'Event Hall', 'DJ', 'MC', 'Caterer', 'Decorator', 'Photographer', 'Musician',
   'Furniture Rental', 'Ride Provider', 'Experience Host', 'Security',
-  'Restaurant', 'Livestock Seller', 'Other Service',
+  'Restaurant', 'Livestock Seller', 'Gift Vendor', 'Food Stuffs Seller',
+  'Baker', 'Beverages Seller', 'Other Service',
 ];
 const CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
 
@@ -617,6 +618,9 @@ export default function OSBDashboard() {
                               <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><MapPin size={11} /> {[req.area, req.city, req.state].filter(Boolean).join(', ')} {req.eventDate ? `· ${req.eventDate}` : ''}</p>
                               {req.packageName && <p className="text-sm font-bold text-cyan-600 mt-1">{req.packageName} — ₦{Number(req.packagePrice || 0).toLocaleString()}</p>}
                               {req.details && <p className="text-xs text-gray-500 mt-1">{req.details}</p>}
+                              {req.referenceImage && (
+                                <img src={req.referenceImage} alt="Reference" className="w-16 h-16 rounded-lg object-cover mt-2 border border-gray-200" />
+                              )}
                             </div>
                             {req.status === 'pending' ? (
                               <div className="flex gap-2 flex-shrink-0">
@@ -663,6 +667,9 @@ export default function OSBDashboard() {
                             <p className="text-sm font-bold text-gray-900">{offer.eventName || 'Event'}</p>
                             <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><MapPin size={11} /> {[offer.area, offer.city, offer.state].filter(Boolean).join(', ')} {offer.eventDate ? `· ${offer.eventDate}` : ''}</p>
                             {offer.details && <p className="text-xs text-gray-500 mt-1">{offer.details}</p>}
+                            {offer.referenceImage && (
+                              <img src={offer.referenceImage} alt="Reference" className="w-16 h-16 rounded-lg object-cover mt-2 border border-gray-200" />
+                            )}
                             <p className="text-sm font-bold text-cyan-600 mt-1">Budget: ₦{Number(offer.budget || 0).toLocaleString()}</p>
                             {offer.deadline && <p className="text-xs text-orange-500 mt-0.5">Responses close {offer.deadline}</p>}
 

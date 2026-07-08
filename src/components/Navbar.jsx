@@ -23,9 +23,10 @@ const DISCOVER_ITEMS = [
   { icon: Building2,      label: 'Event Halls',    to: '/halls',          live: true  },
   { icon: UtensilsCrossed,label: 'Restaurants',    to: '/restaurants',    live: true  },
   { icon: Palmtree,       label: 'Resorts',        to: '/resorts',        live: true  },
-  { icon: Briefcase,      label: 'Opportunities',  to: '/opportunities',  live: true  },
-  { icon: Sparkles,       label: 'Experiences',    to: '/experiences',    live: false },
   { icon: Car,          label: 'Rent a Ride',    to: '/rent-a-ride',    live: true  },
+  { icon: Store,          label: 'Marketplace',    to: '/marketplace',    live: true  },
+  { icon: Briefcase,      label: 'Opportunities',  to: '/opportunities',  live: false },
+  { icon: Sparkles,       label: 'Experiences',    to: '/experiences',    live: false },
 ];
 
 const PLAN_ITEMS = [
@@ -45,8 +46,8 @@ const BUSINESS_ITEMS = [
   { icon: CalendarDays,    label: 'Manage Events',             to: '/manage-events',   live: true  },
   { icon: GraduationCap,   label: 'Ambassador',                to: '/ambassador',       live: true  },
   { icon: Rocket,          label: 'Campus Vendor',             to: '/campus-vendor',    live: true  },
-  { icon: ListPlus,        label: 'Create Event',              to: '/create-event',           live: true  },
-  { icon: ListPlus,        label: 'List Places',              to: '/create-place',           live: true  },
+  { icon: ListPlus,        label: 'Create Event',              to: '/create-event',     live: true  },
+  { icon: ListPlus,        label: 'List Places',              to: '/create-place',     live: true  },
   { icon: Handshake,       label: 'Become a Partner',          to: '/partner',          live: false },
 ];
 

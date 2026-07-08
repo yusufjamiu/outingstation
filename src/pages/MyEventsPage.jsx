@@ -14,6 +14,7 @@ const CATEGORY_LABELS = {
 };
 
 const REQUEST_CATEGORIES = ['rentals', 'decorator', 'catering', 'dj', 'mc', 'photography', 'transportation'];
+const SUPPLY_TYPES = ['Gift Vendor', 'Food Stuffs Seller', 'Baker', 'Beverages Seller'];
 
 function ContactReveal({ businessId, businessName, business }) {
   if (!business) {
@@ -397,6 +398,62 @@ export default function MyEventsPage() {
                             )}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">{req.details}</p>
+
+                          {req.requestType === 'direct' && req.targetBusinessName && (
+                            <p className="text-xs text-gray-500 mt-1">Requested: {req.targetBusinessName} — {req.packageName}</p>
+                          )}
+
+                          {req.requestType === 'direct' && req.status === 'accepted' && (
+                            <ContactReveal businessId={req.targetBusinessId} businessName={req.targetBusinessName} business={businessCache[req.targetBusinessId]} />
+                          )}
+
+                          {req.requestType === 'open' && req.status === 'open' && (
+                            <QuoteList
+                              requestId={req.id}
+                              deadline={req.deadline}
+                              quotes={quotesByRequest[req.id] || []}
+                              acceptQuote={acceptQuote}
+                              acceptingQuoteId={acceptingQuoteId}
+                              businessCache={businessCache}
+                              loadBusinessDetails={loadBusinessDetails}
+                              expandedQuoteId={expandedQuoteId}
+                              setExpandedQuoteId={setExpandedQuoteId}
+                            />
+                          )}
+
+                          {req.requestType === 'open' && req.status === 'closed' && (
+                            <ContactReveal businessId={req.acceptedByBusinessId} businessName={req.acceptedByBusinessName} business={businessCache[req.acceptedByBusinessId]} />
+                          )}
+                        </div>
+                      ))}
+                      {requests.filter(r => SUPPLY_TYPES.includes(r.category)).map((req) => (
+                        <div key={req.id} className="bg-gray-50 rounded-xl p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-bold text-gray-800">{req.category}</p>
+                            {req.requestType === 'direct' ? (
+                              req.status === 'pending' ? (
+                                <span className="flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full">
+                                  <Clock size={12} /> Awaiting confirmation
+                                </span>
+                              ) : req.status === 'accepted' ? (
+                                <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
+                                  <CheckCircle2 size={12} /> Confirmed
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2.5 py-1 rounded-full">
+                                  <XCircle size={12} /> Declined
+                                </span>
+                              )
+                            ) : req.status === 'closed' && (
+                              <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
+                                <CheckCircle2 size={12} /> {req.acceptedByBusinessName}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">{req.details}</p>
+                          {req.referenceImage && (
+                            <img src={req.referenceImage} alt="Reference" className="w-16 h-16 rounded-lg object-cover mt-2 border border-gray-200" />
+                          )}
 
                           {req.requestType === 'direct' && req.targetBusinessName && (
                             <p className="text-xs text-gray-500 mt-1">Requested: {req.targetBusinessName} — {req.packageName}</p>

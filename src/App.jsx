@@ -40,6 +40,8 @@ import RestaurantsPage from './pages/RestaurantsPage';
 import OpportunitiesPage from './pages/OpportunitiesPage';
 import ResortsPage from './pages/ResortsPage';
 import RentARidePage from './pages/RentARidePage';
+import MarketplacePage from './pages/MarketplacePage';
+import MarketplaceCategoryPage from './pages/MarketplaceCategoryPage';
 import PlanEventPage from './pages/PlanEventPage';
 import CityEventsPage from './pages/events/CityEventsPage';
 import MyEventsPage from './pages/MyEventsPage';
@@ -150,6 +152,8 @@ function App() {
               <Route path="/opportunities" element={<OpportunitiesPage />} />
               <Route path="/resorts" element={<ResortsPage />} />
               <Route path="/rent-a-ride" element={<RentARidePage />} />
+              <Route path="/marketplace" element={<MarketplacePage />} />
+              <Route path="/marketplace/:slug" element={<MarketplaceCategoryPage />} />
               <Route path="/plan-event" element={<PlanEventPage />} />
               <Route path="/my-events" element={<MyEventsPage />} />
               <Route path="/manage-events" element={<ManageEventsPage />} />

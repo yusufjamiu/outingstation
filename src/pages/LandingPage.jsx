@@ -50,7 +50,7 @@ export default function LandingPage() {
 
   const rotatingTexts = [
   "Nigeria's entire event ecosystem, in one app.",
-  "Find an event, hire a vendor, or sell tickets — all in one place.",
+  "Find an event, hire a vendor, or sell tickets, all in one place.",
   "List your hall or venue on OutingStation today.",
   "List your services and get discovered by people who need them.",
   "Ask Outing AI, and let it find your next move.",

@@ -33,8 +33,12 @@ const VEHICLE_TYPES = ['Car', 'SUV', 'Bus', 'Van', 'Not sure yet'];
 
 const STEPS = [
   'Event Type', 'Event Details', 'Venue', 'Rentals', 'Decorator',
-  'Catering', 'Livestock', 'DJ', 'MC', 'Photography', 'Transportation', 'Other Service', 'Review & Submit',
+  'Catering', 'Livestock', 'Supplies', 'DJ', 'MC', 'Photography', 'Transportation', 'Other Service', 'Review & Submit',
 ];
+
+// ✅ Gift Vendor / Food Stuffs Seller / Baker / Beverages Seller — combined
+// into one repeatable step rather than 4 near-identical ones
+const SUPPLY_TYPES = ['Gift Vendor', 'Food Stuffs Seller', 'Baker', 'Beverages Seller'];
 
 function ProgressBar({ current, total }) {
   const pct = Math.round((current / (total - 1)) * 100);
@@ -83,6 +87,19 @@ function StyledInput(props) {
       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition" />
   );
 }
+
+// ✅ Optional reference image upload for Supplies requests (e.g. "I want a
+// cake that looks like this" for a Baker)
+const uploadReferenceImage = async (file) => {
+  const data = new FormData();
+  data.append('file', file);
+  data.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+  const res = await fetch('https://api.cloudinary.com/v1_1/' + import.meta.env.VITE_CLOUDINARY_CLOUD_NAME + '/image/upload', {
+    method: 'POST', body: data,
+  });
+  const json = await res.json();
+  return json.secure_url;
+};
 
 function ChipPicker({ options, value, onChange }) {
   return (
@@ -238,6 +255,8 @@ export default function PlanEventPage() {
   const [photography, setPhotography] = useState({ skipped: false, mode: 'request', hours: '', style: '', budget: '', deadline: '', selectedBusinessId: '', selectedBusinessName: '', selectedPackageName: '', selectedPackagePrice: 0 });
   const [transportation, setTransportation] = useState({ skipped: false, mode: 'request', vehicleType: '', withDriver: true, notes: '', budget: '', deadline: '', selectedBusinessId: '', selectedBusinessName: '', selectedPackageName: '', selectedPackagePrice: 0 });
   const [otherServices, setOtherServices] = useState([]); // repeatable — each entry is its own request/offer
+  const [supplies, setSupplies] = useState([]); // repeatable — Gift Vendor / Food Stuffs / Baker / Beverages
+  const [supplyBusinesses, setSupplyBusinesses] = useState({}); // cached per business type
   const [categoryBusinesses, setCategoryBusinesses] = useState({});
 
   useEffect(() => {
@@ -294,6 +313,22 @@ export default function PlanEventPage() {
     }
   };
 
+  // ✅ Supplies (Gift Vendor / Food Stuffs Seller / Baker / Beverages Seller)
+  // — each entry can be a different business type, so this caches by the
+  // exact businessType string rather than the fixed category-key map above.
+  const loadSupplyBusinesses = async (businessType) => {
+    if (supplyBusinesses[businessType]) return;
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'businesses'), where('businessType', '==', businessType), where('status', '==', 'approved'))
+      );
+      setSupplyBusinesses(prev => ({ ...prev, [businessType]: snap.docs.map(d => ({ id: d.id, ...d.data() })) }));
+    } catch (err) {
+      console.error(`Error loading ${businessType} businesses:`, err);
+      setSupplyBusinesses(prev => ({ ...prev, [businessType]: [] }));
+    }
+  };
+
   const loadHalls = async () => {
     setLoadingHalls(true);
     try {
@@ -313,6 +348,26 @@ export default function PlanEventPage() {
 
   const next = () => { setStep(s => Math.min(s + 1, STEPS.length - 1)); scrollTop(); };
   const back = () => { setStep(s => Math.max(s - 1, 0)); scrollTop(); };
+
+  // ✅ Explicit Skip button — sets that category's skipped flag (so it's
+  // never counted as unresolved later) and moves on. Repeatable steps
+  // (Supplies, Other Service) have no single skip flag — skipping them just
+  // means nothing gets added, which is already their natural empty state.
+  const handleSkip = () => {
+    const skipMap = {
+      2: () => setVenue(p => ({ ...p, skipped: true })),
+      3: () => setRentals(p => ({ ...p, skipped: true })),
+      4: () => setDecorator(p => ({ ...p, skipped: true })),
+      5: () => setCatering(p => ({ ...p, skipped: true })),
+      6: () => setLivestock(p => ({ ...p, skipped: true })),
+      8: () => setDj(p => ({ ...p, skipped: true })),
+      9: () => setMc(p => ({ ...p, skipped: true })),
+      10: () => setPhotography(p => ({ ...p, skipped: true })),
+      11: () => setTransportation(p => ({ ...p, skipped: true })),
+    };
+    if (skipMap[step]) skipMap[step]();
+    next();
+  };
 
   const canProceedStep0 = eventType && (eventType !== 'other' || eventTypeOther.trim());
   const canProceedStep1 = details.eventName.trim() && details.eventDate && details.estimatedGuests && details.city;
@@ -406,6 +461,16 @@ export default function PlanEventPage() {
           mode: e.mode,
           description: e.description.trim() || null,
           budget: e.budget || null,
+          selectedBusinessId: e.mode === 'choose' ? e.selectedBusinessId || null : null,
+          selectedBusinessName: e.mode === 'choose' ? e.selectedBusinessName || null : null,
+          selectedPackageName: e.mode === 'choose' ? e.selectedPackageName || null : null,
+          selectedPackagePrice: e.mode === 'choose' ? e.selectedPackagePrice || 0 : null,
+        })),
+        supplies: supplies.length === 0 ? null : supplies.map(e => ({
+          type: e.type, mode: e.mode,
+          description: e.description.trim() || null,
+          budget: e.budget || null,
+          referenceImage: e.referenceImage || null,
           selectedBusinessId: e.mode === 'choose' ? e.selectedBusinessId || null : null,
           selectedBusinessName: e.mode === 'choose' ? e.selectedBusinessName || null : null,
           selectedPackageName: e.mode === 'choose' ? e.selectedPackageName || null : null,
@@ -532,6 +597,64 @@ export default function PlanEventPage() {
             budget: Number(entry.budget) || 0,
             deadline: entry.deadline || null,
             details: entry.description.trim(),
+            status: 'open',
+            acceptedByBusinessId: null,
+            acceptedByBusinessName: null,
+            createdAt: serverTimestamp(),
+          });
+        }
+      }
+
+      // ✅ Supplies (Gift Vendor / Food Stuffs Seller / Baker / Beverages
+      // Seller) — same direct/open pattern, plus an optional reference image
+      // so the business can see what's being asked for.
+      for (const entry of supplies) {
+        if (!entry.type) continue;
+        if (entry.mode === 'choose' && entry.selectedBusinessId) {
+          await addDoc(collection(db, 'serviceRequests'), {
+            requestType: 'direct',
+            eventPlanId: planRef.id,
+            plannerUserId: currentUser.uid,
+            plannerName: userProfile?.name || currentUser.displayName || '',
+            plannerEmail: currentUser.email || '',
+            category: entry.type,
+            eventName: details.eventName.trim(),
+            eventDate: details.eventDate,
+            city: details.city,
+            area: details.area || null,
+            state: details.state || null,
+            targetBusinessId: entry.selectedBusinessId,
+            targetBusinessName: entry.selectedBusinessName,
+            packageName: entry.selectedPackageName,
+            packagePrice: entry.selectedPackagePrice,
+            budget: null,
+            deadline: null,
+            details: entry.description || null,
+            referenceImage: entry.referenceImage || null,
+            status: 'pending',
+            acceptedByBusinessId: null,
+            acceptedByBusinessName: null,
+            createdAt: serverTimestamp(),
+          });
+        } else if (entry.mode === 'request' && entry.description.trim()) {
+          await addDoc(collection(db, 'serviceRequests'), {
+            requestType: 'open',
+            eventPlanId: planRef.id,
+            plannerUserId: currentUser.uid,
+            plannerName: userProfile?.name || currentUser.displayName || '',
+            plannerEmail: currentUser.email || '',
+            category: entry.type,
+            eventName: details.eventName.trim(),
+            eventDate: details.eventDate,
+            city: details.city,
+            area: details.area || null,
+            state: details.state || null,
+            targetBusinessId: null,
+            targetBusinessName: null,
+            budget: Number(entry.budget) || 0,
+            deadline: entry.deadline || null,
+            details: entry.description.trim(),
+            referenceImage: entry.referenceImage || null,
             status: 'open',
             acceptedByBusinessId: null,
             acceptedByBusinessName: null,
@@ -898,8 +1021,140 @@ export default function PlanEventPage() {
             </div>
           )}
 
-          {/* Step 7: DJ */}
+          {/* Step 7: Supplies (Gift Vendor / Food Stuffs / Baker / Beverages) */}
           {step === 7 && (
+            <div className="space-y-5">
+              <p className="text-sm text-gray-500">Need a gift vendor, food stuffs, a baker, or drinks for your event? Add as many as you like.</p>
+
+              {supplies.map((entry, idx) => (
+                <div key={entry.id} className="border-2 border-gray-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Supply {idx + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSupplies(prev => prev.filter((_, i) => i !== idx))}
+                      className="text-red-400 hover:text-red-600 text-xs font-semibold"
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-1.5">What kind?</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {SUPPLY_TYPES.map(t => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setSupplies(prev => prev.map((e, i) => i === idx ? { ...e, type: t } : e))}
+                          className={`px-3 py-2 rounded-xl border-2 text-xs font-bold transition ${
+                            entry.type === t ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {entry.type && (
+                    <>
+                      <ModeToggle
+                        mode={entry.mode}
+                        onChange={(m) => {
+                          setSupplies(prev => prev.map((e, i) => i === idx ? { ...e, mode: m } : e));
+                          if (m === 'choose') loadSupplyBusinesses(entry.type);
+                        }}
+                      />
+
+                      {entry.mode === 'choose' ? (
+                        <BusinessPickerList
+                          businesses={supplyBusinesses[entry.type]}
+                          state={entry}
+                          setState={(updater) => setSupplies(prev => prev.map((e, i) => i === idx ? updater(e) : e))}
+                        />
+                      ) : (
+                        <>
+                          <div>
+                            <label className="block text-sm font-bold text-gray-800 mb-1.5">What do you need? <span className="text-red-500">*</span></label>
+                            <textarea
+                              value={entry.description}
+                              onChange={e => setSupplies(prev => prev.map((en, i) => i === idx ? { ...en, description: e.target.value } : en))}
+                              placeholder="e.g. 2-tier vanilla cake for 50 guests, birthday theme"
+                              rows={2}
+                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition resize-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-800 mb-1.5">Reference Photo <span className="text-gray-400 font-normal">(optional)</span></label>
+                            {entry.referenceImage ? (
+                              <div className="relative w-24">
+                                <img src={entry.referenceImage} alt="" className="w-24 h-24 rounded-xl object-cover border-2 border-gray-200" />
+                                <button
+                                  type="button"
+                                  onClick={() => setSupplies(prev => prev.map((en, i) => i === idx ? { ...en, referenceImage: '' } : en))}
+                                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
+                                >×</button>
+                              </div>
+                            ) : (
+                              <label className="w-24 h-24 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-cyan-400 transition gap-1">
+                                {entry.uploading ? (
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-500" />
+                                ) : (
+                                  <span className="text-xs text-gray-400">Upload</span>
+                                )}
+                                <input
+                                  type="file" accept="image/*" className="sr-only"
+                                  onChange={async (e) => {
+                                    const file = e.target.files[0];
+                                    if (!file) return;
+                                    setSupplies(prev => prev.map((en, i) => i === idx ? { ...en, uploading: true } : en));
+                                    try {
+                                      const url = await uploadReferenceImage(file);
+                                      setSupplies(prev => prev.map((en, i) => i === idx ? { ...en, referenceImage: url, uploading: false } : en));
+                                    } catch (err) {
+                                      console.error('Reference image upload failed:', err);
+                                      setSupplies(prev => prev.map((en, i) => i === idx ? { ...en, uploading: false } : en));
+                                    }
+                                  }}
+                                />
+                              </label>
+                            )}
+                            <p className="text-xs text-gray-400 mt-1">The business will see this photo when reviewing your request.</p>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-800 mb-1.5">Your Budget <span className="text-gray-400 font-normal">(optional)</span></label>
+                            <StyledInput type="number" min="0" value={entry.budget} onChange={e => setSupplies(prev => prev.map((en, i) => i === idx ? { ...en, budget: e.target.value } : en))} placeholder="State your amount, e.g. 15000" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-bold text-gray-800 mb-1.5">Response Deadline <span className="text-gray-400 font-normal">(optional)</span></label>
+                            <StyledInput type="date" value={entry.deadline} onChange={e => setSupplies(prev => prev.map((en, i) => i === idx ? { ...en, deadline: e.target.value } : en))} />
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setSupplies(prev => [...prev, {
+                  id: `supply_${Date.now()}`, type: '', mode: 'request', description: '', budget: '', deadline: '',
+                  referenceImage: '', uploading: false,
+                  selectedBusinessId: '', selectedBusinessName: '', selectedPackageName: '', selectedPackagePrice: 0,
+                }])}
+                className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-cyan-300 rounded-xl text-sm font-semibold text-cyan-600 hover:bg-cyan-50 transition"
+              >
+                <Plus size={16} /> Add a Supply
+              </button>
+            </div>
+          )}
+
+          {/* Step 8: DJ */}
+          {step === 8 && (
             <div className="space-y-5">
               <SkipToggle skipped={dj.skipped} onToggle={() => setDj(p => ({ ...p, skipped: !p.skipped }))} label="a DJ" />
               {!dj.skipped && (
@@ -933,7 +1188,7 @@ export default function PlanEventPage() {
           )}
 
           {/* Step 8: MC */}
-          {step === 8 && (
+          {step === 9 && (
             <div className="space-y-5">
               <SkipToggle skipped={mc.skipped} onToggle={() => setMc(p => ({ ...p, skipped: !p.skipped }))} label="an MC" />
               {!mc.skipped && (
@@ -967,7 +1222,7 @@ export default function PlanEventPage() {
           )}
 
           {/* Step 9: Photography */}
-          {step === 9 && (
+          {step === 10 && (
             <div className="space-y-5">
               <SkipToggle skipped={photography.skipped} onToggle={() => setPhotography(p => ({ ...p, skipped: !p.skipped }))} label="a photographer / videographer" />
               {!photography.skipped && (
@@ -1001,7 +1256,7 @@ export default function PlanEventPage() {
           )}
 
           {/* Step 10: Transportation */}
-          {step === 10 && (
+          {step === 11 && (
             <div className="space-y-5">
               <SkipToggle skipped={transportation.skipped} onToggle={() => setTransportation(p => ({ ...p, skipped: !p.skipped }))} label="transportation" />
               {!transportation.skipped && (
@@ -1039,7 +1294,7 @@ export default function PlanEventPage() {
           )}
 
           {/* Step 11: Other Service (repeatable) */}
-          {step === 11 && (
+          {step === 12 && (
             <div className="space-y-5">
               <p className="text-sm text-gray-500">Need anything not covered above? Add as many as you like — each becomes its own request.</p>
 
@@ -1109,7 +1364,7 @@ export default function PlanEventPage() {
           )}
 
           {/* Step 12: Review */}
-          {step === 12 && (
+          {step === 13 && (
             <div className="space-y-4">
               <p className="text-sm text-gray-500 mb-2">Review your event plan before submitting.</p>
               <div className="bg-cyan-50 rounded-2xl p-4 space-y-2 border border-cyan-100">
@@ -1145,6 +1400,16 @@ export default function PlanEventPage() {
                   </span>
                 </div>
               ))}
+              {supplies.length > 0 && supplies.filter(e => e.type).map((entry, idx) => (
+                <div key={entry.id} className="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200">
+                  <span className="text-sm font-bold text-gray-700">{entry.type}</span>
+                  <span className="text-xs text-gray-600">
+                    {entry.mode === 'choose'
+                      ? (entry.selectedBusinessName ? `Requested: ${entry.selectedBusinessName} — ${entry.selectedPackageName}` : 'No business selected')
+                      : `Offer posted · ${entry.description || 'no description set'}${entry.budget ? ` · ₦${Number(entry.budget).toLocaleString()}` : ''}${entry.referenceImage ? ' · 📷 photo attached' : ''}`}
+                  </span>
+                </div>
+              ))}
               <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl p-3 mt-4">
                 <ListPlus size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-blue-700 leading-relaxed">Businesses you requested directly will need to confirm availability. For anything posted as an open offer, matching businesses can respond with their own quote — check "My Events" to see responses.</p>
@@ -1159,6 +1424,11 @@ export default function PlanEventPage() {
           {step > 0 && (
             <button onClick={back} className="flex items-center gap-2 px-6 py-3.5 border-2 border-gray-200 rounded-2xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition">
               <ChevronLeft size={16} /> Back
+            </button>
+          )}
+          {step >= 2 && step <= 12 && (
+            <button onClick={handleSkip} className="px-6 py-3.5 border-2 border-gray-200 rounded-2xl text-sm font-bold text-gray-500 hover:bg-gray-50 transition">
+              Skip
             </button>
           )}
           {step < STEPS.length - 1 ? (
