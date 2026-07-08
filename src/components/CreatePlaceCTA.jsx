@@ -21,7 +21,7 @@ export default function CreatePlaceCTA() {
           Own A Hall, Restaurant, Or Resort?
         </h2>
         <p className="text-gray-600 text-base md:text-lg max-w-2xl mx-auto mb-10">
-          Add your venue so people already searching for a place to go can actually find you —
+          Add your venue so people already searching for a place to go can actually find you,
           no ticketing required, just visibility.
         </p>
 

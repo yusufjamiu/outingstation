@@ -374,8 +374,8 @@ export default function LandingPage() {
         </section> */}
 
         <FeaturedEvents />
-        <WebinarSection />
-        <HowItWorks />
+        {/* <WebinarSection />
+        <HowItWorks /> */}
 
         <AppDownloadSection />
 
