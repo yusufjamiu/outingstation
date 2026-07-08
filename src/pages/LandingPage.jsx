@@ -11,6 +11,7 @@ import HowItWorks from '../components/HowItWorks';
 import EcosystemSection from '../components/EcosystemSection';
 import PlanEventCTA from '../components/PlanEventCTA';
 import CreateEventCTA from '../components/CreateEventCTA';
+import CreatePlaceCTA from '../components/CreatePlaceCTA';
 import GrowYourBusinessCTA from '../components/GrowYourBusinessCTA';
 import AppDownloadSection from '../components/AppDownloadSection';
 import EventsCarousel from '../components/EventsCarousel';
@@ -30,7 +31,9 @@ const QUICK_ACTIONS = [
   { label: 'Plan a Private Event', to: '/plan-event', icon: ClipboardList },
   { label: 'Host an Event', to: '/create', icon: Ticket },
   { label: 'List My Service', to: '/business/register', icon: Store },
+  // { label: 'Find Campus Events', to: '/campus-events', icon: School },
   { label: 'Rent a Ride', to: '/rent-a-ride', icon: Car },
+  // { label: 'Ask Outing AI', to: '/', icon: Sparkles, isAI: true },
 ];
 
 export default function LandingPage() {
@@ -198,7 +201,7 @@ export default function LandingPage() {
         <Navbar />
 
         <section className="bg-gradient-to-br from-cyan-50 to-white px-4">
-          <div className="bg-gradient-to-br from-cyan-50 via-white to-cyan-50 pt-8 pb-8 px-4 md:px-6 relative overflow-hidden">
+          <div className="bg-gradient-to-br from-cyan-50 via-white to-cyan-50 pt-6 pb-8 px-4 md:px-6 relative overflow-hidden">
             <div className="absolute top-40 left-10 w-64 h-64 bg-cyan-100 rounded-full opacity-30 blur-3xl"></div>
             <div className="absolute bottom-20 right-20 w-96 h-96 bg-cyan-100 rounded-full opacity-20 blur-3xl"></div>
             <div className="absolute bottom-0 left-0 w-80 h-80 bg-cyan-200 rounded-full opacity-20 blur-3xl"></div>
@@ -268,13 +271,16 @@ export default function LandingPage() {
         {/* Create Event CTA */}
         <CreateEventCTA />
 
+        {/* Create Place CTA */}
+        <CreatePlaceCTA />
+
         {/* Plan My Event CTA */}
         <PlanEventCTA />
 
         {/* Grow Your Business CTA */}
         <GrowYourBusinessCTA />
 
-        <section className="bg-gray-50 py-16 md:py-24 px-4 md:px-6">
+        {/* <section className="bg-gray-50 py-16 md:py-24 px-4 md:px-6">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
 
@@ -357,15 +363,15 @@ export default function LandingPage() {
               </div>
             </div>
           </div>
-        </section>
+        </section> */}
 
         <EcosystemSection />
 
-        <section className="py-2 px-4 bg-white">
+        {/* <section className="py-2 px-4 bg-white">
           <div className="max-w-7xl mx-auto">
             <CategoryGrid />
           </div>
-        </section>
+        </section> */}
 
         <FeaturedEvents />
         <WebinarSection />

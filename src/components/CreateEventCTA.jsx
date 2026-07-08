@@ -16,12 +16,12 @@ export default function CreateEventCTA() {
       <div className="absolute bottom-0 right-0 w-72 h-72 bg-gray-900 rounded-full opacity-10 blur-3xl"></div>
 
       <div className="max-w-5xl mx-auto relative z-10 text-center">
-        <p className="text-gray-900 text-sm font-semibold tracking-wide mb-3">CREATE AN EVENT OR PLACE</p>
+        <p className="text-gray-900 text-sm font-semibold tracking-wide mb-3">CREATE AN EVENT</p>
         <h2 className="text-3xl md:text-5xl font-bold text-gray-900 mb-4 leading-tight">
-          Hosting Something? Own A Venue?
+          Hosting An Event? List It Here.
         </h2>
         <p className="text-gray-800 text-base md:text-lg max-w-2xl mx-auto mb-10">
-          List an event with ticketing, or add your hall, restaurant, or resort so people can find it.
+          Add your event, set up ticketing, and reach people already looking for something to do.
           We handle payments, tickets, and check-in for you.
         </p>
 
@@ -45,7 +45,7 @@ export default function CreateEventCTA() {
         </div>
 
         <Link
-          to="/create"
+          to="/create-event"
           className="inline-flex items-center gap-2 bg-gray-900 text-white px-10 py-4 rounded-full font-medium shadow-lg hover:shadow-xl hover:shadow-gray-900/20 transition-shadow text-base md:text-lg"
         >
           Create Your Event

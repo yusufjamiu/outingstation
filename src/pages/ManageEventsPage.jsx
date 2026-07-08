@@ -77,7 +77,7 @@ export default function ManageEventsPage() {
               Only events created with OutingStation Ticketing while logged into this account show up here.
             </p>
             <p className="text-xs text-gray-400">
-              Create one from the admin panel, or via <button onClick={() => navigate('/create')} className="text-cyan-600 underline">List on OutingStation</button>.
+              Create one from the admin panel, or via <button onClick={() => navigate('/create-event')} className="text-cyan-600 underline">List on OutingStation</button>.
             </p>
           </div>
         ) : (

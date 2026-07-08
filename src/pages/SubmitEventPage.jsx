@@ -1,5 +1,6 @@
 // SubmitEventPage.jsx — Multi-step wizard with Cloudinary upload + Ticket Tiers + Bank Account
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
@@ -42,6 +43,7 @@ const EVENT_CATEGORIES = [
 ];
 
 const PLACE_CATEGORIES = [
+  'Halls & Venues', 'Restaurant', 'Resort',
   'Art & Culture', 'Food & Dining', 'Sport & Fitness',
   'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
   'Malls', 'Spas', 'Other',
@@ -416,6 +418,7 @@ function NavButtons({ onBack, onNext, nextLabel = 'Continue', isSubmitting = fal
 
 const SubmitEventPage = () => {
   const topRef = useRef(null);
+  const location = useLocation();
   // ✅ FIX: useAuth() must be called inside the component, not at module top level
   const { currentUser } = useAuth();
   const [listingType, setListingType] = useState('');
@@ -430,6 +433,25 @@ const SubmitEventPage = () => {
   const [schoolIdImage, setSchoolIdImage] = useState([]);
   // ✅ Ticket tiers state
   const [ticketTiers, setTicketTiers] = useState([]);
+
+  // ✅ NEW — /create-event, /create-place, /list-vendor pre-select the
+  // listing type and skip straight past the step-0 picker. /create itself
+  // still shows the picker exactly as before, untouched.
+  useEffect(() => {
+    const path = location.pathname;
+    let preselected = '';
+    if (path === '/create-event') preselected = 'event';
+    else if (path === '/create-place') preselected = 'place';
+    else if (path === '/list-vendor') preselected = 'vendor';
+
+    if (preselected) {
+      setListingType(preselected);
+      setEventImages([]); setVendorImages([]);
+      setSchoolIdImage([]); setTicketTiers([]);
+      setStep(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [form, setForm] = useState({
     organizerName: '', organizerEmail: '', organizerPhone: '',

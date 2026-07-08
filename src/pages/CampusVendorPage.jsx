@@ -269,7 +269,7 @@ export default function CampusVendorPage() {
               Sell food, fashion, gadgets or accessories to students on your campus. Listing is free.
             </p>
             <button
-              onClick={() => navigate('/create')}
+              onClick={() => navigate('/list-vendor')}
               className="inline-flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 py-3 rounded-2xl font-bold hover:shadow-lg transition"
             >
               <PlusCircle size={18} /> List Your Shop
@@ -488,4 +488,4 @@ export default function CampusVendorPage() {
       <Footer />
     </div>
   );
-}
+}   
