@@ -23,7 +23,7 @@ const EVENT_TYPES = [
   { value: 'other', label: 'Other', icon: Sparkles },
 ];
 
-const CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
+const STATES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
 const BUDGET_RANGES = ['Under ₦200k', '₦200k - ₦500k', '₦500k - ₦1M', '₦1M - ₦3M', 'Above ₦3M'];
 const DECOR_STYLES = ['Elegant / Classy', 'Colorful / Vibrant', 'Minimalist', 'Traditional', 'Rustic', 'Not sure yet'];
 const MENU_TYPES = ['Nigerian Buffet', 'Small Chops', 'Continental', 'Mixed', 'Not sure yet'];
@@ -242,6 +242,7 @@ export default function PlanEventPage() {
   const [eventTypeOther, setEventTypeOther] = useState('');
 
   const [details, setDetails] = useState({ eventName: '', eventDate: '', estimatedGuests: '', budget: '', city: '', area: '', state: '' });
+  const [stateOption, setStateOption] = useState('');
 
   const [venue, setVenue] = useState({ skipped: false, mode: 'hall', hallId: '', hallName: '', ownLocation: '' });
   const [rentals, setRentals] = useState({ skipped: false, mode: 'request', chairs: '', tables: '', tents: '', notes: '', budget: '', deadline: '', selectedBusinessId: '', selectedBusinessName: '', selectedPackageName: '', selectedPackagePrice: 0 });
@@ -370,7 +371,7 @@ export default function PlanEventPage() {
   };
 
   const canProceedStep0 = eventType && (eventType !== 'other' || eventTypeOther.trim());
-  const canProceedStep1 = details.eventName.trim() && details.eventDate && details.estimatedGuests && details.city;
+  const canProceedStep1 = details.eventName.trim() && details.eventDate && details.estimatedGuests && details.state;
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -763,23 +764,38 @@ export default function PlanEventPage() {
                 <StyledInput type="number" min="1" value={details.estimatedGuests} onChange={e => setDetails(p => ({ ...p, estimatedGuests: e.target.value }))} placeholder="e.g. 100" />
               </div>
               <div>
-                <label className="block text-sm font-bold text-gray-800 mb-1.5">City <span className="text-red-500">*</span></label>
-                <StyledSelect value={details.city} onChange={e => setDetails(p => ({ ...p, city: e.target.value }))}>
-                  <option value="">Select a city</option>
-                  {CITIES.map(c => <option key={c}>{c}</option>)}
+                <label className="block text-sm font-bold text-gray-800 mb-1.5">State <span className="text-red-500">*</span></label>
+                <StyledSelect
+                  value={stateOption}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setStateOption(val);
+                    setDetails(p => ({ ...p, state: val === 'Others' ? '' : val }));
+                  }}
+                >
+                  <option value="">Select a state</option>
+                  {STATES.map(s => <option key={s}>{s}</option>)}
                 </StyledSelect>
+                {stateOption === 'Others' && (
+                  <StyledInput
+                    className="mt-2"
+                    value={details.state}
+                    onChange={e => setDetails(p => ({ ...p, state: e.target.value }))}
+                    placeholder="Enter your state"
+                  />
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-bold text-gray-800 mb-1.5">Area <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <StyledInput value={details.area} onChange={e => setDetails(p => ({ ...p, area: e.target.value }))} placeholder="e.g. Lekki, Wuse" />
+                  <label className="block text-sm font-bold text-gray-800 mb-1.5">City <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <StyledInput value={details.city} onChange={e => setDetails(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Lekki, Wuse" />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-800 mb-1.5">State <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <StyledInput value={details.state} onChange={e => setDetails(p => ({ ...p, state: e.target.value }))} placeholder="e.g. Lagos State" />
+                  <label className="block text-sm font-bold text-gray-800 mb-1.5">Area <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <StyledInput value={details.area} onChange={e => setDetails(p => ({ ...p, area: e.target.value }))} placeholder="e.g. bus stop" />
                 </div>
               </div>
-              <p className="text-xs text-gray-400">Area and State help businesses judge distance more precisely when reviewing your requests.</p>
+              <p className="text-xs text-gray-400">Area and City help businesses judge distance more precisely when reviewing your requests.</p>
               <div>
                 <label className="block text-sm font-bold text-gray-800 mb-1.5">Overall Budget <span className="text-gray-400 font-normal">(optional)</span></label>
                 <StyledSelect value={details.budget} onChange={e => setDetails(p => ({ ...p, budget: e.target.value }))}>
@@ -1371,7 +1387,9 @@ export default function PlanEventPage() {
                 <ReviewRow label="Event" value={`${EVENT_TYPES.find(t => t.value === eventType)?.label || eventTypeOther} — ${details.eventName}`} />
                 <ReviewRow label="Date" value={details.eventDate} />
                 <ReviewRow label="Guests" value={details.estimatedGuests} />
-                <ReviewRow label="City" value={details.city} />
+                <ReviewRow label="State" value={details.state} />
+                {details.city && <ReviewRow label="City" value={details.city} />}
+                {details.area && <ReviewRow label="Area" value={details.area} />}
                 {details.budget && <ReviewRow label="Budget" value={details.budget} />}
               </div>
               {[

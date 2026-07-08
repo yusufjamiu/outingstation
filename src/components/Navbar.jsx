@@ -206,7 +206,7 @@ export default function Navbar() {
             <img src={OutingStation} alt="OutingStation" className="h-12 w-auto" />
           </Link>
 
-          <div className="hidden md:flex flex-1 justify-center items-center space-x-1">
+          <div className="hidden lg:flex flex-1 justify-center items-center space-x-1">
             <DesktopDropdown
               label="Discover"
               items={DISCOVER_ITEMS}
@@ -220,7 +220,6 @@ export default function Navbar() {
               requireLogin={true}
               currentUser={currentUser}
               navigate={navigate}
-              starred
             />
             <DesktopDropdown
               label="Business"
@@ -228,12 +227,11 @@ export default function Navbar() {
               requireLogin={false}
               currentUser={currentUser}
               navigate={navigate}
-              starred
             />
 
           </div>
 
-          <div className="hidden md:flex items-center gap-2 absolute right-0">
+          <div className="hidden lg:flex items-center gap-2 absolute right-0">
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('open-outing-ai'))}
               className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-cyan-500 transition px-3 py-1.5 rounded-full hover:bg-cyan-50"
@@ -326,7 +324,7 @@ export default function Navbar() {
             )}
           </div>
 
-          <div className="md:hidden flex items-center gap-2 absolute right-0">
+          <div className="lg:hidden flex items-center gap-2 absolute right-0">
             <button
               onClick={() => setShowAppModal(true)}
               className="border border-gray-300 text-gray-700 px-3 py-1.5 rounded-full font-medium text-xs hover:bg-gray-50 transition"
@@ -343,7 +341,7 @@ export default function Navbar() {
         </div>
 
         {isOpen && (
-          <div className="md:hidden border-t border-gray-100 pb-4">
+          <div className="lg:hidden border-t border-gray-100 pb-4">
 
             <div className="px-1 pt-3 pb-2">
               <button
@@ -436,7 +434,7 @@ export default function Navbar() {
                 className="w-full flex items-center justify-between px-2 py-3 text-sm font-semibold text-gray-800"
               >
                 <span>
-                  Plan Event<sup className="text-[9px] font-black text-cyan-500 ml-0.5">NEW</sup>
+                  Plan Event
                 </span>
                 <ChevronDown size={14} className={`transition-transform ${mobileSection === 'plan' ? 'rotate-180 text-cyan-500' : 'text-gray-400'}`} />
               </button>
@@ -487,7 +485,7 @@ export default function Navbar() {
                 className="w-full flex items-center justify-between px-2 py-3 text-sm font-semibold text-gray-800"
               >
                 <span>
-                  Business<sup className="text-[9px] font-black text-cyan-500 ml-0.5">NEW</sup>
+                  Business
                 </span>
                 <ChevronDown size={14} className={`transition-transform ${mobileSection === 'business' ? 'rotate-180 text-cyan-500' : 'text-gray-400'}`} />
               </button>

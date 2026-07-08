@@ -26,11 +26,16 @@ export default function EventsCarousel({ events: rawEvents = [] }) {
   }, [rawEvents]);
 
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)');
-    const update = () => setItemsPerView(mq.matches ? 3 : 1);
+    const mqLarge = window.matchMedia('(min-width: 1024px)');
+    const mqMedium = window.matchMedia('(min-width: 768px)');
+    const update = () => setItemsPerView(mqLarge.matches ? 3 : mqMedium.matches ? 2 : 1);
     update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
+    mqLarge.addEventListener('change', update);
+    mqMedium.addEventListener('change', update);
+    return () => {
+      mqLarge.removeEventListener('change', update);
+      mqMedium.removeEventListener('change', update);
+    };
   }, []);
 
   useEffect(() => {

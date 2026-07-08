@@ -365,7 +365,7 @@ export default function LandingPage() {
           </div>
         </section> */}
 
-        <EcosystemSection />
+        {/* <EcosystemSection /> */}
 
         {/* <section className="py-2 px-4 bg-white">
           <div className="max-w-7xl mx-auto">
