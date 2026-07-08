@@ -11,6 +11,7 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 const CITIES = ['All Cities', 'Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
+const KNOWN_CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt'];
 const CATEGORIES = [
   'All', 'Mall', 'Cinema', 'Museum', 'Park', 'Spa',
   'Hotel', 'Bar & Lounge', 'Event Hall', 'Resort', 'Restaurant', 'Other',
@@ -55,6 +56,7 @@ export default function PlacesPage() {
   const [savedEvents, setSavedEvents] = useState([]);
   const [search, setSearch] = useState('');
   const [city, setCity] = useState('All Cities');
+  const [customCity, setCustomCity] = useState('');
   const [category, setCategory] = useState('All');
   const [price, setPrice] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
@@ -62,7 +64,7 @@ export default function PlacesPage() {
 
   useEffect(() => { loadPlaces(); }, []);
   useEffect(() => { if (currentUser) loadSaved(); }, [currentUser]);
-  useEffect(() => { applyFilters(); }, [places, search, city, category, price]);
+  useEffect(() => { applyFilters(); }, [places, search, city, customCity, category, price]);
 
   const loadPlaces = async () => {
     try {
@@ -70,7 +72,8 @@ export default function PlacesPage() {
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(e =>
           e.status === 'published' &&
-          e.subCategory === 'places'
+          e.subCategory === 'places' &&
+          e.eventType !== 'campus'
         )
         .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
       setPlaces(all);
@@ -109,16 +112,35 @@ export default function PlacesPage() {
         e.address?.toLowerCase().includes(q)
       );
     }
-    if (city !== 'All Cities') result = result.filter(e => e.city === city);
+    if (city !== 'All Cities') {
+      if (city === 'Others') {
+        if (customCity.trim()) {
+          const q = customCity.toLowerCase();
+          result = result.filter(e => e.city?.toLowerCase().includes(q));
+        } else {
+          result = result.filter(e => e.city && !KNOWN_CITIES.includes(e.city));
+        }
+      } else {
+        result = result.filter(e => e.city === city);
+      }
+    }
     if (category !== 'All') result = result.filter(e => e.category === category || e.eventCategory === category);
-    if (price === 'Free') result = result.filter(e => e.isFree || e.ticketPrice === 0);
-    if (price === 'Paid') result = result.filter(e => !e.isFree && e.ticketPrice > 0);
+    if (price === 'Free') result = result.filter(e => {
+      const hasTicketing = e.ticketingOption === 'external' || e.hasOutingStationTicketing === true || e.ticketingEnabled === true;
+      const hasPrice = (typeof e.ticketPrice === 'number' && e.ticketPrice > 0) || (typeof e.price === 'number' && e.price > 0);
+      return !hasTicketing && !hasPrice && e.isFree === true;
+    });
+    if (price === 'Paid') result = result.filter(e => {
+      const hasTicketing = e.ticketingOption === 'external' || e.hasOutingStationTicketing === true || e.ticketingEnabled === true;
+      const hasPrice = (typeof e.ticketPrice === 'number' && e.ticketPrice > 0) || (typeof e.price === 'number' && e.price > 0);
+      return hasTicketing || hasPrice || e.isFree !== true;
+    });
     setFiltered(result);
     setPage(1);
   };
 
   const resetFilters = () => {
-    setSearch(''); setCity('All Cities'); setCategory('All'); setPrice('All'); setPage(1);
+    setSearch(''); setCity('All Cities'); setCustomCity(''); setCategory('All'); setPrice('All'); setPage(1);
   };
 
   const totalPages = Math.ceil(filtered.length / PLACES_PER_PAGE);
@@ -168,10 +190,19 @@ export default function PlacesPage() {
           {/* Filters */}
           {showFilters && (
             <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
-              <select value={city} onChange={e => setCity(e.target.value)}
+              <select value={city} onChange={e => { setCity(e.target.value); if (e.target.value !== 'Others') setCustomCity(''); }}
                 className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
                 {CITIES.map(c => <option key={c}>{c}</option>)}
               </select>
+              {city === 'Others' && (
+                <input
+                  type="text"
+                  value={customCity}
+                  onChange={e => setCustomCity(e.target.value)}
+                  placeholder="Enter city name..."
+                  className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500"
+                />
+              )}
               <select value={category} onChange={e => setCategory(e.target.value)}
                 className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
                 {CATEGORIES.map(c => <option key={c}>{c}</option>)}
@@ -207,12 +238,34 @@ export default function PlacesPage() {
             ? <EmptyState onReset={resetFilters} />
             : paginated.map(place => {
                 const isSaved = savedEvents.includes(place.id);
-                const isFree = place.isFree || place.ticketPrice === 0;
+                // Free = Free (no ticketing, no price on file). If a price WAS set,
+                // always show it — regardless of whether the ticketing flags happen
+                // to be set on this particular record. Only fall back to "Get Ticket"
+                // when there's ticketing but truly no price, and "Paid Entry" as a
+                // last resort.
+                const hasTicketing =
+                  place.ticketingOption === 'external' ||
+                  place.hasOutingStationTicketing === true ||
+                  place.ticketingEnabled === true;
+                const priceValue =
+                  typeof place.ticketPrice === 'number' && place.ticketPrice > 0
+                    ? place.ticketPrice
+                    : (typeof place.price === 'number' && place.price > 0 ? place.price : null);
+                let priceLabel = 'Paid Entry';
+                let isFree = false;
+                if (priceValue !== null) {
+                  priceLabel = `₦${Number(priceValue).toLocaleString()} entry`;
+                } else if (hasTicketing) {
+                  priceLabel = 'Get Ticket';
+                } else if (place.isFree === true) {
+                  priceLabel = 'Free Entry';
+                  isFree = true;
+                }
                 const hours = place.alwaysOpen ? '24/7 Open' : (place.operatingHours || 'Check hours');
                 return (
                   <div key={place.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
                     <div className="relative h-48 overflow-hidden flex-shrink-0">
-                      <Link to={`/e/${place.slug || place.id}`}>
+                      <Link to={`/event/${place.id}`}>
                         <img
                           src={place.imageUrl || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=400&h=300&fit=crop'}
                           alt={place.title}
@@ -231,12 +284,12 @@ export default function PlacesPage() {
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
                           isFree ? 'bg-green-500 text-white' : 'bg-white text-gray-800'
                         }`}>
-                          {isFree ? 'Free Entry' : `₦${Number(place.ticketPrice).toLocaleString()} entry`}
+                          {priceLabel}
                         </span>
                       </div>
                     </div>
                     <div className="p-4 flex flex-col flex-1">
-                      <Link to={`/e/${place.slug || place.id}`}>
+                      <Link to={`/event/${place.id}`}>
                         <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-cyan-500 transition">
                           {place.title}
                         </h3>

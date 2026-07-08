@@ -73,6 +73,30 @@ export default function EventCard({ event }) {
   const isPlace = event.subCategory === 'places';
   const eventTime = formatEventTime(event);
 
+  // Free = Free (no ticketing, no price on file). If a price WAS set, always
+  // show it — regardless of whether the ticketing flags happen to be set on
+  // this particular record. Only fall back to "Get Ticket" when there's
+  // ticketing but truly no price, and "Paid" as a last resort.
+  const hasTicketing =
+    event.ticketingOption === 'external' ||
+    event.hasOutingStationTicketing === true ||
+    event.ticketingEnabled === true;
+  const priceValue =
+    typeof event.ticketPrice === 'number' && event.ticketPrice > 0
+      ? event.ticketPrice
+      : (typeof event.price === 'number' && event.price > 0 ? event.price : null);
+  let priceLabel = 'Paid';
+  let isFree = false;
+  if (priceValue !== null) {
+    priceLabel = `₦${Number(priceValue).toLocaleString()}`;
+  } else if (hasTicketing) {
+    priceLabel = 'Get Ticket';
+  } else if (event.isFree === true) {
+    priceLabel = 'Free';
+    isFree = true;
+  }
+  const priceBadgeClass = isFree ? 'bg-emerald-500' : 'bg-blue-500';
+
   return (
     <Link to={`/event/${event.id}`}>
       <div className="event-card group bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300">
@@ -125,8 +149,8 @@ export default function EventCard({ event }) {
 
           {/* Price Badge - bottom right of image */}
           <div className="absolute bottom-3 right-3">
-            <span className={`${event.isFree ? 'bg-emerald-500' : 'bg-blue-500'} text-white text-xs px-3 py-1 rounded-full font-semibold`}>
-              {event.isFree ? 'Free' : 'Paid'}
+            <span className={`${priceBadgeClass} text-white text-xs px-3 py-1 rounded-full font-semibold`}>
+              {priceLabel}
             </span>
           </div>
         </div>

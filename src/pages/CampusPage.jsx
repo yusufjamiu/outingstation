@@ -83,14 +83,22 @@ const EmptyState = ({ tab, onReset }) => (
 // ─── Event Card ───────────────────────────────────────────────────────────────
 
 const EventCard = ({ event, isSaved, onToggleSave, currentUser }) => {
-  const isFree = event.isFree || event.ticketPrice === 0;
+  // If a price WAS entered (ticketPrice or price), always show it — only fall
+  // back to "Get Tickets" for external ticketing when there's truly no price on file.
+  const isExternalTicketing = event.ticketingOption === 'external';
+  const priceValue =
+    typeof event.ticketPrice === 'number' && event.ticketPrice > 0
+      ? event.ticketPrice
+      : (typeof event.price === 'number' && event.price > 0 ? event.price : null);
+  const hasSetPrice = priceValue !== null;
+  const isFree = !isExternalTicketing && !hasSetPrice && (event.isFree || event.ticketPrice === 0);
   const dateLabel = event._date?.toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric'
   });
   return (
     <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
       <div className="relative h-48 overflow-hidden flex-shrink-0">
-        <Link to={`/e/${event.slug || event.id}`}>
+        <Link to={`/event/${event.id}`}>
           <img
             src={event.imageUrl || 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?w=400&h=300&fit=crop'}
             alt={event.title}
@@ -107,12 +115,12 @@ const EventCard = ({ event, isSaved, onToggleSave, currentUser }) => {
         )}
         <div className="absolute bottom-3 left-3">
           <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isFree ? 'bg-green-500 text-white' : 'bg-white text-gray-800'}`}>
-            {isFree ? 'Free' : `₦${Number(event.ticketPrice).toLocaleString()}`}
+            {hasSetPrice ? `₦${Number(priceValue).toLocaleString()}` : isExternalTicketing ? 'Get Tickets' : isFree ? 'Free' : 'Paid'}
           </span>
         </div>
       </div>
       <div className="p-4 flex flex-col flex-1">
-        <Link to={`/e/${event.slug || event.id}`}>
+        <Link to={`/event/${event.id}`}>
           <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-cyan-500 transition">
             {event.title}
           </h3>
@@ -141,12 +149,18 @@ const EventCard = ({ event, isSaved, onToggleSave, currentUser }) => {
 // ─── Place Card ───────────────────────────────────────────────────────────────
 
 const PlaceCard = ({ place, isSaved, onToggleSave, currentUser }) => {
-  const isFree = place.isFree || place.ticketPrice === 0;
+  const isExternalTicketing = place.ticketingOption === 'external';
+  const priceValue =
+    typeof place.ticketPrice === 'number' && place.ticketPrice > 0
+      ? place.ticketPrice
+      : (typeof place.price === 'number' && place.price > 0 ? place.price : null);
+  const hasSetPrice = priceValue !== null;
+  const isFree = !isExternalTicketing && !hasSetPrice && (place.isFree || place.ticketPrice === 0);
   const hours = place.alwaysOpen ? '24/7 Open' : (place.openingTime && place.closingTime ? `${place.openingTime} – ${place.closingTime}` : place.operatingHours || 'Check hours');
   return (
     <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
       <div className="relative h-48 overflow-hidden flex-shrink-0">
-        <Link to={`/e/${place.slug || place.id}`}>
+        <Link to={`/event/${place.id}`}>
           <img
             src={place.imageUrl || 'https://images.unsplash.com/photo-1562774053-701939374585?w=400&h=300&fit=crop'}
             alt={place.title}
@@ -163,12 +177,12 @@ const PlaceCard = ({ place, isSaved, onToggleSave, currentUser }) => {
         )}
         <div className="absolute bottom-3 left-3">
           <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isFree ? 'bg-green-500 text-white' : 'bg-white text-gray-800'}`}>
-            {isFree ? 'Free Entry' : `₦${Number(place.ticketPrice).toLocaleString()} entry`}
+            {hasSetPrice ? `₦${Number(priceValue).toLocaleString()} entry` : isExternalTicketing ? 'Get Tickets' : isFree ? 'Free Entry' : 'Paid Entry'}
           </span>
         </div>
       </div>
       <div className="p-4 flex flex-col flex-1">
-        <Link to={`/e/${place.slug || place.id}`}>
+        <Link to={`/event/${place.id}`}>
           <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-cyan-500 transition">
             {place.title}
           </h3>
@@ -195,6 +209,9 @@ const PlaceCard = ({ place, isSaved, onToggleSave, currentUser }) => {
 };
 
 // ─── Vendor Card ──────────────────────────────────────────────────────────────
+// Vendors live in their own collection and don't have a standalone details page
+// in this app (see CampusPlacesPage's renderVendorList — same pattern: no link,
+// just the shop info and a direct WhatsApp action).
 
 const VendorCard = ({ vendor }) => (
   <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
@@ -333,11 +350,15 @@ export default function CampusPage() {
     }
 
     // ✅ Vendors fetched separately — failure won't affect events/places
+    // Fixed: was reading from 'vendor_submissions' (status === 'approved'), which is
+    // just the submission record and never gets updated when a vendor is later
+    // deleted/deactivated. The live vendor list lives in 'vendors' (status === 'active'),
+    // matching CampusPlacesPage — so deleted vendors now correctly disappear here too.
     try {
-      const vendorsSnap = await getDocs(collection(db, 'vendor_submissions'));
+      const vendorsSnap = await getDocs(collection(db, 'vendors'));
       const campusVendors = vendorsSnap.docs
         .map(d => ({ id: d.id, ...d.data(), _type: 'vendor' }))
-        .filter(v => v.status === 'approved');
+        .filter(v => v.status === 'active');
       setVendors(campusVendors);
     } catch (err) {
       console.error('Error loading vendors:', err);

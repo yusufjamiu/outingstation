@@ -11,6 +11,7 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 const CITIES = ['All Cities', 'Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
+const KNOWN_CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt'];
 const CATEGORIES = [
   'All', 'Business & Tech', 'Art & Culture', 'Food & Dining',
   'Sport & Fitness', 'Education', 'Religion & Community',
@@ -57,6 +58,7 @@ export default function EventsPage() {
   const [savedEvents, setSavedEvents] = useState([]);
   const [search, setSearch] = useState('');
   const [city, setCity] = useState('All Cities');
+  const [customCity, setCustomCity] = useState('');
   const [category, setCategory] = useState('All');
   const [price, setPrice] = useState('All');
   const [date, setDate] = useState('');
@@ -65,7 +67,7 @@ export default function EventsPage() {
 
   useEffect(() => { loadEvents(); }, []);
   useEffect(() => { if (currentUser) loadSaved(); }, [currentUser]);
-  useEffect(() => { applyFilters(); }, [events, search, city, category, price, date]);
+  useEffect(() => { applyFilters(); }, [events, search, city, customCity, category, price, date]);
 
   const loadEvents = async () => {
     try {
@@ -118,10 +120,29 @@ export default function EventsPage() {
         e.category?.toLowerCase().includes(q)
       );
     }
-    if (city !== 'All Cities') result = result.filter(e => e.city === city);
+    if (city !== 'All Cities') {
+      if (city === 'Others') {
+        if (customCity.trim()) {
+          const q = customCity.toLowerCase();
+          result = result.filter(e => e.city?.toLowerCase().includes(q));
+        } else {
+          result = result.filter(e => e.city && !KNOWN_CITIES.includes(e.city));
+        }
+      } else {
+        result = result.filter(e => e.city === city);
+      }
+    }
     if (category !== 'All') result = result.filter(e => e.category === category || e.eventCategory === category);
-    if (price === 'Free') result = result.filter(e => e.isFree || e.ticketPrice === 0);
-    if (price === 'Paid') result = result.filter(e => !e.isFree && e.ticketPrice > 0);
+    if (price === 'Free') result = result.filter(e => {
+      const hasTicketing = e.ticketingOption === 'external' || e.hasOutingStationTicketing === true || e.ticketingEnabled === true;
+      const hasPrice = (typeof e.ticketPrice === 'number' && e.ticketPrice > 0) || (typeof e.price === 'number' && e.price > 0);
+      return !hasTicketing && !hasPrice && e.isFree === true;
+    });
+    if (price === 'Paid') result = result.filter(e => {
+      const hasTicketing = e.ticketingOption === 'external' || e.hasOutingStationTicketing === true || e.ticketingEnabled === true;
+      const hasPrice = (typeof e.ticketPrice === 'number' && e.ticketPrice > 0) || (typeof e.price === 'number' && e.price > 0);
+      return hasTicketing || hasPrice || e.isFree !== true;
+    });
     if (date) {
       const selected = new Date(date);
       result = result.filter(e => e._date?.toDateString() === selected.toDateString());
@@ -131,7 +152,7 @@ export default function EventsPage() {
   };
 
   const resetFilters = () => {
-    setSearch(''); setCity('All Cities'); setCategory('All');
+    setSearch(''); setCity('All Cities'); setCustomCity(''); setCategory('All');
     setPrice('All'); setDate(''); setPage(1);
   };
 
@@ -182,10 +203,19 @@ export default function EventsPage() {
           {/* Filters */}
           {showFilters && (
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-              <select value={city} onChange={e => setCity(e.target.value)}
+              <select value={city} onChange={e => { setCity(e.target.value); if (e.target.value !== 'Others') setCustomCity(''); }}
                 className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
                 {CITIES.map(c => <option key={c}>{c}</option>)}
               </select>
+              {city === 'Others' && (
+                <input
+                  type="text"
+                  value={customCity}
+                  onChange={e => setCustomCity(e.target.value)}
+                  placeholder="Enter city name..."
+                  className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500"
+                />
+              )}
               <select value={category} onChange={e => setCategory(e.target.value)}
                 className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
                 {CATEGORIES.map(c => <option key={c}>{c}</option>)}
@@ -224,11 +254,32 @@ export default function EventsPage() {
             : paginated.map(event => {
                 const isSaved = savedEvents.includes(event.id);
                 const dateLabel = event._date?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                const isFree = event.isFree || event.ticketPrice === 0;
+                // Free = Free (no ticketing, no price on file). If a price WAS set,
+                // always show it — regardless of whether the ticketing flags happen
+                // to be set on this particular record. Only fall back to "Get Ticket"
+                // when there's ticketing but truly no price, and "Paid" as a last resort.
+                const hasTicketing =
+                  event.ticketingOption === 'external' ||
+                  event.hasOutingStationTicketing === true ||
+                  event.ticketingEnabled === true;
+                const priceValue =
+                  typeof event.ticketPrice === 'number' && event.ticketPrice > 0
+                    ? event.ticketPrice
+                    : (typeof event.price === 'number' && event.price > 0 ? event.price : null);
+                let priceLabel = 'Paid';
+                let isFree = false;
+                if (priceValue !== null) {
+                  priceLabel = `₦${Number(priceValue).toLocaleString()}`;
+                } else if (hasTicketing) {
+                  priceLabel = 'Get Ticket';
+                } else if (event.isFree === true) {
+                  priceLabel = 'Free';
+                  isFree = true;
+                }
                 return (
                   <div key={event.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
                     <div className="relative h-48 overflow-hidden flex-shrink-0">
-                      <Link to={`/e/${event.slug || event.id}`}>
+                      <Link to={`/event/${event.id}`}>
                         <img
                           src={event.imageUrl || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&h=300&fit=crop'}
                           alt={event.title}
@@ -247,12 +298,12 @@ export default function EventsPage() {
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
                           isFree ? 'bg-green-500 text-white' : 'bg-white text-gray-800'
                         }`}>
-                          {isFree ? 'Free' : `₦${Number(event.ticketPrice).toLocaleString()}`}
+                          {priceLabel}
                         </span>
                       </div>
                     </div>
                     <div className="p-4 flex flex-col flex-1">
-                      <Link to={`/e/${event.slug || event.id}`}>
+                      <Link to={`/event/${event.id}`}>
                         <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-cyan-500 transition">
                           {event.title}
                         </h3>

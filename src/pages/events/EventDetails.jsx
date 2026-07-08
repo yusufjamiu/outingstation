@@ -1460,6 +1460,17 @@ export default function EventDetails() {
                         <p className="text-gray-600 text-sm">
                           {hasOutingStationTicketing ? (
                             <span className="font-semibold">₦{event.ticketPrice?.toLocaleString()}</span>
+                          ) : event.ticketingOption === 'external' ? (
+                            // ✅ FIX: external ticketing was checking isFree first, showing
+                            // "Free" even when a real priced external ticket link existed.
+                            // Trust the actual price for this ticketing type instead.
+                            event.price > 0 ? (
+                              <span className="font-semibold">₦{event.price.toLocaleString()}</span>
+                            ) : event.isFree ? (
+                              <span className="text-emerald-600 font-semibold">Free</span>
+                            ) : (
+                              <span className="font-semibold">See external link</span>
+                            )
                           ) : event.isFree ? (
                             <span className="text-emerald-600 font-semibold">Free</span>
                           ) : (
@@ -1502,6 +1513,13 @@ export default function EventDetails() {
                       to save events & get personalized picks
                     </p>
                   )}
+
+                  <Link
+                    to="/campus-events"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-purple-600 border-2 border-purple-100 hover:bg-purple-50 transition"
+                  >
+                    🎓 Browse Campus Events
+                  </Link>
                 </div>
               </div>
             </div>

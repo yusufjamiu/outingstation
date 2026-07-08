@@ -30,9 +30,7 @@ const QUICK_ACTIONS = [
   { label: 'Plan a Private Event', to: '/plan-event', icon: ClipboardList },
   { label: 'Host an Event', to: '/create', icon: Ticket },
   { label: 'List My Service', to: '/business/register', icon: Store },
-  { label: 'Find Campus Events', to: '/campus-events', icon: School },
   { label: 'Rent a Ride', to: '/rent-a-ride', icon: Car },
-  { label: 'Ask Outing AI', to: '/', icon: Sparkles, isAI: true },
 ];
 
 export default function LandingPage() {
@@ -217,7 +215,7 @@ export default function LandingPage() {
               </div>
 
               {/* ✅ Quick action grid — replaces the old search bar + Explore button */}
-              <div className="grid grid-cols-3 md:grid-cols-4 gap-3 md:gap-4 max-w-4xl mx-auto mb-10 md:mb-16">
+              <div className="grid grid-cols-3 md:grid-cols-3 gap-3 md:gap-4 max-w-4xl mx-auto mb-10 md:mb-16">
                 {QUICK_ACTIONS.map((item) => {
                   const Icon = item.icon;
                   const tileClasses = "group relative overflow-hidden rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all p-4 md:p-5 flex flex-col items-center justify-center text-center gap-2";
