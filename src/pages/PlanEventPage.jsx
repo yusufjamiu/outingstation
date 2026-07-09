@@ -23,7 +23,6 @@ const EVENT_TYPES = [
   { value: 'other', label: 'Other', icon: Sparkles },
 ];
 
-const STATES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
 const BUDGET_RANGES = ['Under ₦200k', '₦200k - ₦500k', '₦500k - ₦1M', '₦1M - ₦3M', 'Above ₦3M'];
 const DECOR_STYLES = ['Elegant / Classy', 'Colorful / Vibrant', 'Minimalist', 'Traditional', 'Rustic', 'Not sure yet'];
 const MENU_TYPES = ['Nigerian Buffet', 'Small Chops', 'Continental', 'Mixed', 'Not sure yet'];
@@ -121,6 +120,15 @@ function ChipPicker({ options, value, onChange }) {
 }
 
 // ✅ Maps each hybrid wizard category to the matching business type in Firestore
+const NIGERIAN_STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+  'Others',
+];
+
 const CATEGORY_BUSINESS_TYPE = {
   rentals: 'Furniture Rental',
   decorator: 'Decorator',
@@ -241,7 +249,7 @@ export default function PlanEventPage() {
   const [eventType, setEventType] = useState(searchParams.get('type') || '');
   const [eventTypeOther, setEventTypeOther] = useState('');
 
-  const [details, setDetails] = useState({ eventName: '', eventDate: '', estimatedGuests: '', budget: '', city: '', area: '', state: '' });
+  const [details, setDetails] = useState({ eventName: '', eventDate: '', estimatedGuests: '', budget: '', city: '', area: '', customCity: '' });
   const [stateOption, setStateOption] = useState('');
 
   const [venue, setVenue] = useState({ skipped: false, mode: 'hall', hallId: '', hallName: '', ownLocation: '' });
@@ -371,7 +379,7 @@ export default function PlanEventPage() {
   };
 
   const canProceedStep0 = eventType && (eventType !== 'other' || eventTypeOther.trim());
-  const canProceedStep1 = details.eventName.trim() && details.eventDate && details.estimatedGuests && details.state;
+  const canProceedStep1 = details.eventName.trim() && details.eventDate && details.estimatedGuests && details.city && (details.city !== 'Others' || details.customCity.trim());
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -387,7 +395,6 @@ export default function PlanEventPage() {
         budget: details.budget || null,
         city: details.city,
             area: details.area || null,
-            state: details.state || null,
         venue: venue.skipped ? null : {
           mode: venue.mode,
           hallId: venue.mode === 'hall' ? venue.hallId || null : null,
@@ -512,7 +519,6 @@ export default function PlanEventPage() {
             eventDate: details.eventDate,
             city: details.city,
             area: details.area || null,
-            state: details.state || null,
             targetBusinessId: cat.state.selectedBusinessId,
             targetBusinessName: cat.state.selectedBusinessName,
             packageName: cat.state.selectedPackageName,
@@ -537,7 +543,6 @@ export default function PlanEventPage() {
             eventDate: details.eventDate,
             city: details.city,
             area: details.area || null,
-            state: details.state || null,
             targetBusinessId: null,
             targetBusinessName: null,
             budget: Number(cat.state.budget) || 0,
@@ -567,7 +572,6 @@ export default function PlanEventPage() {
             eventDate: details.eventDate,
             city: details.city,
             area: details.area || null,
-            state: details.state || null,
             targetBusinessId: entry.selectedBusinessId,
             targetBusinessName: entry.selectedBusinessName,
             packageName: entry.selectedPackageName,
@@ -592,7 +596,6 @@ export default function PlanEventPage() {
             eventDate: details.eventDate,
             city: details.city,
             area: details.area || null,
-            state: details.state || null,
             targetBusinessId: null,
             targetBusinessName: null,
             budget: Number(entry.budget) || 0,
@@ -623,7 +626,6 @@ export default function PlanEventPage() {
             eventDate: details.eventDate,
             city: details.city,
             area: details.area || null,
-            state: details.state || null,
             targetBusinessId: entry.selectedBusinessId,
             targetBusinessName: entry.selectedBusinessName,
             packageName: entry.selectedPackageName,
@@ -649,7 +651,6 @@ export default function PlanEventPage() {
             eventDate: details.eventDate,
             city: details.city,
             area: details.area || null,
-            state: details.state || null,
             targetBusinessId: null,
             targetBusinessName: null,
             budget: Number(entry.budget) || 0,
@@ -764,38 +765,32 @@ export default function PlanEventPage() {
                 <StyledInput type="number" min="1" value={details.estimatedGuests} onChange={e => setDetails(p => ({ ...p, estimatedGuests: e.target.value }))} placeholder="e.g. 100" />
               </div>
               <div>
-                <label className="block text-sm font-bold text-gray-800 mb-1.5">State <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-bold text-gray-800 mb-1.5">City <span className="text-red-500">*</span></label>
                 <StyledSelect
                   value={stateOption}
                   onChange={e => {
                     const val = e.target.value;
                     setStateOption(val);
-                    setDetails(p => ({ ...p, state: val === 'Others' ? '' : val }));
+                    setDetails(p => ({ ...p, city: val === 'Others' ? '' : val }));
                   }}
                 >
                   <option value="">Select a state</option>
-                  {STATES.map(s => <option key={s}>{s}</option>)}
+                  {NIGERIAN_STATES.map(s => <option key={s}>{s}</option>)}
                 </StyledSelect>
                 {stateOption === 'Others' && (
                   <StyledInput
                     className="mt-2"
-                    value={details.state}
-                    onChange={e => setDetails(p => ({ ...p, state: e.target.value }))}
+                    value={details.customCity}
+                    onChange={e => setDetails(p => ({ ...p, customCity: e.target.value, city: e.target.value }))}
                     placeholder="Enter your state"
                   />
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-bold text-gray-800 mb-1.5">City <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <StyledInput value={details.city} onChange={e => setDetails(p => ({ ...p, city: e.target.value }))} placeholder="e.g. Lekki, Wuse" />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-800 mb-1.5">Area <span className="text-gray-400 font-normal">(optional)</span></label>
-                  <StyledInput value={details.area} onChange={e => setDetails(p => ({ ...p, area: e.target.value }))} placeholder="e.g. bus stop" />
-                </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-800 mb-1.5">Area <span className="text-gray-400 font-normal">(optional)</span></label>
+                <StyledInput value={details.area} onChange={e => setDetails(p => ({ ...p, area: e.target.value }))} placeholder="e.g. Wuse, Lekki, Ikeja, Aba" />
               </div>
-              <p className="text-xs text-gray-400">Area and City help businesses judge distance more precisely when reviewing your requests.</p>
+              <p className="text-xs text-gray-400">Area helps businesses judge distance more precisely when reviewing your requests.</p>
               <div>
                 <label className="block text-sm font-bold text-gray-800 mb-1.5">Overall Budget <span className="text-gray-400 font-normal">(optional)</span></label>
                 <StyledSelect value={details.budget} onChange={e => setDetails(p => ({ ...p, budget: e.target.value }))}>
@@ -1387,8 +1382,7 @@ export default function PlanEventPage() {
                 <ReviewRow label="Event" value={`${EVENT_TYPES.find(t => t.value === eventType)?.label || eventTypeOther} — ${details.eventName}`} />
                 <ReviewRow label="Date" value={details.eventDate} />
                 <ReviewRow label="Guests" value={details.estimatedGuests} />
-                <ReviewRow label="State" value={details.state} />
-                {details.city && <ReviewRow label="City" value={details.city} />}
+                <ReviewRow label="City" value={details.city} />
                 {details.area && <ReviewRow label="Area" value={details.area} />}
                 {details.budget && <ReviewRow label="Budget" value={details.budget} />}
               </div>

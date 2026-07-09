@@ -49,7 +49,14 @@ const EVENT_VENDOR_TYPES = [
   { value: 'Other Product', icon: Sparkles },
 ];
 
-const CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
+const NIGERIAN_STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+  'Others',
+];
 const STEPS = ['Business Name', 'Business Type', 'Business Logo', 'Details', 'Review & Submit'];
 
 const uploadToCloudinary = async (file, folder, onProgress) => {
@@ -128,7 +135,9 @@ export default function BecomeABusinessPage() {
   const [otherTypeName, setOtherTypeName] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
   const [description, setDescription] = useState('');
-  const [city, setCity] = useState('');
+  const [city, setCity] = useState(''); // ✅ now populated from NIGERIAN_STATES — same field name, so nothing else that reads business.city breaks
+  const [customCity, setCustomCity] = useState(''); // for "Others" reveal
+  const [area, setArea] = useState(''); // ✅ NEW — optional, e.g. Ikeja, Lekki, Ilorin
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [pricingInfo, setPricingInfo] = useState('');
 
@@ -155,7 +164,7 @@ export default function BecomeABusinessPage() {
       return true;
     }
     if (step === 2) return !!logoUrl;
-    if (step === 3) return description.trim().length >= 20 && !!city && whatsappNumber.trim().length > 0;
+    if (step === 3) return description.trim().length >= 20 && !!city && (city !== 'Others' || customCity.trim().length > 0) && whatsappNumber.trim().length > 0;
     return true;
   };
 
@@ -193,7 +202,8 @@ export default function BecomeABusinessPage() {
         customTypeName: (businessType === 'Other Service' || businessType === 'Other Product') ? otherTypeName.trim() : null,
         logoUrl: logoUrl,
         description: description.trim(),
-        city: city,
+        city: city === 'Others' ? customCity.trim() : city,
+        area: area.trim() || null,
         whatsappNumber: whatsappNumber.trim(),
         pricingInfo: pricingInfo.trim() || null,
         status: 'pending',
@@ -373,9 +383,21 @@ export default function BecomeABusinessPage() {
               <div>
                 <label className="block text-sm font-bold text-gray-800 mb-1.5">City <span className="text-red-500">*</span></label>
                 <StyledSelect value={city} onChange={function (e) { setCity(e.target.value); }}>
-                  <option value="">Select a city</option>
-                  {CITIES.map(function (c) { return <option key={c}>{c}</option>; })}
+                  <option value="">Select a state</option>
+                  {NIGERIAN_STATES.map(function (s) { return <option key={s}>{s}</option>; })}
                 </StyledSelect>
+                {city === 'Others' && (
+                  <StyledInput
+                    className="mt-2"
+                    value={customCity}
+                    onChange={function (e) { setCustomCity(e.target.value); }}
+                    placeholder="Enter your state"
+                  />
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-800 mb-1.5">Area <span className="text-gray-400 font-normal">(optional)</span></label>
+                <StyledInput value={area} onChange={function (e) { setArea(e.target.value); }} placeholder="e.g. Ikeja, Lekki, Maitama, Ilorin" />
               </div>
               <div>
                 <label className="block text-sm font-bold text-gray-800 mb-1.5">WhatsApp Number <span className="text-red-500">*</span></label>
@@ -398,7 +420,8 @@ export default function BecomeABusinessPage() {
                   { label: 'Business Name', value: businessName },
                   { label: 'Category', value: businessCategory },
                   { label: 'Type', value: (businessType === 'Other Service' || businessType === 'Other Product') ? (otherTypeName + ' (' + businessType + ')') : businessType },
-                  { label: 'City', value: city },
+                  { label: 'City', value: city === 'Others' ? customCity : city },
+                  area ? { label: 'Area', value: area } : null,
                   { label: 'WhatsApp', value: whatsappNumber },
                   pricingInfo ? { label: 'Pricing', value: pricingInfo } : null,
                   { label: 'Description', value: description },

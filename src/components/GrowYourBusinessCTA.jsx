@@ -16,7 +16,7 @@ export default function GrowYourBusinessCTA() {
       <div className="absolute bottom-0 left-0 w-72 h-72 bg-cyan-400 rounded-full opacity-10 blur-3xl"></div>
 
       <div className="max-w-5xl mx-auto relative z-10 text-center">
-        <p className="text-cyan-300 text-sm font-semibold tracking-wide mb-3">FOR BUSINESSES</p>
+        <p className="text-cyan-300 text-sm font-semibold tracking-wide mb-3">LIST YOUR SERVICES</p>
         <h2 className="text-3xl md:text-5xl font-bold text-white mb-4 leading-tight">
           DJ, Caterer, Decorator, Or Vendor?
         </h2>

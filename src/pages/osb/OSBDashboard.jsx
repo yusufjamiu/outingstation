@@ -22,7 +22,14 @@ const SERVICE_PROVIDER_TYPE_VALUES = [
   'Restaurant', 'Livestock Seller', 'Gift Vendor', 'Food Stuffs Seller',
   'Baker', 'Beverages Seller', 'Other Service',
 ];
-const CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
+const NIGERIAN_STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+  'Others',
+];
 
 const SERVICE_PROVIDER_NAV = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -225,7 +232,7 @@ export default function OSBDashboard() {
       setHourlyPackages(b?.hourlyPackages || []);
       setSettingsForm(b ? {
         businessName: b.businessName || '', description: b.description || '',
-        city: b.city || '', whatsappNumber: b.whatsappNumber || '',
+        city: b.city || '', area: b.area || '', whatsappNumber: b.whatsappNumber || '',
         pricingInfo: b.pricingInfo || '', logoUrl: b.logoUrl || '',
       } : null);
     };
@@ -417,8 +424,14 @@ export default function OSBDashboard() {
     if (!selectedBusiness || !settingsForm) return;
     setSavingSettings(true);
     try {
-      await updateDoc(doc(db, 'businesses', selectedBusiness.id), settingsForm);
-      setBusinesses(prev => prev.map(b => b.id === selectedBusiness.id ? { ...b, ...settingsForm } : b));
+      // ✅ Resolve "Others" to the actual typed state, and don't persist
+      // the temporary customCity field itself
+      const { customCity, ...formToSave } = settingsForm;
+      const resolvedCity = settingsForm.city === 'Others' ? (customCity || '').trim() : settingsForm.city;
+      const payload = { ...formToSave, city: resolvedCity };
+
+      await updateDoc(doc(db, 'businesses', selectedBusiness.id), payload);
+      setBusinesses(prev => prev.map(b => b.id === selectedBusiness.id ? { ...b, ...payload } : b));
     } catch (err) {
       console.error(err);
       alert('Failed to save settings.');
@@ -882,8 +895,15 @@ export default function OSBDashboard() {
                   <div><label className="block text-xs font-bold text-gray-600 mb-1">Description</label><textarea rows={3} value={settingsForm.description} onChange={e => setSettingsForm(p => ({ ...p, description: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none" /></div>
                   <div><label className="block text-xs font-bold text-gray-600 mb-1">City</label>
                     <select value={settingsForm.city} onChange={e => setSettingsForm(p => ({ ...p, city: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                      {CITIES.map(c => <option key={c}>{c}</option>)}
+                      <option value="">Select a state</option>
+                      {NIGERIAN_STATES.map(s => <option key={s}>{s}</option>)}
                     </select>
+                    {settingsForm.city === 'Others' && (
+                      <input type="text" value={settingsForm.customCity || ''} onChange={e => setSettingsForm(p => ({ ...p, customCity: e.target.value }))} placeholder="Enter your state" className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                    )}
+                  </div>
+                  <div><label className="block text-xs font-bold text-gray-600 mb-1">Area <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="text" value={settingsForm.area || ''} onChange={e => setSettingsForm(p => ({ ...p, area: e.target.value }))} placeholder="e.g. Ikeja, Lekki, Maitama, Ilorin" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                   </div>
                   <div><label className="block text-xs font-bold text-gray-600 mb-1">WhatsApp Number</label><input type="tel" value={settingsForm.whatsappNumber} onChange={e => setSettingsForm(p => ({ ...p, whatsappNumber: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
                   <div><label className="block text-xs font-bold text-gray-600 mb-1">Pricing Info (short text)</label><input type="text" value={settingsForm.pricingInfo} onChange={e => setSettingsForm(p => ({ ...p, pricingInfo: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>

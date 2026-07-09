@@ -53,7 +53,7 @@ export default function LandingPage() {
   "Find an event, hire a vendor, or sell tickets, all in one place.",
   "List your hall or venue on OutingStation today.",
   "List your services and get discovered by people who need them.",
-  "Ask Outing AI, and let it find your next move.",
+  "Let Outing AI curate your next experience.",
   "Book a hall, decorator, caterer and DJ in one flow with Plan My Event.",
 ];
 

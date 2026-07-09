@@ -3,6 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { collection, query, where, getDocs, doc, updateDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+
+// ✅ FIX: eventDate should always be a 'YYYY-MM-DD' string, but some plans
+// created via the mobile app before a bug was fixed wrote it as a raw
+// Firestore Timestamp instead. Rendering a Timestamp object directly as a
+// React child crashes the whole page (React error #31) — this formats
+// either shape safely instead of assuming one or the other.
+function formatEventDate(eventDate) {
+  if (!eventDate) return '';
+  if (typeof eventDate === 'string') return eventDate;
+  if (eventDate?.seconds != null) {
+    return new Date(eventDate.seconds * 1000).toISOString().split('T')[0];
+  }
+  return '';
+}
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { Calendar, MapPin, Clock, CheckCircle2, XCircle, ChevronDown, ChevronUp, ListPlus, MessageSquare, Phone, Image as ImageIcon, Trash2 } from 'lucide-react';
@@ -261,7 +275,7 @@ export default function MyEventsPage() {
                     <div>
                       <p className="font-bold text-gray-900">{plan.eventName}</p>
                       <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                        <span className="flex items-center gap-1"><Calendar size={12} /> {plan.eventDate}</span>
+                        <span className="flex items-center gap-1"><Calendar size={12} /> {formatEventDate(plan.eventDate)}</span>
                         <span className="flex items-center gap-1"><MapPin size={12} /> {plan.city}</span>
                       </div>
                     </div>
