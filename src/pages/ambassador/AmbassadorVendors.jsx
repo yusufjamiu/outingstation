@@ -253,11 +253,22 @@ export default function AmbassadorVendors() {
     }
   };
 
-  const handleDelete = async (vendorId) => {
+  const handleDelete = async (vendor) => {
     if (!window.confirm('Are you sure you want to delete this vendor?')) return;
     try {
-      await deleteDoc(doc(db, 'vendors', vendorId));
-      setVendors(prev => prev.filter(v => v.id !== vendorId));
+      await deleteDoc(doc(db, 'vendors', vendor.id));
+      // ✅ FIX: same issue as AdminVendors.jsx — deleting only the live
+      // 'vendors' doc left the original 'vendor_submissions' record behind,
+      // still status:'approved', pointing at a vendor that no longer
+      // exists. Deleting both together closes that gap.
+      if (vendor.submissionId) {
+        try {
+          await deleteDoc(doc(db, 'vendor_submissions', vendor.submissionId));
+        } catch (subErr) {
+          console.error('Error deleting linked submission:', subErr);
+        }
+      }
+      setVendors(prev => prev.filter(v => v.id !== vendor.id));
     } catch (err) {
       console.error('Error deleting vendor:', err);
     }
@@ -435,7 +446,7 @@ export default function AmbassadorVendors() {
                                 <button onClick={() => navigate(`/ambassador/vendors/edit/${vendor.id}`)} className="p-1.5 hover:bg-blue-50 rounded-lg transition text-blue-600">
                                   <Edit size={15} />
                                 </button>
-                                <button onClick={() => handleDelete(vendor.id)} className="p-1.5 hover:bg-red-50 rounded-lg transition text-red-500">
+                                <button onClick={() => handleDelete(vendor)} className="p-1.5 hover:bg-red-50 rounded-lg transition text-red-500">
                                   <Trash2 size={15} />
                                 </button>
                               </div>

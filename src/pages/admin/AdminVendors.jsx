@@ -318,11 +318,24 @@ export default function AdminVendors() {
     }
   };
 
-  const handleDelete = async (vendorId) => {
+  const handleDelete = async (vendor) => {
     if (!window.confirm('Are you sure you want to delete this vendor?')) return;
     try {
-      await deleteDoc(doc(db, 'vendors', vendorId));
-      setVendors(prev => prev.filter(v => v.id !== vendorId));
+      await deleteDoc(doc(db, 'vendors', vendor.id));
+      // ✅ FIX: this used to only delete the live 'vendors' doc, leaving the
+      // original 'vendor_submissions' record behind — still status:'approved',
+      // still pointing at a vendor that no longer exists. That orphaned
+      // record was exactly what caused a deleted vendor to keep showing
+      // "Listing not found" on their dashboard instead of letting them
+      // reapply. Deleting both together closes that gap.
+      if (vendor.submissionId) {
+        try {
+          await deleteDoc(doc(db, 'vendor_submissions', vendor.submissionId));
+        } catch (subErr) {
+          console.error('Error deleting linked submission:', subErr);
+        }
+      }
+      setVendors(prev => prev.filter(v => v.id !== vendor.id));
     } catch (err) {
       console.error('Error deleting vendor:', err);
     }
@@ -621,7 +634,7 @@ export default function AdminVendors() {
                                   className="p-1.5 hover:bg-blue-50 rounded-lg transition text-blue-600">
                                   <Edit size={15} />
                                 </button>
-                                <button onClick={() => handleDelete(vendor.id)}
+                                <button onClick={() => handleDelete(vendor)}
                                   className="p-1.5 hover:bg-red-50 rounded-lg transition text-red-500">
                                   <Trash2 size={15} />
                                 </button>

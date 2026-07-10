@@ -60,6 +60,7 @@ export default function CampusVendorPage() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [shop, setShop] = useState(null);
+  const [shopSource, setShopSource] = useState(null); // ✅ NEW — 'vendors' | 'vendor_submissions'
   const [loading, setLoading] = useState(true);
 
   const [showClaim, setShowClaim] = useState(false);
@@ -85,14 +86,37 @@ export default function CampusVendorPage() {
 
   const loadShop = async () => {
     try {
+      // ✅ CORRECTED — the real, live listing lives in a separate `vendors`
+      // collection (not vendor_submissions, which becomes an archived
+      // record once approved — it gets status:'approved' and an
+      // approvedVendorId pointer, but is no longer the source of truth).
+      // vendors docs don't have ownerId at all — matched by submittedBy
+      // (email) instead.
       let found = null;
-      const byOwner = await getDocs(
-        query(collection(db, 'vendor_submissions'), where('ownerId', '==', currentUser.uid))
-      );
-      if (!byOwner.empty) {
-        found = byOwner.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0))[0];
+      let source = null;
+
+      if (currentUser.email) {
+        const activeSnap = await getDocs(
+          query(collection(db, 'vendors'), where('submittedBy', '==', currentUser.email), where('status', '==', 'active'))
+        );
+        if (!activeSnap.empty) {
+          found = { id: activeSnap.docs[0].id, ...activeSnap.docs[0].data() };
+          source = 'vendors';
+        }
+      }
+
+      // No active listing — check for a pending/rejected application still
+      // in vendor_submissions (nothing to edit yet there, status display only).
+      if (!found) {
+        const byOwner = await getDocs(
+          query(collection(db, 'vendor_submissions'), where('ownerId', '==', currentUser.uid))
+        );
+        if (!byOwner.empty) {
+          found = byOwner.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0))[0];
+          source = 'vendor_submissions';
+        }
       }
 
       if (!found && currentUser.email) {
@@ -103,6 +127,7 @@ export default function CampusVendorPage() {
           found = byEmail.docs
             .map(d => ({ id: d.id, ...d.data() }))
             .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0))[0];
+          source = 'vendor_submissions';
 
           // ✅ FIX: this shop only ever matched by email, not ownerId — meaning
           // it was never actually claimed. Editing would fail Firestore's
@@ -122,6 +147,7 @@ export default function CampusVendorPage() {
       }
 
       setShop(found);
+      setShopSource(source);
       if (found) {
         setEditCategory(found.category || '');
         setEditWhatsapp(found.whatsappNumber || '');
@@ -166,6 +192,7 @@ export default function CampusVendorPage() {
     try {
       await updateDoc(doc(db, 'vendor_submissions', claimResult.id), { ownerId: currentUser.uid });
       setShop({ ...claimResult, ownerId: currentUser.uid });
+      setShopSource('vendor_submissions');
       setEditCategory(claimResult.category || '');
       setEditWhatsapp(claimResult.whatsappNumber || '');
       setEditImageUrl(claimResult.imageUrl || '');
@@ -228,7 +255,10 @@ export default function CampusVendorPage() {
         imageUrl: editImageUrl,
         images: editImages,
       };
-      await updateDoc(doc(db, 'vendor_submissions', shop.id), updateData);
+      // ✅ CORRECTED — save to whichever collection the shop actually came
+      // from. In practice this should always be 'vendors' once approved,
+      // since editing is only offered for active listings.
+      await updateDoc(doc(db, shopSource || 'vendors', shop.id), updateData);
       setShop(prev => ({ ...prev, ...updateData }));
       setEditing(false);
     } catch (err) {
@@ -348,7 +378,7 @@ export default function CampusVendorPage() {
                       </span>
                     );
                   })()}
-                  {!editing && (
+                  {!editing && shopSource === 'vendors' && (
                     <button
                       onClick={() => setEditing(true)}
                       className="flex items-center gap-1.5 text-xs font-bold text-cyan-600 hover:text-cyan-700 border-2 border-cyan-200 rounded-full px-3 py-1.5 transition"
@@ -386,7 +416,16 @@ export default function CampusVendorPage() {
                       <p className="text-xs text-red-700">This listing wasn't approved. Contact admin@outingstation.com for details, or submit a new one.</p>
                     </div>
                   )}
-                  {shop.status === 'approved' && (
+                  {shop.status === 'approved' && shopSource === 'vendor_submissions' && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                      <p className="text-xs text-red-700 font-bold mb-1">⚠️ Listing not found</p>
+                      <p className="text-xs text-red-700">
+                        Your application was approved, but we can't find your live shop listing — it may not have been created correctly.
+                        Please contact admin@outingstation.com so we can fix this for you.
+                      </p>
+                    </div>
+                  )}
+                  {shop.status === 'approved' && shopSource === 'vendors' && (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
                       <p className="text-xs text-emerald-700">Your shop is live! Students on your campus can now find and reach you.</p>
                     </div>
@@ -488,4 +527,4 @@ export default function CampusVendorPage() {
       <Footer />
     </div>
   );
-}   
+}

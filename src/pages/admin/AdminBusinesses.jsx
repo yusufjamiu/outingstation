@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Menu, Store, CheckCircle, XCircle, Clock, Phone, MapPin, DollarSign } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import toast from 'react-hot-toast';
 
@@ -41,6 +41,23 @@ export default function AdminBusinesses() {
     } catch (err) {
       console.error(err);
       toast.error('Failed to update business');
+    }
+    setUpdatingId('');
+  };
+
+  // ✅ NEW — was completely missing; revoke/re-approve already existed
+  // (via handleDecision above) but there was no way to permanently delete
+  // a business record at all, regardless of status.
+  const handleDelete = async (id, businessName) => {
+    if (!window.confirm(`Permanently delete "${businessName}"? This can't be undone.`)) return;
+    setUpdatingId(id);
+    try {
+      await deleteDoc(doc(db, 'businesses', id));
+      setBusinesses(prev => prev.filter(b => b.id !== id));
+      toast.success('Business deleted');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to delete business');
     }
     setUpdatingId('');
   };
@@ -166,6 +183,15 @@ export default function AdminBusinesses() {
                             Approve anyway
                           </button>
                         )}
+
+                        {/* ✅ NEW — always available, any status */}
+                        <button
+                          onClick={() => handleDelete(biz.id, biz.businessName)}
+                          disabled={updatingId === biz.id}
+                          className="mt-2 text-xs text-gray-400 hover:text-red-500 font-medium block disabled:opacity-50"
+                        >
+                          Delete permanently
+                        </button>
                       </div>
                     </div>
                   </div>
