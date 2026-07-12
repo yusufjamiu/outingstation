@@ -32,6 +32,23 @@ export default function AdminBusinesses() {
     setLoading(false);
   };
 
+  // ✅ NEW — approve/reject a business's Gov ID or CAC upload. Separate
+  // from handleDecision (which controls the whole business listing) —
+  // this only touches the specific doc's status field.
+  const handleVerifyDoc = async (id, docType, approve) => {
+    const statusField = docType === 'gov' ? 'govIdStatus' : 'cacStatus';
+    setUpdatingId(id);
+    try {
+      await updateDoc(doc(db, 'businesses', id), { [statusField]: approve ? 'approved' : 'rejected' });
+      setBusinesses(prev => prev.map(b => b.id === id ? { ...b, [statusField]: approve ? 'approved' : 'rejected' } : b));
+      toast.success(approve ? `${docType === 'gov' ? 'Gov ID' : 'CAC'} approved` : `${docType === 'gov' ? 'Gov ID' : 'CAC'} rejected`);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to update verification status');
+    }
+    setUpdatingId('');
+  };
+
   const handleDecision = async (id, status) => {
     setUpdatingId(id);
     try {
@@ -145,6 +162,68 @@ export default function AdminBusinesses() {
                           <span className="text-gray-400">{biz.ownerEmail}</span>
                         </div>
 
+                        {/* ✅ NEW — verification documents, only rendered if this
+                            business has actually submitted at least one */}
+                        {(biz.govIdUrl || biz.cacUrl) && (
+                          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Verification</p>
+                            {biz.govIdUrl && (
+                              <div className="flex items-center gap-3">
+                                <img src={biz.govIdUrl} alt="Gov ID" className="w-14 h-14 rounded-lg object-cover border border-gray-200" />
+                                <div className="flex-1">
+                                  <p className="text-xs font-semibold text-gray-700">Government ID</p>
+                                  <VerifyStatusBadge status={biz.govIdStatus} />
+                                </div>
+                                {biz.govIdStatus === 'pending' && (
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => handleVerifyDoc(biz.id, 'gov', true)}
+                                      disabled={updatingId === biz.id}
+                                      className="text-xs bg-blue-500 hover:bg-blue-600 text-white font-medium px-3 py-1.5 rounded-lg disabled:opacity-50"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => handleVerifyDoc(biz.id, 'gov', false)}
+                                      disabled={updatingId === biz.id}
+                                      className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium px-3 py-1.5 rounded-lg disabled:opacity-50"
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {biz.cacUrl && (
+                              <div className="flex items-center gap-3">
+                                <img src={biz.cacUrl} alt="CAC" className="w-14 h-14 rounded-lg object-cover border border-gray-200" />
+                                <div className="flex-1">
+                                  <p className="text-xs font-semibold text-gray-700">CAC Registration</p>
+                                  <VerifyStatusBadge status={biz.cacStatus} />
+                                </div>
+                                {biz.cacStatus === 'pending' && (
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => handleVerifyDoc(biz.id, 'cac', true)}
+                                      disabled={updatingId === biz.id}
+                                      className="text-xs bg-emerald-500 hover:bg-emerald-600 text-white font-medium px-3 py-1.5 rounded-lg disabled:opacity-50"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => handleVerifyDoc(biz.id, 'cac', false)}
+                                      disabled={updatingId === biz.id}
+                                      className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-medium px-3 py-1.5 rounded-lg disabled:opacity-50"
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {biz.status === 'pending' && (
                           <div className="flex gap-2 mt-4">
                             <button
@@ -217,4 +296,15 @@ function StatusBadge({ status }) {
       <Icon size={11} /> {config.label}
     </span>
   );
+}
+
+// ✅ NEW — small status label for a single verification document
+// (govIdStatus / cacStatus), separate from the whole-business StatusBadge
+function VerifyStatusBadge({ status }) {
+  const config = {
+    pending: { label: 'Under Review', color: 'text-amber-600' },
+    approved: { label: 'Approved', color: 'text-emerald-600' },
+    rejected: { label: 'Rejected', color: 'text-red-500' },
+  }[status] || { label: 'Not Uploaded', color: 'text-gray-400' };
+  return <p className={`text-xs font-medium ${config.color}`}>{config.label}</p>;
 }
