@@ -14,15 +14,19 @@ const makeSlug = (title, id) =>
     .replace(/^-|-$/g, '')
   + '-' + id.slice(0, 5);
 
-// ✅ Campus-specific subcategories only — mirrors AdminEventForm's CAMPUS_PLACE_SUBCATEGORIES
+// ✅ RECONCILED — matches osb_ambassador_place_form_screen.dart (mobile)
+// and AmbassadorPlaceForm.jsx exactly now. Food Vendors removed (Vendors
+// already covers this) and Market removed, both confirmed directly.
+// Vendors, Computer Lab, and Bank/ATM added.
 const campusSubCategories = [
-  'Cafeteria', 'Food Vendors', 'Library', 'Auditorium',
-  'Faculty Building', 'Health Center', 'Sport Center',
-  'Hostel', 'Chapel / Mosque', 'Admin Block', 'Market', 'Other'
+  'Cafeteria', 'Vendors', 'Library', 'Auditorium',
+  'Faculty Building', 'Health Center', 'Sport Center', 'Computer Lab',
+  'Hostel', 'Chapel / Mosque', 'Admin Block', 'Bank / ATM', 'Other'
 ];
 
 // ✅ Main categories that support places (REGULAR places only)
 const categoryOptions = [
+  'Halls & Venues', 'Restaurant', 'Resort', 'Business & Tech',
   'Art & Culture', 'Food & Dining', 'Sport & Fitness',
   'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
   'Malls', 'Spas', // ✅ Places-only categories
@@ -62,6 +66,7 @@ export default function AdminPlaceForm() {
     university: '',
     openingTime: '',
     closingTime: '',
+    openingDays: [],
     isFree: true,
     price: '',
     organizerName: '',
@@ -108,6 +113,7 @@ export default function AdminPlaceForm() {
           university: data.university || '',
           openingTime: data.openingTime || '',
           closingTime: data.closingTime || '',
+          openingDays: data.openingDays || [],
           isFree: data.isFree ?? true,
           price: data.price || '',
           organizerName: data.organizerName || '',
@@ -599,6 +605,43 @@ await updateDoc(newRef, { slug: makeSlug(form.title, newRef.id) });
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <h3 className="text-base font-bold text-gray-900 mb-4">Hours & Pricing</h3>
                 <div className="space-y-4">
+                  {/* ✅ NEW — which days the place is actually open, not just a
+                  time range. Matches AmbassadorPlaceForm.jsx and mobile's
+                  osb_ambassador_place_form_screen.dart exactly. */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Open on which days?</label>
+                    <div className="flex flex-wrap gap-2">
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
+                        const selected = (form.openingDays || []).includes(day);
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => {
+                              const current = form.openingDays || [];
+                              handleChange('openingDays', selected ? current.filter(d => d !== day) : [...current, day]);
+                            }}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
+                              selected ? 'bg-cyan-500 text-white' : 'bg-white border-2 border-gray-200 text-gray-600 hover:border-cyan-300'
+                            }`}
+                          >
+                            {day}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                          const isAllSelected = (form.openingDays || []).length === 7;
+                          handleChange('openingDays', isAllSelected ? [] : allDays);
+                        }}
+                        className="px-3 py-1.5 rounded-full text-xs font-bold text-cyan-600 border-2 border-cyan-200 hover:bg-cyan-50 transition"
+                      >
+                        {(form.openingDays || []).length === 7 ? 'Clear all' : 'Every day'}
+                      </button>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Opening Time</label>
@@ -794,7 +837,7 @@ await updateDoc(newRef, { slug: makeSlug(form.title, newRef.id) });
                     </p>
                     {form.openingTime && form.closingTime && (
                       <p className="text-xs text-gray-500 mt-1">
-                        🕐 {form.openingTime} - {form.closingTime}
+                        🕐 {(form.openingDays || []).length > 0 ? `${(form.openingDays || []).length === 7 ? 'Every day' : (form.openingDays || []).join(', ')} · ` : ''}{form.openingTime} - {form.closingTime}
                       </p>
                     )}
                     <p className={`text-xs font-semibold mt-1 ${form.isFree ? 'text-emerald-600' : 'text-cyan-600'}`}>

@@ -273,6 +273,14 @@ export default function AdminVendors() {
         createdAt: serverTimestamp(),
         approvedAt: serverTimestamp(),
         submittedBy: submission.organizerEmail || null,
+        // ✅ FIX — was previously dropped entirely on approval. If the
+        // submitter typed a different email into the form than their
+        // actual logged-in account (organizerEmail vs ownerId), the shop
+        // could never be found again by that account — confirmed as a
+        // real bug from live Firestore data. Now carried over so the
+        // real account can always be matched, not just whatever email
+        // happened to be typed in.
+        ownerId: submission.ownerId || null,
         organizerName: submission.organizerName || null,
         organizerPhone: submission.organizerPhone || null,
         submissionId: submission.id,

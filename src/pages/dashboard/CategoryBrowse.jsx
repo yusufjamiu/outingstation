@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { Video, Briefcase, Palette, UtensilsCrossed, Dumbbell,
   Heart as HeartIcon, Music, Baby, Users, Gamepad2, Mic2, Tv, GraduationCap,
-  ShoppingBag, Sparkles, Building2 } from 'lucide-react';
+  ShoppingBag, Sparkles } from 'lucide-react';
 import campusImg from '../../assets/campus1.jpg';
 import campusPlacesImg from '../../assets/campus_places.jpg';
 
@@ -27,7 +27,10 @@ export default function CategoryBrowse() {
 
   const placeCategories = [
     { title: 'Art & Culture', icon: Palette, bg: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-100', link: '/dashboard/category/Art & Culture?places=true' },
-    { title: 'Food & Dining', icon: UtensilsCrossed, bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-100', link: '/dashboard/category/Food & Dining?places=true' },
+    // ✅ SWAPPED — Food & Dining replaced with Business & Tech. Restaurant
+    // already has its own dedicated Restaurants page, so this tile was
+    // partially redundant; Business & Tech had no places tile at all.
+    { title: 'Business & Tech', icon: Briefcase, bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-100', link: '/dashboard/category/Business & Tech?places=true' },
     { title: 'Sport & Fitness', icon: Dumbbell, bg: 'bg-green-50', text: 'text-green-600', border: 'border-green-100', link: '/dashboard/category/Sport & Fitness?places=true' },
     { title: 'Nightlife & Parties', icon: Music, bg: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-100', link: '/dashboard/category/Nightlife & Parties?places=true' },
     { title: 'Family & Kids Fun', icon: Baby, bg: 'bg-yellow-50', text: 'text-yellow-600', border: 'border-yellow-100', link: '/dashboard/category/Family & Kids Fun?places=true' },
@@ -101,35 +104,10 @@ export default function CategoryBrowse() {
         </Link>
       )}
 
-      {/* ✅ Halls banner (places tab) — mirrors webinar pattern */}
-      {activeTab === 'places' && !searchQuery && (
-        <Link
-          to="/dashboard/halls"
-          className="block mb-4 sm:mb-6 rounded-xl sm:rounded-2xl overflow-hidden shadow-md hover:shadow-xl transition group"
-        >
-          <div
-            className="relative w-full h-24 sm:h-40 flex items-center"
-            style={{ background: 'linear-gradient(135deg, #0F4C3A 0%, #062820 100%)' }}
-          >
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-white/5" />
-            <div className="relative z-10 flex items-center gap-3 sm:gap-5 px-4 sm:px-6 w-full">
-              <div className="bg-white/10 rounded-xl p-2 sm:p-3 flex-shrink-0">
-                <Building2 size={20} className="text-white sm:w-7 sm:h-7" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-cyan-400 text-xs font-bold uppercase tracking-wider mb-0.5">All Nigeria</div>
-                <h3 className="text-white font-bold text-sm sm:text-xl leading-tight truncate">Halls & Venues</h3>
-                <p className="text-white/70 text-xs line-clamp-1 hidden sm:block">Event halls, conference centres & venues across every city</p>
-              </div>
-              <div className="flex-shrink-0 animate-pulse">
-                <div className="flex items-center gap-1 bg-white/10 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full">
-                  <span className="text-white font-semibold text-xs whitespace-nowrap">Explore →</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Link>
-      )}
+      {/* ✅ REMOVED — Halls & Venues banner. Same reasoning as Restaurants
+      /Resort: "Event Halls" already has its own direct navbar link
+      (/halls), making this dedicated banner here purely redundant
+      navigation to the exact same page. */}
 
       {/* Category grid */}
       <div className="mb-4 sm:mb-6">

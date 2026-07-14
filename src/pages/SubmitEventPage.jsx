@@ -43,7 +43,7 @@ const EVENT_CATEGORIES = [
 ];
 
 const PLACE_CATEGORIES = [
-  'Halls & Venues', 'Restaurant', 'Resort',
+  'Halls & Venues', 'Restaurant', 'Resort', 'Business & Tech',
   'Art & Culture', 'Food & Dining', 'Sport & Fitness',
   'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
   'Malls', 'Spas', 'Other',

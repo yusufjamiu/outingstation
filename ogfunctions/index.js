@@ -75,3 +75,10 @@ exports.og = onRequest(
     }
   }
 );
+
+// ✅ NEW — scheduled function, applies pending business name changes 30
+// days after they were requested. See applyPendingBusinessNames.js for
+// the actual logic; this just registers it as a deployed function,
+// alongside "og" above, which is untouched.
+exports.applyPendingBusinessNames = require('./applyPendingBusinessNames').applyPendingBusinessNames;
+ 

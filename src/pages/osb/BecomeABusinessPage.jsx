@@ -32,6 +32,7 @@ const SERVICE_PROVIDER_TYPES = [
   { value: 'Security', icon: ShieldCheck },
   { value: 'Restaurant', icon: UtensilsCrossed },
   { value: 'Livestock Seller', icon: PawPrint },
+  { value: 'Laundry Service', icon: Shirt },
   { value: 'Gift Vendor', icon: Gift },
   { value: 'Food Stuffs Seller', icon: ShoppingBasket },
   { value: 'Baker', icon: Cake },

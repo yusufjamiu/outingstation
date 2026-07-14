@@ -63,6 +63,13 @@ export default function CampusVendorPage() {
   const [shopSource, setShopSource] = useState(null); // ✅ NEW — 'vendors' | 'vendor_submissions'
   const [loading, setLoading] = useState(true);
 
+  // ✅ NEW — up to 3 approved shops allowed per user now, not just 1.
+  // Kept separate from the existing single-shop logic above (which
+  // handles claim-by-phone / pending / rejected states) rather than
+  // rewriting that delicate fallback chain.
+  const [myApprovedShops, setMyApprovedShops] = useState([]);
+  const MAX_SHOPS = 3;
+
   const [showClaim, setShowClaim] = useState(false);
   const [claimPhone, setClaimPhone] = useState('');
   const [claimSearching, setClaimSearching] = useState(false);
@@ -82,20 +89,64 @@ export default function CampusVendorPage() {
   useEffect(() => {
     if (!currentUser) { navigate('/login'); return; }
     loadShop();
+    loadAllApprovedShops();
   }, [currentUser]);
+
+  // ✅ NEW — simple, separate query just for the shop-count/switcher —
+  // doesn't touch the existing claim/pending/rejected fallback chain below.
+  const loadAllApprovedShops = async () => {
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'vendors'), where('ownerId', '==', currentUser.uid), where('status', '==', 'active'))
+      );
+      const shops = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setMyApprovedShops(shops);
+      // If they have exactly one, keep existing single-shop behavior as
+      // the default view (loadShop already handles this). If they have
+      // more than one and nothing is currently selected, default to the
+      // first one so the page isn't blank.
+      if (shops.length > 1 && !shop) {
+        setShop(shops[0]);
+        setShopSource('vendors');
+        setEditCategory(shops[0].category || '');
+        setEditWhatsapp(shops[0].whatsappNumber || '');
+        setEditImageUrl(shops[0].imageUrl || '');
+        setEditImages(shops[0].images || []);
+      }
+    } catch (err) {
+      console.error('Error loading approved shops:', err);
+    }
+  };
+
+  const selectShop = (s) => {
+    setShop(s);
+    setShopSource('vendors');
+    setEditing(false);
+    setEditCategory(s.category || '');
+    setEditWhatsapp(s.whatsappNumber || '');
+    setEditImageUrl(s.imageUrl || '');
+    setEditImages(s.images || []);
+  };
 
   const loadShop = async () => {
     try {
-      // ✅ CORRECTED — the real, live listing lives in a separate `vendors`
-      // collection (not vendor_submissions, which becomes an archived
-      // record once approved — it gets status:'approved' and an
-      // approvedVendorId pointer, but is no longer the source of truth).
-      // vendors docs don't have ownerId at all — matched by submittedBy
-      // (email) instead.
+      // ✅ FIXED — vendors docs now DO get ownerId (fixed in AdminVendors.jsx's
+      // approval flow — it was previously dropped, only copying whatever
+      // email was typed into the submission form, which could differ from
+      // the submitter's real account). Check ownerId first now; email
+      // stays as a fallback for shops approved before that fix.
       let found = null;
       let source = null;
 
-      if (currentUser.email) {
+      const byOwnerId = await getDocs(
+        query(collection(db, 'vendors'), where('ownerId', '==', currentUser.uid), where('status', '==', 'active'))
+      );
+      if (!byOwnerId.empty) {
+        found = { id: byOwnerId.docs[0].id, ...byOwnerId.docs[0].data() };
+        source = 'vendors';
+      }
+
+      if (!found && currentUser.email) {
         const activeSnap = await getDocs(
           query(collection(db, 'vendors'), where('submittedBy', '==', currentUser.email), where('status', '==', 'active'))
         );
@@ -356,6 +407,31 @@ export default function CampusVendorPage() {
             </div>
           </div>
         ) : (
+          <>
+            {/* ✅ NEW — switcher + Add Another, only shown when relevant */}
+            {myApprovedShops.length > 1 && (
+              <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
+                {myApprovedShops.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => selectShop(s)}
+                    className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition ${
+                      shop?.id === s.id ? 'bg-cyan-500 text-white' : 'bg-white border-2 border-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {s.shopName}
+                  </button>
+                ))}
+              </div>
+            )}
+            {myApprovedShops.length >= 1 && myApprovedShops.length < MAX_SHOPS && (
+              <button
+                onClick={() => navigate('/list-vendor')}
+                className="w-full mb-4 flex items-center justify-center gap-2 border-2 border-dashed border-cyan-300 text-cyan-600 font-bold py-3 rounded-2xl hover:bg-cyan-50 transition"
+              >
+                <PlusCircle size={16} /> Add Another Shop ({myApprovedShops.length}/{MAX_SHOPS})
+              </button>
+            )}
           <div className="bg-white rounded-3xl border-2 border-gray-100 overflow-hidden">
             {!editing && shop.imageUrl && (
               <div className="h-48 bg-gray-100">
@@ -522,6 +598,7 @@ export default function CampusVendorPage() {
               )}
             </div>
           </div>
+          </>
         )}
       </div>
       <Footer />

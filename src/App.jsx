@@ -84,6 +84,7 @@ import AmbassadorNotifications from './pages/ambassador/AmbassadorNotifications'
 import SubmittedEvents from './pages/ambassador/SubmittedEvents';
 import AmbassadorEarnings from './pages/ambassador/AmbassadorEarnings';
 import AdminBusinesses from './pages/admin/AdminBusinesses';
+import AdminPlaceClaims from './pages/admin/AdminPlaceClaims';
 import CityAmbassadorCreate from './pages/ambassador/CityAmbassadorCreate';
 
 // Event Management
@@ -412,6 +413,11 @@ function App() {
               <Route path="/admin/businesses" element={
                 <AdminRoute>
                   <AdminBusinesses />
+                </AdminRoute>
+              } />
+              <Route path="/admin/place-claims" element={
+                <AdminRoute>
+                  <AdminPlaceClaims />
                 </AdminRoute>
               } />
 

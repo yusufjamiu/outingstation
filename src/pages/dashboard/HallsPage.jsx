@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -36,14 +36,42 @@ export default function HallsPage() {
     try {
       setLoading(true);
       const snap = await getDocs(collection(db, 'events'));
-      const all = snap.docs
+      const fromEvents = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(e =>
           e.status === 'published' &&
           e.subCategory === 'places' &&
           (e.category === 'Halls' || e.category === 'Halls & Venues')
         );
-      setHalls(all);
+
+      // ✅ NEW — also pull approved Event Hall businesses registered
+      // through OSB's "List a Place" flow. Was completely invisible here
+      // before — this screen only ever read from events.
+      let fromBusinesses = [];
+      try {
+        const bizSnap = await getDocs(
+          query(collection(db, 'businesses'), where('businessType', '==', 'Event Hall'), where('status', '==', 'approved'))
+        );
+        fromBusinesses = bizSnap.docs.map(d => {
+          const biz = d.data();
+          return {
+            id: d.id,
+            title: biz.businessName,
+            description: biz.description || '',
+            category: 'Halls & Venues',
+            subCategory: 'places',
+            location: biz.city || '',
+            organizerPhone: biz.whatsappNumber,
+            isFree: true,
+            imageUrl: biz.logoUrl,
+            status: 'published',
+          };
+        });
+      } catch (err) {
+        console.error('Error loading Event Hall businesses:', err);
+      }
+
+      setHalls([...fromEvents, ...fromBusinesses]);
     } catch (err) {
       console.error('Error loading halls:', err);
     } finally {

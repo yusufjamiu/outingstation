@@ -6,7 +6,7 @@ import { Briefcase, Palette, UtensilsCrossed, Dumbbell, GraduationCap,
   ShoppingBag, Sparkles } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { filterUpcomingEvents } from '../../utils/eventFilters';
-import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { formatEventDate, formatEventTime } from '../../utils/dateTimeHelpers';
 
@@ -25,7 +25,11 @@ export default function GenericCategory() {
   const [religionFilter, setReligionFilter] = useState('all');
 
   const categoryMap = {
-    'Business & Tech': { icon: Briefcase, color: 'bg-blue-500', hasPlaces: false, isReligion: false },
+    // ✅ FIXED — was hasPlaces: false. Now that Business & Tech has a
+    // real places tile (swapped in for Food & Dining), this needs to be
+    // true or the places-mode subCategory filtering below silently does
+    // nothing at all for this category.
+    'Business & Tech': { icon: Briefcase, color: 'bg-blue-500', hasPlaces: true, isReligion: false },
     'Art & Culture': { icon: Palette, color: 'bg-purple-500', hasPlaces: true, isReligion: false },
     'Food & Dining': { icon: UtensilsCrossed, color: 'bg-orange-500', hasPlaces: true, isReligion: false },
     'Sport & Fitness': { icon: Dumbbell, color: 'bg-green-500', hasPlaces: true, isReligion: false },
@@ -67,6 +71,39 @@ export default function GenericCategory() {
       const snapshot = await getDocs(collection(db, 'events'));
       let allEvents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       allEvents = allEvents.filter(e => e.category === slug && e.status === 'published');
+
+      // ✅ NEW — also pull approved businesses matching this category,
+      // converted into a shape this screen can render. Without this, a
+      // business registered under this theme through OSB had nowhere to
+      // actually show up — this screen only ever read from events.
+      // Only merged in Places mode, since businesses are inherently
+      // places, not events with dates/tickets.
+      if (showingPlaces) {
+        try {
+          const bizSnap = await getDocs(
+            query(collection(db, 'businesses'), where('businessType', '==', slug), where('status', '==', 'approved'))
+          );
+          const fromBusinesses = bizSnap.docs.map(d => {
+            const biz = d.data();
+            return {
+              id: d.id,
+              title: biz.businessName,
+              description: biz.description || '',
+              category: slug,
+              subCategory: 'places',
+              location: biz.city || '',
+              organizerPhone: biz.whatsappNumber,
+              isFree: true,
+              imageUrl: biz.logoUrl,
+              status: 'published',
+            };
+          });
+          allEvents = [...allEvents, ...fromBusinesses];
+        } catch (err) {
+          console.error('Error loading businesses for category:', err);
+        }
+      }
+
       allEvents = filterUpcomingEvents(allEvents);
 
       const userCity = userProfile?.city || 'Lagos';

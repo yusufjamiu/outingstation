@@ -11,10 +11,19 @@ const placeSubCategories = [
   { name: 'Auditorium', icon: '🎭' },
   { name: 'Cafeteria', icon: '🍽️' },
   { name: 'Vendors', icon: '🛒' },
-  { name: 'Shortlets', icon: '🏠' },
+  // ✅ RENAMED — was 'Shortlets', matching mobile's rename for campus
+  // context. The general (non-campus) Shortlets category elsewhere is
+  // untouched.
+  { name: 'Hostel', icon: '🏠' },
   { name: 'Chapel / Mosque', icon: '🕌' },
-  { name: 'Gym', icon: '💪' },
+  // ✅ RENAMED — was 'Gym', matching mobile
+  { name: 'Sport Center', icon: '💪' },
   { name: 'Computer Lab', icon: '💻' },
+  // ✅ NEW — matching mobile's additions exactly
+  { name: 'Admin Block', icon: '🏢' },
+  { name: 'Faculty Building', icon: '🎓' },
+  { name: 'Health Center', icon: '🏥' },
+  { name: 'Bank / ATM', icon: '🏦' },
 ];
 
 const VENDOR_CATEGORIES = [
@@ -34,6 +43,34 @@ const REPORT_REASONS = [
   { value: 'fake', label: '🤥 Fake listing' },
   { value: 'other', label: '💬 Other reason' },
 ];
+
+// ✅ NEW — formats openingDays into a natural label, matching mobile's
+// Event.getTimeDisplay() exactly: 'Every day' if all 7 selected, a range
+// like 'Mon-Fri' if consecutive, comma list otherwise. Empty string if
+// nothing was selected (old places with no days data show exactly as
+// before — times only, no leading label).
+function formatOpeningDays(days) {
+  if (!days || days.length === 0) return '';
+  const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  if (days.length === 7) return 'Every day';
+
+  const indices = days.map(d => order.indexOf(d)).filter(i => i !== -1).sort((a, b) => a - b);
+  if (indices.length === 0) return '';
+
+  const groups = [];
+  let current = [indices[0]];
+  for (let i = 1; i < indices.length; i++) {
+    if (indices[i] === current[current.length - 1] + 1) {
+      current.push(indices[i]);
+    } else {
+      groups.push(current);
+      current = [indices[i]];
+    }
+  }
+  groups.push(current);
+
+  return groups.map(g => g.length === 1 ? order[g[0]] : `${order[g[0]]}-${order[g[g.length - 1]]}`).join(', ');
+}
 
 function ImageCarousel({ images, alt }) {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -731,7 +768,11 @@ export default function CampusPlaces() {
                   <div className="space-y-1 text-xs text-gray-600">
                     {place.university && <div className="flex items-center gap-1.5"><span>🏛️ {place.university}</span></div>}
                     <div className="flex items-center gap-1.5"><MapPin size={12} className="text-cyan-500" /><span>{place.location || 'Campus'}</span></div>
-                    {place.openingTime && place.closingTime && <div className="flex items-center gap-1.5"><span>🕐 {place.openingTime} - {place.closingTime}</span></div>}
+                    {place.openingTime && place.closingTime && (
+                      <div className="flex items-center gap-1.5">
+                        <span>🕐 {formatOpeningDays(place.openingDays) ? `${formatOpeningDays(place.openingDays)} · ` : ''}{place.openingTime} - {place.closingTime}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

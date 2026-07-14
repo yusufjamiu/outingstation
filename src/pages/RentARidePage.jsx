@@ -4,11 +4,79 @@ import { db } from '../firebase';
 import { Link } from 'react-router-dom';
 import {
   Search, SlidersHorizontal, X, MapPin,
-  ChevronLeft, ChevronRight, Heart, Users, Car, Settings2, UserCheck
+  ChevronLeft, ChevronRight, Heart, Users, Car, Settings2, UserCheck, BadgeCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+
+// ✅ UPDATED — gold > green > blue, matching the confirmed order used
+// everywhere else (CAC is a stronger trust signal than Gov ID for a
+// marketplace/rental context specifically)
+function VerificationTick({ govIdStatus, cacStatus }) {
+  const govApproved = govIdStatus === 'approved';
+  const cacApproved = cacStatus === 'approved';
+  if (govApproved && cacApproved) return <BadgeCheck size={14} className="text-amber-500 flex-shrink-0 inline ml-1" />;
+  if (cacApproved) return <BadgeCheck size={14} className="text-emerald-500 flex-shrink-0 inline ml-1" />;
+  if (govApproved) return <BadgeCheck size={14} className="text-blue-500 flex-shrink-0 inline ml-1" />;
+  return null;
+}
+
+// ✅ NEW — same lightbox pattern as MarketplaceCategoryPage.jsx
+function ImageLightbox({ url, onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 text-white p-2 hover:bg-white/10 rounded-full transition">
+        <X size={28} />
+      </button>
+      <img src={url} alt="" className="max-w-full max-h-full object-contain rounded-lg" onClick={e => e.stopPropagation()} />
+    </div>
+  );
+}
+
+// ✅ NEW — business-derived ride listings had no detail view or click
+// handler at all before. This is what clicking one now opens.
+function RideDetailModal({ ride, onClose, onZoom }) {
+  const whatsapp = (ride.whatsappNumber || '').replace(/[^0-9]/g, '');
+  const message = encodeURIComponent(`Hi, I'm interested in "${ride.title}" on OutingStation.`);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white flex justify-end p-3 border-b border-gray-100">
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full transition"><X size={18} /></button>
+        </div>
+        <div className="p-5">
+          {ride.imageUrl && (
+            <div className="h-44 bg-cyan-50 rounded-2xl overflow-hidden flex items-center justify-center mb-4 cursor-zoom-in" onClick={() => onZoom(ride.imageUrl)}>
+              <img src={ride.imageUrl} alt={ride.title} className="w-full h-full object-cover" />
+            </div>
+          )}
+          <p className="text-lg font-black text-gray-900">
+            {ride.title} <VerificationTick govIdStatus={ride.govIdStatus} cacStatus={ride.cacStatus} />
+          </p>
+          {ride.city && <p className="text-sm text-gray-400 mt-1">{ride.city}</p>}
+          <p className="text-xl font-black text-cyan-600 mt-2">
+            {ride.pricePerDay ? `₦${Number(ride.pricePerDay).toLocaleString()}` : 'Price on request'}
+          </p>
+          {ride.withDriver !== null && (
+            <p className="text-xs font-bold text-gray-500 mt-1">{ride.withDriver ? '🚗 With Driver' : '🔑 Self-Drive'}</p>
+          )}
+          {ride.description && <p className="text-sm text-gray-600 mt-3">{ride.description}</p>}
+          {whatsapp && (
+            <a
+              href={`https://wa.me/${whatsapp}?text=${message}`}
+              target="_blank" rel="noreferrer"
+              className="mt-5 block text-center text-sm font-bold text-white bg-emerald-500 px-4 py-3 rounded-xl hover:bg-emerald-600 transition"
+            >
+              Contact on WhatsApp
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const CITIES = ['All Cities', 'Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
 const VEHICLE_TYPES = ['All Types', 'Car', 'SUV', 'Bus', 'Van'];
@@ -62,6 +130,10 @@ export default function RentARidePage() {
   const [driverOption, setDriverOption] = useState('Any');
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
+  // ✅ NEW — business-derived listings had no click handler or detail
+  // view at all before. This state drives the new detail modal.
+  const [selectedRide, setSelectedRide] = useState(null);
+  const [lightboxUrl, setLightboxUrl] = useState(null);
 
   useEffect(() => { loadVehicles(); }, []);
   useEffect(() => { if (currentUser) loadSaved(); }, [currentUser]);
@@ -94,6 +166,9 @@ export default function RentARidePage() {
             whatsappNumber: biz.whatsappNumber,
             description: pkg.description || biz.description || null,
             withDriver: typeof pkg.withDriver === 'boolean' ? pkg.withDriver : null,
+            // ✅ NEW — carried over for the verification tick
+            govIdStatus: biz.govIdStatus || null,
+            cacStatus: biz.cacStatus || null,
           });
         });
       });
@@ -235,7 +310,8 @@ export default function RentARidePage() {
                         <img
                           src={v.imageUrl || 'https://images.unsplash.com/photo-1502877338535-766e1452684a?w=400&h=300&fit=crop'}
                           alt={v.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onClick={() => setSelectedRide(v)}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
                         />
                       ) : (
                         <Link to={`/vehicle/${v.id}`}>
@@ -269,7 +345,12 @@ export default function RentARidePage() {
                     </div>
                     <div className="p-4 flex flex-col flex-1">
                       {isBusiness ? (
-                        <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2">{v.title}</h3>
+                        <h3
+                          onClick={() => setSelectedRide(v)}
+                          className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 cursor-pointer hover:text-cyan-600 transition"
+                        >
+                          {v.title} <VerificationTick govIdStatus={v.govIdStatus} cacStatus={v.cacStatus} />
+                        </h3>
                       ) : (
                         <Link to={`/vehicle/${v.id}`}>
                           <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-cyan-500 transition">
@@ -365,6 +446,15 @@ export default function RentARidePage() {
       </div>
 
       <Footer />
+
+      {selectedRide && (
+        <RideDetailModal
+          ride={selectedRide}
+          onClose={() => setSelectedRide(null)}
+          onZoom={(url) => setLightboxUrl(url)}
+        />
+      )}
+      {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
     </div>
   );
 }

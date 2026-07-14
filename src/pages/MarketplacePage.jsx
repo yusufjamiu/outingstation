@@ -2,14 +2,15 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-import { Palette, PawPrint, Gift, ShoppingBasket, Cake, CupSoda } from 'lucide-react';
+import { Palette, PawPrint, Gift, ShoppingBasket, Cake, CupSoda, Shirt } from 'lucide-react';
 
 export const MARKETPLACE_SECTIONS = [
-  { type: 'Decorator', slug: 'decorator', label: 'Decorators', icon: Palette },
+  { type: 'Baker', slug: 'baker', label: 'Bakers', icon: Cake },
+  { type: 'Laundry Service', slug: 'laundry-service', label: 'Laundry', icon: Shirt },
+  { type: 'Food Stuffs Seller', slug: 'food-stuffs-seller', label: 'Food Stuffs', icon: ShoppingBasket },
   { type: 'Livestock Seller', slug: 'livestock-seller', label: 'Livestock', icon: PawPrint },
   { type: 'Gift Vendor', slug: 'gift-vendor', label: 'Gift Vendors', icon: Gift },
-  { type: 'Food Stuffs Seller', slug: 'food-stuffs-seller', label: 'Food Stuffs', icon: ShoppingBasket },
-  { type: 'Baker', slug: 'baker', label: 'Bakers', icon: Cake },
+  { type: 'Decorator', slug: 'decorator', label: 'Decorators', icon: Palette },
   { type: 'Beverages Seller', slug: 'beverages-seller', label: 'Beverages', icon: CupSoda },
 ];
 

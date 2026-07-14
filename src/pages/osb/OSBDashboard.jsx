@@ -9,7 +9,7 @@ import SwitchingOverlay from '../../components/SwitchingOverlay';
 import {
   Store, Clock, Tag, CheckCircle2, Clock as ClockIcon, XCircle, Inbox, MapPin,
   Upload, Plus, Trash2, LayoutDashboard, User, ClipboardList, MessageSquare,
-  Ticket, Star, Wallet, Settings, Tent, FileCheck, Menu,
+  Ticket, Star, Wallet, Settings, Tent, FileCheck, Menu, BadgeCheck, Lock,
 } from 'lucide-react';
 
 const HOURLY_TYPES = ['DJ', 'MC', 'Musician', 'Photographer'];
@@ -40,6 +40,7 @@ const SERVICE_PROVIDER_NAV = [
   { key: 'events', label: 'My Events', icon: Ticket, comingSoon: true },
   { key: 'reviews', label: 'Reviews', icon: Star, comingSoon: true },
   { key: 'earnings', label: 'Earnings', icon: Wallet, comingSoon: true },
+  { key: 'verification', label: 'Verification', icon: FileCheck },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -51,6 +52,7 @@ const EVENT_VENDOR_NAV = [
   { key: 'active', label: 'Active Stands', icon: CheckCircle2 },
   { key: 'reviews', label: 'Reviews', icon: Star, comingSoon: true },
   { key: 'transactions', label: 'Transactions', icon: Wallet },
+  { key: 'verification', label: 'Verification', icon: BadgeCheck },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -124,6 +126,16 @@ function ComingSoon({ label }) {
       <p className="text-sm text-gray-400">This isn't built yet. Nothing to see here for now.</p>
     </div>
   );
+}
+
+// ✅ NEW — small status label for a single verification document
+function VerifyStatusPill({ status }) {
+  const config = {
+    pending: { label: 'Under Review', color: 'bg-amber-100 text-amber-700' },
+    approved: { label: 'Approved', color: 'bg-emerald-100 text-emerald-700' },
+    rejected: { label: 'Rejected', color: 'bg-red-100 text-red-600' },
+  }[status] || { label: 'Not Uploaded', color: 'bg-gray-100 text-gray-500' };
+  return <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${config.color}`}>{config.label}</span>;
 }
 
 function StatCard({ label, value, icon: Icon }) {
@@ -418,6 +430,25 @@ export default function OSBDashboard() {
       alert('Failed to save pricing.');
     }
     setSavingPricing(false);
+  };
+
+  // ✅ NEW — submits a Gov ID or CAC upload for review. Always writes
+  // status:'pending' — matches the Firestore rule exactly, which only
+  // lets the owner submit as pending, never self-approve.
+  const submitVerificationDoc = async (type, url) => {
+    if (!selectedBusiness) return;
+    const field = type === 'gov' ? 'govIdUrl' : 'cacUrl';
+    const statusField = type === 'gov' ? 'govIdStatus' : 'cacStatus';
+    try {
+      await updateDoc(doc(db, 'businesses', selectedBusiness.id), {
+        [field]: url,
+        [statusField]: 'pending',
+      });
+      setBusinesses(prev => prev.map(b => b.id === selectedBusiness.id ? { ...b, [field]: url, [statusField]: 'pending' } : b));
+    } catch (err) {
+      console.error('Error submitting verification doc:', err);
+      alert('Failed to submit. Please try again.');
+    }
   };
 
   const handleSaveSettings = async () => {
@@ -881,6 +912,64 @@ export default function OSBDashboard() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {activeSection === 'verification' && selectedBusiness && (
+                <div className="bg-white rounded-3xl border-2 border-gray-100 p-6">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-bold text-gray-800">Verification</h3>
+                    {selectedBusiness.govIdStatus === 'approved' && selectedBusiness.cacStatus === 'approved' && (
+                      <BadgeCheck size={16} className="text-amber-500" />
+                    )}
+                    {selectedBusiness.govIdStatus === 'approved' && selectedBusiness.cacStatus !== 'approved' && (
+                      <BadgeCheck size={16} className="text-blue-500" />
+                    )}
+                    {selectedBusiness.cacStatus === 'approved' && selectedBusiness.govIdStatus !== 'approved' && (
+                      <BadgeCheck size={16} className="text-emerald-500" />
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500 mb-6">Upload your documents to earn a verification badge customers can see.</p>
+
+                  {/* Gov ID */}
+                  <div className="border-2 border-gray-100 rounded-2xl p-4 mb-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="font-bold text-sm text-gray-800">Government ID</p>
+                      <VerifyStatusPill status={selectedBusiness.govIdStatus} />
+                    </div>
+                    <p className="text-xs text-gray-400 mb-3">Approved earns the blue tick.</p>
+                    {(selectedBusiness.govIdStatus === 'none' || !selectedBusiness.govIdStatus || selectedBusiness.govIdStatus === 'rejected') ? (
+                      <ImageUploadSlot
+                        imageUrl={selectedBusiness.govIdStatus === 'rejected' ? '' : selectedBusiness.govIdUrl}
+                        onUploaded={url => submitVerificationDoc('gov', url)}
+                        folder="business-verification"
+                      />
+                    ) : (
+                      selectedBusiness.govIdUrl && (
+                        <img src={selectedBusiness.govIdUrl} alt="Gov ID" className="w-24 h-24 rounded-xl object-cover border border-gray-200" />
+                      )
+                    )}
+                  </div>
+
+                  {/* CAC */}
+                  <div className="border-2 border-gray-100 rounded-2xl p-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="font-bold text-sm text-gray-800">CAC Registration</p>
+                      <VerifyStatusPill status={selectedBusiness.cacStatus} />
+                    </div>
+                    <p className="text-xs text-gray-400 mb-3">Approved earns the green tick. Both approved earns gold.</p>
+                    {(selectedBusiness.cacStatus === 'none' || !selectedBusiness.cacStatus || selectedBusiness.cacStatus === 'rejected') ? (
+                      <ImageUploadSlot
+                        imageUrl={selectedBusiness.cacStatus === 'rejected' ? '' : selectedBusiness.cacUrl}
+                        onUploaded={url => submitVerificationDoc('cac', url)}
+                        folder="business-verification"
+                      />
+                    ) : (
+                      selectedBusiness.cacUrl && (
+                        <img src={selectedBusiness.cacUrl} alt="CAC" className="w-24 h-24 rounded-xl object-cover border border-gray-200" />
+                      )
+                    )}
+                  </div>
                 </div>
               )}
 
