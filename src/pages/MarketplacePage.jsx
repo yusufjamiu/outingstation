@@ -2,11 +2,15 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-import { Palette, PawPrint, Gift, ShoppingBasket, Cake, CupSoda, Shirt } from 'lucide-react';
+import { Palette, PawPrint, Gift, ShoppingBasket, Cake, CupSoda, Shirt, Scissors, SprayCan } from 'lucide-react';
 
 export const MARKETPLACE_SECTIONS = [
   { type: 'Baker', slug: 'baker', label: 'Bakers', icon: Cake },
   { type: 'Laundry Service', slug: 'laundry-service', label: 'Laundry', icon: Shirt },
+  { type: 'Tailor', slug: 'tailor', label: 'Tailors', icon: Scissors },
+  { type: 'Caftan Seller', slug: 'caftan-seller', label: 'Caftans', icon: Shirt },
+  { type: 'Traditional Caps', slug: 'traditional-caps', label: 'Traditional Caps', icon: Shirt },
+  { type: 'Perfume Seller', slug: 'perfume-seller', label: 'Perfumes', icon: SprayCan },
   { type: 'Food Stuffs Seller', slug: 'food-stuffs-seller', label: 'Food Stuffs', icon: ShoppingBasket },
   { type: 'Livestock Seller', slug: 'livestock-seller', label: 'Livestock', icon: PawPrint },
   { type: 'Gift Vendor', slug: 'gift-vendor', label: 'Gift Vendors', icon: Gift },

@@ -216,6 +216,11 @@ export default function AmbassadorVendors() {
         approvedAt: serverTimestamp(),
         approvedByAmbassador: true,
         submittedBy: submission.organizerEmail || null,
+        // ✅ FIX — same gap as AdminVendors.jsx: without ownerId, a shop
+        // approved here could never be found again by its real owner if
+        // they typed a different email into the submission form than
+        // their actual logged-in account.
+        ownerId: submission.ownerId || null,
         organizerName: submission.organizerName || null,
         organizerPhone: submission.organizerPhone || null,
         submissionId: submission.id,

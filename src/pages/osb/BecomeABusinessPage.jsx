@@ -10,7 +10,7 @@ import {
   Building2, Music, UtensilsCrossed, Palette, Camera, Mic2,
   Guitar, Car, Store, PawPrint, Sparkles, Armchair, ShieldCheck,
   Compass, Shirt, Smartphone, Wand2, BookOpen, Gem, Briefcase,
-  Gift, ShoppingBasket, Cake, CupSoda,
+  Gift, ShoppingBasket, Cake, CupSoda, Palmtree, Scissors, SprayCan,
 } from 'lucide-react';
 
 // ✅ Restructured into two real categories — Service Providers get hired by
@@ -31,8 +31,13 @@ const SERVICE_PROVIDER_TYPES = [
   { value: 'Experience Host', icon: Compass },
   { value: 'Security', icon: ShieldCheck },
   { value: 'Restaurant', icon: UtensilsCrossed },
+  { value: 'Resort', icon: Palmtree },
   { value: 'Livestock Seller', icon: PawPrint },
   { value: 'Laundry Service', icon: Shirt },
+  { value: 'Tailor', icon: Scissors },
+  { value: 'Caftan Seller', icon: Shirt },
+  { value: 'Traditional Caps', icon: Shirt },
+  { value: 'Perfume Seller', icon: SprayCan },
   { value: 'Gift Vendor', icon: Gift },
   { value: 'Food Stuffs Seller', icon: ShoppingBasket },
   { value: 'Baker', icon: Cake },
