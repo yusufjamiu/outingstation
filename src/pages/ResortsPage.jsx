@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Link } from 'react-router-dom';
 import {
@@ -55,6 +55,32 @@ const EmptyState = ({ onReset }) => (
   </div>
 );
 
+// ✅ NEW — matches CampusPlaces.jsx's formatOpeningDays exactly: 'Every
+// day' if all 7 selected, a range like 'Mon-Fri' if consecutive, comma
+// list otherwise, empty string if nothing selected.
+function formatOpeningDays(days) {
+  if (!days || days.length === 0) return '';
+  const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  if (days.length === 7) return 'Every day';
+
+  const indices = days.map(d => order.indexOf(d)).filter(i => i !== -1).sort((a, b) => a - b);
+  if (indices.length === 0) return '';
+
+  const groups = [];
+  let current = [indices[0]];
+  for (let i = 1; i < indices.length; i++) {
+    if (indices[i] === current[current.length - 1] + 1) {
+      current.push(indices[i]);
+    } else {
+      groups.push(current);
+      current = [indices[i]];
+    }
+  }
+  groups.push(current);
+
+  return groups.map(g => g.length === 1 ? order[g[0]] : `${order[g[0]]}-${order[g[g.length - 1]]}`).join(', ');
+}
+
 export default function ResortsPage() {
   const { currentUser } = useAuth();
   const [resorts, setResorts] = useState([]);
@@ -74,8 +100,55 @@ export default function ResortsPage() {
   const loadResorts = async () => {
     try {
       const snap = await getDocs(collection(db, 'events'));
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(e => e.status === 'published' && e.subCategory === 'places' && isResort(e))
+      const fromEvents = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(e => e.status === 'published' && e.subCategory === 'places' && isResort(e));
+
+      // ✅ NEW — also pull approved Resort businesses registered through
+      // OSB's "List a Place" flow, same fix as mobile's resorts_screen.dart.
+      // Was completely invisible here before.
+      let fromBusinesses = [];
+      try {
+        const bizSnap = await getDocs(
+          query(collection(db, 'businesses'), where('businessType', '==', 'Resort'), where('status', '==', 'approved'))
+        );
+        fromBusinesses = bizSnap.docs.map(d => {
+          const biz = d.data();
+          // ✅ FIXED — package photos (uploaded via My Profile & Services)
+          // never carried over, only the single logoUrl.
+          const packageImages = [...new Set(
+            (biz.pricingTiers || []).map(t => t.image).filter(img => img)
+          )];
+          // ✅ FIXED — card reads alwaysOpen/operatingHours (a formatted
+          // string), not openingTime/closingTime/openingDays directly.
+          // Without this, every business-derived resort showed "Check
+          // hours" regardless of what was actually filled in.
+          const days = biz.openingDays || [];
+          const isAlwaysOpen = days.length === 7;
+          const dayLabel = formatOpeningDays(days);
+          const operatingHours = (biz.openingTime && biz.closingTime)
+            ? `${dayLabel ? dayLabel + ' · ' : ''}${biz.openingTime} - ${biz.closingTime}`
+            : '';
+          return {
+            id: d.id,
+            title: biz.businessName,
+            description: biz.description || '',
+            category: 'Resort',
+            subCategory: 'places',
+            location: biz.city || '',
+            whatsappNumber: biz.whatsappNumber,
+            isFree: true,
+            imageUrl: biz.logoUrl,
+            images: packageImages,
+            status: 'published',
+            alwaysOpen: isAlwaysOpen,
+            operatingHours,
+          };
+        });
+      } catch (err) {
+        console.error('Error loading Resort businesses:', err);
+      }
+
+      const all = [...fromEvents, ...fromBusinesses]
         .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
       setResorts(all);
     } catch (err) {
@@ -204,7 +277,7 @@ export default function ResortsPage() {
                 return (
                   <div key={r.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
                     <div className="relative h-48 overflow-hidden flex-shrink-0">
-                      <Link to={`/e/${r.slug || r.id}`}>
+                      <Link to={`/event/${r.id}`}>
                         <img
                           src={r.imageUrl || 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=400&h=300&fit=crop'}
                           alt={r.title}
@@ -226,7 +299,7 @@ export default function ResortsPage() {
                       </div>
                     </div>
                     <div className="p-4 flex flex-col flex-1">
-                      <Link to={`/e/${r.slug || r.id}`}>
+                      <Link to={`/event/${r.id}`}>
                         <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-cyan-500 transition">
                           {r.title}
                         </h3>

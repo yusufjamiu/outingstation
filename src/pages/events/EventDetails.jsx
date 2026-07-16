@@ -60,10 +60,11 @@ const generateTicketId = () => {
 // ─── Image Carousel ───────────────────────────────────────────────────────────
 
 function EventImageCarousel({ event, isPlace }) {
+  // ✅ EXTENDED — was capped at 10, now 20, matching mobile
   const allImages = [
     ...(event.imageUrl ? [event.imageUrl] : []),
     ...(event.images || []).filter(img => img && img !== event.imageUrl),
-  ].slice(0, 10);
+  ].slice(0, 20);
 
   if (allImages.length === 0) {
     allImages.push('https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80');
@@ -1111,8 +1112,39 @@ export default function EventDetails() {
 
       if (id) {
         const eventDoc = await getDoc(doc(db, 'events', id));
-        if (!eventDoc.exists()) { navigate('/events'); return; }
-        eventData = { id: eventDoc.id, ...eventDoc.data() };
+        if (eventDoc.exists()) {
+          eventData = { id: eventDoc.id, ...eventDoc.data() };
+        } else {
+          // ✅ NEW — fallback to businesses. A business registered through
+          // OSB (Event Hall/Restaurant/Resort/the 8 discover themes) has
+          // no matching document in 'events' at all, so the lookup above
+          // always failed and silently redirected away. This constructs
+          // the same shape the list pages already build when merging
+          // businesses in, so this page can render it identically to a
+          // real event/place.
+          const bizDoc = await getDoc(doc(db, 'businesses', id));
+          if (!bizDoc.exists()) { navigate('/events'); return; }
+          const biz = bizDoc.data();
+          const packageImages = [...new Set(
+            (biz.pricingTiers || []).map(t => t.image).filter(img => img)
+          )];
+          eventData = {
+            id: bizDoc.id,
+            title: biz.businessName,
+            description: biz.description || '',
+            category: biz.businessType,
+            subCategory: 'places',
+            location: biz.city || '',
+            organizerPhone: biz.whatsappNumber,
+            isFree: true,
+            imageUrl: biz.logoUrl,
+            images: packageImages,
+            status: 'published',
+            openingTime: biz.openingTime || null,
+            closingTime: biz.closingTime || null,
+            openingDays: biz.openingDays || [],
+          };
+        }
       } else if (slug) {
         const q = query(collection(db, 'events'), where('slug', '==', slug));
         const snapshot = await getDocs(q);

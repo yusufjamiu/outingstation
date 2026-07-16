@@ -2,20 +2,26 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-import { Palette, PawPrint, Gift, ShoppingBasket, Cake, CupSoda, Shirt, Scissors, SprayCan } from 'lucide-react';
+import { PawPrint, Gift, ShoppingBasket, Cake, CupSoda, Shirt, Scissors, SprayCan, Watch, Gem, Wrench, ShoppingBag, Briefcase } from 'lucide-react';
 
+// ✅ REORDERED — grouped by theme instead of insertion order: fashion &
+// wearables together, then food together, then utility categories last.
 export const MARKETPLACE_SECTIONS = [
-  { type: 'Baker', slug: 'baker', label: 'Bakers', icon: Cake },
-  { type: 'Laundry Service', slug: 'laundry-service', label: 'Laundry', icon: Shirt },
   { type: 'Tailor', slug: 'tailor', label: 'Tailors', icon: Scissors },
+  { type: 'Cobbler', slug: 'cobbler', label: 'Cobblers', icon: Wrench },
+  { type: 'Footwear Seller', slug: 'footwear-seller', label: 'Footwear', icon: ShoppingBag },
+  { type: 'Bag & Accessories', slug: 'bag-accessories', label: 'Bags & Accessories', icon: Briefcase },
   { type: 'Caftan Seller', slug: 'caftan-seller', label: 'Caftans', icon: Shirt },
   { type: 'Traditional Caps', slug: 'traditional-caps', label: 'Traditional Caps', icon: Shirt },
+  { type: 'Premium Watches', slug: 'premium-watches', label: 'Premium Watches', icon: Watch },
+  { type: 'Jewelry', slug: 'jewelry', label: 'Jewelry', icon: Gem },
   { type: 'Perfume Seller', slug: 'perfume-seller', label: 'Perfumes', icon: SprayCan },
+  { type: 'Baker', slug: 'baker', label: 'Bakers', icon: Cake },
   { type: 'Food Stuffs Seller', slug: 'food-stuffs-seller', label: 'Food Stuffs', icon: ShoppingBasket },
   { type: 'Livestock Seller', slug: 'livestock-seller', label: 'Livestock', icon: PawPrint },
-  { type: 'Gift Vendor', slug: 'gift-vendor', label: 'Gift Vendors', icon: Gift },
-  { type: 'Decorator', slug: 'decorator', label: 'Decorators', icon: Palette },
   { type: 'Beverages Seller', slug: 'beverages-seller', label: 'Beverages', icon: CupSoda },
+  { type: 'Laundry Service', slug: 'laundry-service', label: 'Laundry', icon: Shirt },
+  { type: 'Gift Vendor', slug: 'gift-vendor', label: 'Gift Vendors', icon: Gift },
 ];
 
 export default function MarketplacePage() {

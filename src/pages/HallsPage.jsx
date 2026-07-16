@@ -1,313 +1,325 @@
-import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Link } from 'react-router-dom';
-import {
-  Search, SlidersHorizontal, X, MapPin,
-  ChevronLeft, ChevronRight, Heart, Users, Building2
-} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import Navbar from '../components/Navbar';
-import Footer from '../components/Footer';
+import { doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { Heart, MapPin, Users, Phone, Clock, ChevronDown } from 'lucide-react';
 
-const CITIES = ['All Cities', 'Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
-const CAPACITIES = ['Any Capacity', 'Up to 100', '100 - 300', '300 - 500', '500+'];
-const PRICES = ['All', 'Under ₦100k', '₦100k - ₦500k', 'Above ₦500k'];
-const HALLS_PER_PAGE = 12;
+// ✅ NEW — formats openingDays into a natural label, matching mobile's
+// Event.getTimeDisplay() and CampusPlaces.jsx exactly.
+function formatOpeningDays(days) {
+  if (!days || days.length === 0) return '';
+  const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  if (days.length === 7) return 'Every day';
+  const indices = days.map(d => order.indexOf(d)).filter(i => i !== -1).sort((a, b) => a - b);
+  if (indices.length === 0) return '';
+  const groups = [];
+  let current = [indices[0]];
+  for (let i = 1; i < indices.length; i++) {
+    if (indices[i] === current[current.length - 1] + 1) current.push(indices[i]);
+    else { groups.push(current); current = [indices[i]]; }
+  }
+  groups.push(current);
+  return groups.map(g => g.length === 1 ? order[g[0]] : `${order[g[0]]}-${order[g[g.length - 1]]}`).join(', ');
+}
 
-const matchesCapacity = (cap, filter) => {
-  if (filter === 'Any Capacity') return true;
-  const c = Number(cap) || 0;
-  if (filter === 'Up to 100') return c <= 100;
-  if (filter === '100 - 300') return c > 100 && c <= 300;
-  if (filter === '300 - 500') return c > 300 && c <= 500;
-  if (filter === '500+') return c > 500;
-  return true;
-};
-
-const matchesPrice = (price, filter) => {
-  if (filter === 'All') return true;
-  const p = Number(price) || 0;
-  if (filter === 'Under ₦100k') return p < 100000;
-  if (filter === '₦100k - ₦500k') return p >= 100000 && p <= 500000;
-  if (filter === 'Above ₦500k') return p > 500000;
-  return true;
-};
-
-const SkeletonCard = () => (
-  <div className="bg-white rounded-2xl overflow-hidden shadow-sm animate-pulse">
-    <div className="h-48 bg-gray-200" />
-    <div className="p-4 space-y-3">
-      <div className="h-4 bg-gray-200 rounded-full w-3/4" />
-      <div className="h-3 bg-gray-200 rounded-full w-1/2" />
-      <div className="h-3 bg-gray-200 rounded-full w-2/3" />
-    </div>
-  </div>
-);
-
-const EmptyState = ({ onReset }) => (
-  <div className="col-span-full flex flex-col items-center justify-center py-20 px-4">
-    <div className="w-20 h-20 bg-cyan-50 rounded-full flex items-center justify-center mb-4">
-      <Building2 size={36} className="text-cyan-400" />
-    </div>
-    <h3 className="text-xl font-bold text-gray-900 mb-2">No halls found</h3>
-    <p className="text-gray-500 text-center max-w-sm mb-6">
-      Try adjusting your filters, or check back later as more venues are added.
-    </p>
-    <button
-      onClick={onReset}
-      className="px-6 py-3 bg-cyan-500 text-white rounded-full font-medium hover:bg-cyan-600 transition"
-    >
-      Clear Filters
-    </button>
-  </div>
-);
+const NIGERIAN_CITIES = [
+  'All Cities',
+  'Lagos', 'Abuja', 'Port Harcourt', 'Ibadan', 'Kano',
+  'Benin City', 'Enugu', 'Calabar', 'Kaduna', 'Jos',
+  'Uyo', 'Owerri', 'Asaba', 'Warri', 'Ilorin',
+  'Abeokuta', 'Osogbo', 'Akure', 'Ado-Ekiti', 'Yenagoa',
+];
 
 export default function HallsPage() {
-  const { currentUser } = useAuth();
-  const [halls, setHalls] = useState([]);
-  const [filtered, setFiltered] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [savedEvents, setSavedEvents] = useState([]);
-  const [search, setSearch] = useState('');
-  const [city, setCity] = useState('All Cities');
-  const [capacity, setCapacity] = useState('Any Capacity');
-  const [price, setPrice] = useState('All');
-  const [showFilters, setShowFilters] = useState(false);
-  const [page, setPage] = useState(1);
+  const navigate = useNavigate();
+  const { currentUser, userProfile } = useAuth();
+  const { searchQuery } = useOutletContext();
 
-  useEffect(() => { loadHalls(); }, []);
-  useEffect(() => { if (currentUser) loadSaved(); }, [currentUser]);
-  useEffect(() => { applyFilters(); }, [halls, search, city, capacity, price]);
+  const [halls, setHalls]           = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [selectedCity, setSelectedCity] = useState('All Cities');
+  const [savedIds, setSavedIds]     = useState([]);
+  const [showAllCities, setShowAllCities] = useState(false);
+
+  const VISIBLE_CITIES = showAllCities ? NIGERIAN_CITIES : NIGERIAN_CITIES.slice(0, 8);
+
+  useEffect(() => {
+    loadHalls();
+    loadSaved();
+  }, [currentUser]);
 
   const loadHalls = async () => {
     try {
+      setLoading(true);
       const snap = await getDocs(collection(db, 'events'));
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const fromEvents = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
         .filter(e =>
           e.status === 'published' &&
           e.subCategory === 'places' &&
-          (e.category === 'Halls' || e.category === 'Halls & Venues' ||
-           e.eventCategory === 'Halls' || e.eventCategory === 'Halls & Venues')
-        )
-        .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-      setHalls(all);
+          (e.category === 'Halls' || e.category === 'Halls & Venues')
+        );
+
+      // ✅ NEW — also pull approved Event Hall businesses registered
+      // through OSB's "List a Place" flow. Was completely invisible here
+      // before — this screen only ever read from events.
+      let fromBusinesses = [];
+      try {
+        const bizSnap = await getDocs(
+          query(collection(db, 'businesses'), where('businessType', '==', 'Event Hall'), where('status', '==', 'approved'))
+        );
+        fromBusinesses = bizSnap.docs.map(d => {
+          const biz = d.data();
+          // ✅ FIXED — package photos never carried over, only logoUrl.
+          const packageImages = [...new Set(
+            (biz.pricingTiers || []).map(t => t.image).filter(img => img)
+          )];
+          return {
+            id: d.id,
+            title: biz.businessName,
+            description: biz.description || '',
+            category: 'Halls & Venues',
+            subCategory: 'places',
+            location: biz.city || '',
+            organizerPhone: biz.whatsappNumber,
+            isFree: true,
+            imageUrl: biz.logoUrl,
+            images: packageImages,
+            status: 'published',
+            openingTime: biz.openingTime || null,
+            closingTime: biz.closingTime || null,
+            openingDays: biz.openingDays || [],
+          };
+        });
+      } catch (err) {
+        console.error('Error loading Event Hall businesses:', err);
+      }
+
+      setHalls([...fromEvents, ...fromBusinesses]);
     } catch (err) {
       console.error('Error loading halls:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const loadSaved = async () => {
-    try {
-      const snap = await getDoc(doc(db, 'users', currentUser.uid));
-      setSavedEvents(snap.data()?.savedEvents || []);
-    } catch (err) { console.error(err); }
-  };
-
-  const toggleSave = async (hallId) => {
     if (!currentUser) return;
-    const isSaved = savedEvents.includes(hallId);
-    setSavedEvents(prev => isSaved ? prev.filter(id => id !== hallId) : [...prev, hallId]);
     try {
-      await updateDoc(doc(db, 'users', currentUser.uid), {
-        savedEvents: isSaved ? arrayRemove(hallId) : arrayUnion(hallId),
-      });
-    } catch (err) { console.error(err); }
-  };
-
-  const applyFilters = () => {
-    let result = [...halls];
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(e =>
-        e.title?.toLowerCase().includes(q) ||
-        e.location?.toLowerCase().includes(q) ||
-        e.address?.toLowerCase().includes(q)
-      );
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (userDoc.exists()) setSavedIds(userDoc.data().savedEvents || []);
+    } catch (err) {
+      console.error(err);
     }
-    if (city !== 'All Cities') result = result.filter(e => e.city === city || (e.location || '').includes(city));
-    result = result.filter(e => matchesCapacity(e.capacity, capacity));
-    result = result.filter(e => e.isFree || matchesPrice(e.ticketPrice, price));
-    setFiltered(result);
-    setPage(1);
   };
 
-  const resetFilters = () => {
-    setSearch(''); setCity('All Cities'); setCapacity('Any Capacity'); setPrice('All'); setPage(1);
+  const handleSave = async (e, id) => {
+    e.stopPropagation();
+    if (!currentUser) { navigate('/login'); return; }
+    const isSaved = savedIds.includes(id);
+    try {
+      const ref = doc(db, 'users', currentUser.uid);
+      if (isSaved) {
+        await updateDoc(ref, { savedEvents: arrayRemove(id) });
+        setSavedIds(prev => prev.filter(x => x !== id));
+      } else {
+        await updateDoc(ref, { savedEvents: arrayUnion(id) });
+        setSavedIds(prev => [...prev, id]);
+      }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const totalPages = Math.ceil(filtered.length / HALLS_PER_PAGE);
-  const paginated = filtered.slice((page - 1) * HALLS_PER_PAGE, page * HALLS_PER_PAGE);
-  const activeFilterCount = [city !== 'All Cities', capacity !== 'Any Capacity', price !== 'All'].filter(Boolean).length;
+  // ✅ Filter by selected city + search query
+  const displayed = halls.filter(h => {
+    const loc = (h.location || '').toLowerCase();
+    const cityMatch = selectedCity === 'All Cities' || loc.includes(selectedCity.toLowerCase());
+    const searchMatch = !searchQuery?.trim() ||
+      h.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      h.location?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      h.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    return cityMatch && searchMatch;
+  });
+
+  const getImage = (h) => h.imageUrl || (h.images && h.images[0]) ||
+    'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80';
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
+    <div className="p-4 sm:p-6 lg:p-8">
 
       {/* Header */}
-      <div className="bg-white border-b border-gray-100 py-8 px-4">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Find A Hall</h1>
-          <p className="text-gray-500">Event centers and venues you can book for your next event</p>
+      <div className="mb-6">
+        <div className="flex items-center gap-4 mb-2">
+          <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-teal-500 rounded-2xl flex items-center justify-center flex-shrink-0">
+            <span className="text-2xl">🏛️</span>
+          </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Halls & Venues</h1>
+            <p className="text-sm text-gray-500">Event halls, conference centres & venues across Nigeria</p>
+          </div>
+        </div>
+      </div>
 
-          {/* Search */}
-          <div className="mt-6 flex gap-3">
-            <div className="flex-1 relative">
-              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search halls by name or area..."
-                className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition"
-              />
-            </div>
+      {/* City filter chips */}
+      <div className="mb-6 bg-white rounded-2xl border border-gray-100 p-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Filter by City</p>
+        <div className="flex flex-wrap gap-2">
+          {VISIBLE_CITIES.map(city => (
             <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 text-sm font-medium transition ${
-                showFilters || activeFilterCount > 0
-                  ? 'border-cyan-500 bg-cyan-50 text-cyan-600'
-                  : 'border-gray-200 text-gray-700 hover:border-cyan-400'
+              key={city}
+              onClick={() => setSelectedCity(city)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                selectedCity === city
+                  ? 'bg-cyan-500 text-white shadow-sm'
+                  : 'bg-gray-50 text-gray-600 border border-gray-200 hover:border-cyan-400'
               }`}
             >
-              <SlidersHorizontal size={16} />
-              Filters
-              {activeFilterCount > 0 && (
-                <span className="bg-cyan-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                  {activeFilterCount}
-                </span>
-              )}
+              {city}
             </button>
-          </div>
+          ))}
+          <button
+            onClick={() => setShowAllCities(v => !v)}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold text-cyan-600 border border-cyan-200 hover:bg-cyan-50 transition flex items-center gap-1"
+          >
+            {showAllCities ? 'Show less' : `+${NIGERIAN_CITIES.length - 8} more`}
+            <ChevronDown size={12} className={`transition-transform ${showAllCities ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+      </div>
 
-          {/* Filters */}
-          {showFilters && (
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-3">
-              <select value={city} onChange={e => setCity(e.target.value)}
-                className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
-                {CITIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-              <select value={capacity} onChange={e => setCapacity(e.target.value)}
-                className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
-                {CAPACITIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-              <select value={price} onChange={e => setPrice(e.target.value)}
-                className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
-                {PRICES.map(p => <option key={p}>{p}</option>)}
-              </select>
-            </div>
+      {/* Count */}
+      <p className="text-sm text-gray-500 font-medium mb-4">
+        {displayed.length} hall{displayed.length !== 1 ? 's' : ''} found
+        {selectedCity !== 'All Cities' && ` in ${selectedCity}`}
+        {searchQuery && ` for "${searchQuery}"`}
+      </p>
+
+      {/* Grid */}
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500" />
+        </div>
+      ) : displayed.length === 0 ? (
+        <div className="text-center py-20">
+          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">🏛️</span>
+          </div>
+          <p className="text-gray-700 text-lg font-medium mb-2">
+            No halls found {selectedCity !== 'All Cities' ? `in ${selectedCity}` : ''}
+          </p>
+          <p className="text-gray-400 text-sm mb-6">
+            {selectedCity !== 'All Cities'
+              ? 'Try selecting a different city or view all cities.'
+              : 'Check back soon — we\'re adding more venues daily!'}
+          </p>
+          {selectedCity !== 'All Cities' && (
+            <button
+              onClick={() => setSelectedCity('All Cities')}
+              className="px-6 py-2.5 bg-cyan-500 text-white rounded-xl font-semibold text-sm hover:bg-cyan-600 transition"
+            >
+              View All Cities
+            </button>
           )}
         </div>
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+          {displayed.map(hall => {
+            const isSaved = savedIds.includes(hall.id);
+            return (
+              <div
+                key={hall.id}
+                onClick={() => navigate(`/event/${hall.id}`)}
+                className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg border border-gray-100 transition-all cursor-pointer group"
+              >
+                {/* Image */}
+                <div className="relative h-48">
+                  <img
+                    src={getImage(hall)}
+                    alt={hall.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                  />
+                  {/* City badge */}
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-cyan-500 text-white text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1">
+                      <MapPin size={10} /> {(hall.location || '').split(',')[0].trim() || 'Nigeria'}
+                    </span>
+                  </div>
+                  {/* Save button */}
+                  <button
+                    onClick={(e) => handleSave(e, hall.id)}
+                    className="absolute top-3 right-3 w-9 h-9 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition shadow-sm"
+                  >
+                    <Heart
+                      size={16}
+                      className={isSaved ? 'text-red-500 fill-red-500' : 'text-gray-400'}
+                    />
+                  </button>
+                  {/* Free badge */}
+                  {hall.isFree && (
+                    <div className="absolute bottom-3 right-3">
+                      <span className="bg-emerald-500 text-white text-xs px-2.5 py-1 rounded-lg font-semibold">
+                        Free Entry
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-      {/* Results */}
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {!loading && (
-          <div className="flex items-center justify-between mb-6">
-            <p className="text-sm text-gray-500">
-              {filtered.length} hall{filtered.length !== 1 ? 's' : ''} found
-            </p>
-            {activeFilterCount > 0 && (
-              <button onClick={resetFilters} className="flex items-center gap-1 text-sm text-red-500 hover:text-red-600">
-                <X size={14} /> Clear filters
-              </button>
-            )}
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-          {loading
-            ? [...Array(8)].map((_, i) => <SkeletonCard key={i} />)
-            : paginated.length === 0
-            ? <EmptyState onReset={resetFilters} />
-            : paginated.map(hall => {
-                const isSaved = savedEvents.includes(hall.id);
-                const hallPrice = hall.ticketPrice;
-                return (
-                  <div key={hall.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
-                    <div className="relative h-48 overflow-hidden flex-shrink-0">
-                      <Link to={`/e/${hall.slug || hall.id}`}>
-                        <img
-                          src={hall.imageUrl || 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=400&h=300&fit=crop'}
-                          alt={hall.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                      </Link>
-                      {currentUser && (
-                        <button
-                          onClick={() => toggleSave(hall.id)}
-                          className="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow hover:scale-110 transition"
-                        >
-                          <Heart size={14} className={isSaved ? 'fill-red-500 text-red-500' : 'text-gray-400'} />
-                        </button>
-                      )}
-                      <div className="absolute bottom-3 left-3">
-                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${hall.isFree ? 'bg-emerald-500 text-white' : 'bg-white text-gray-800'}`}>
-                          {hall.isFree ? 'Free Entry' : hallPrice ? `₦${Number(hallPrice).toLocaleString()} / booking` : 'Price on request'}
+                {/* Details */}
+                <div className="p-4">
+                  <h3 className="font-bold text-gray-900 text-base mb-1 group-hover:text-cyan-600 transition line-clamp-2">
+                    {hall.title}
+                  </h3>
+                  {hall.description && (
+                    <p className="text-xs text-gray-500 mb-3 line-clamp-2">{hall.description}</p>
+                  )}
+                  <div className="space-y-1.5 text-xs text-gray-500">
+                    <div className="flex items-center gap-1.5">
+                      <MapPin size={12} className="text-cyan-500 flex-shrink-0" />
+                      <span className="truncate">{hall.address || hall.location || 'Nigeria'}</span>
+                    </div>
+                    {(hall.openingTime || hall.closingTime) && (
+                      <div className="flex items-center gap-1.5">
+                        <Clock size={12} className="text-cyan-500 flex-shrink-0" />
+                        <span>
+                          {formatOpeningDays(hall.openingDays) ? `${formatOpeningDays(hall.openingDays)} · ` : ''}
+                          {hall.openingTime && hall.closingTime
+                            ? `${hall.openingTime} – ${hall.closingTime}`
+                            : hall.openingTime || hall.closingTime}
                         </span>
                       </div>
-                    </div>
-                    <div className="p-4 flex flex-col flex-1">
-                      <Link to={`/e/${hall.slug || hall.id}`}>
-                        <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-cyan-500 transition">
-                          {hall.title}
-                        </h3>
-                      </Link>
-                      <div className="space-y-1.5 mt-auto">
-                        {hall.capacity && (
-                          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                            <Users size={12} className="text-cyan-400 flex-shrink-0" />
-                            <span>Up to {hall.capacity} guests</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <MapPin size={12} className="text-cyan-400 flex-shrink-0" />
-                          <span className="line-clamp-1">{hall.address || hall.location || hall.city || 'Lagos'}</span>
-                        </div>
+                    )}
+                    {hall.capacity && (
+                      <div className="flex items-center gap-1.5">
+                        <Users size={12} className="text-cyan-500 flex-shrink-0" />
+                        <span>Capacity: {hall.capacity}</span>
                       </div>
-                    </div>
+                    )}
+                    {hall.organizerPhone && (
+                      <div className="flex items-center gap-1.5">
+                        <Phone size={12} className="text-cyan-500 flex-shrink-0" />
+                        <span>{hall.organizerPhone}</span>
+                      </div>
+                    )}
                   </div>
-                );
-              })
-          }
+
+                  {/* Price */}
+                  {!hall.isFree && hall.ticketPrice > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <span className="text-cyan-600 font-bold text-sm">
+                        ₦{Number(hall.ticketPrice).toLocaleString()}
+                        <span className="text-gray-400 font-normal text-xs"> / booking</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-10">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="w-10 h-10 rounded-xl border-2 border-gray-200 flex items-center justify-center disabled:opacity-40 hover:border-cyan-400 transition"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            {[...Array(totalPages)].map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setPage(i + 1)}
-                className={`w-10 h-10 rounded-xl text-sm font-bold transition ${
-                  page === i + 1
-                    ? 'bg-cyan-500 text-white border-2 border-cyan-500'
-                    : 'border-2 border-gray-200 text-gray-600 hover:border-cyan-400'
-                }`}
-              >
-                {i + 1}
-              </button>
-            ))}
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="w-10 h-10 rounded-xl border-2 border-gray-200 flex items-center justify-center disabled:opacity-40 hover:border-cyan-400 transition"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      <Footer />
+      )}
     </div>
   );
 }

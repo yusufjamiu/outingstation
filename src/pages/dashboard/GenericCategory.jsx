@@ -10,6 +10,24 @@ import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove, q
 import { db } from '../../firebase';
 import { formatEventDate, formatEventTime } from '../../utils/dateTimeHelpers';
 
+// ✅ NEW — formats openingDays into a natural label, matching mobile's
+// Event.getTimeDisplay() and CampusPlaces.jsx / HallsPage.jsx exactly.
+function formatOpeningDays(days) {
+  if (!days || days.length === 0) return '';
+  const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  if (days.length === 7) return 'Every day';
+  const indices = days.map(d => order.indexOf(d)).filter(i => i !== -1).sort((a, b) => a - b);
+  if (indices.length === 0) return '';
+  const groups = [];
+  let current = [indices[0]];
+  for (let i = 1; i < indices.length; i++) {
+    if (indices[i] === current[current.length - 1] + 1) current.push(indices[i]);
+    else { groups.push(current); current = [indices[i]]; }
+  }
+  groups.push(current);
+  return groups.map(g => g.length === 1 ? order[g[0]] : `${order[g[0]]}-${order[g[g.length - 1]]}`).join(', ');
+}
+
 export default function GenericCategory() {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -85,6 +103,10 @@ export default function GenericCategory() {
           );
           const fromBusinesses = bizSnap.docs.map(d => {
             const biz = d.data();
+            // ✅ FIXED — package photos never carried over, only logoUrl.
+            const packageImages = [...new Set(
+              (biz.pricingTiers || []).map(t => t.image).filter(img => img)
+            )];
             return {
               id: d.id,
               title: biz.businessName,
@@ -95,7 +117,11 @@ export default function GenericCategory() {
               organizerPhone: biz.whatsappNumber,
               isFree: true,
               imageUrl: biz.logoUrl,
+              images: packageImages,
               status: 'published',
+              openingTime: biz.openingTime || null,
+              closingTime: biz.closingTime || null,
+              openingDays: biz.openingDays || [],
             };
           });
           allEvents = [...allEvents, ...fromBusinesses];
@@ -269,7 +295,7 @@ export default function GenericCategory() {
                     {showingPlaces && event.openingTime && event.closingTime && (
                       <div className="flex items-center gap-2">
                         <Clock size={14} />
-                        <span>{event.openingTime} - {event.closingTime}</span>
+                        <span>{formatOpeningDays(event.openingDays) ? `${formatOpeningDays(event.openingDays)} · ` : ''}{event.openingTime} - {event.closingTime}</span>
                       </div>
                     )}
                     <div className="flex items-center gap-2">
