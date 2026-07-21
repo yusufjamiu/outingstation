@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Home, Calendar, Users, Grid, GraduationCap, BarChart3, Unlock, LogOut, X,
   FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag, ClipboardList,
-  Wallet, Store, ChevronDown, BadgeCheck,
+  Wallet, Store, ChevronDown, BadgeCheck, Siren,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -43,6 +43,9 @@ const GROUPS = [
     items: [
       { icon: Grid, label: 'Categories', path: '/admin/categories' },
       { icon: GraduationCap, label: 'Universities', path: '/admin/universities' },
+      // ✅ NEW — admin-curated reference data, same nature as
+      // Categories/Universities above it.
+      { icon: Siren, label: 'Essential Services', path: '/admin/essential-services' },
     ],
   },
   {

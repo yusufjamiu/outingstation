@@ -15,6 +15,10 @@ import googlePlayBadge from '../assets/google-play.png';
 import appStoreBadge from '../assets/app-store.svg';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.outingstation&pcampaignid=web_share';
+// ✅ NEW — iOS is genuinely live now, was previously disabled/grayed out
+// with a "99% Ready" badge and "final review" messaging that's no longer
+// accurate.
+const APP_STORE_URL = 'https://apps.apple.com/ng/app/outingstation/id6774141538';
 
 const DISCOVER_ITEMS = [
   { icon: CalendarDays,   label: 'Events',        to: '/events',         live: true  },
@@ -576,16 +580,20 @@ export default function Navbar() {
               >
                 <img src={googlePlayBadge} alt="Get it on Google Play" className="h-20 w-auto" />
               </a>
-              <div className="flex items-center justify-center w-full bg-gray-100 rounded-xl px-4 py-3 cursor-not-allowed relative">
-                <img src={appStoreBadge} alt="Download on the App Store" className="h-10 w-auto opacity-40 grayscale" />
-                <span className="absolute -top-2 -right-2 text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded-full whitespace-nowrap shadow-sm border border-amber-200">
-                  99% Ready
-                </span>
-              </div>
+              {/* ✅ FIXED — iOS is genuinely live now. Was a disabled div
+              with grayscale/opacity styling, a "99% Ready" badge, and
+              "final review" copy below — all inaccurate now. Matches the
+              Play Store link's exact treatment (real <a>, same container
+              style, opens in a new tab). */}
+              <a
+                href={APP_STORE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center w-full bg-gray-900 rounded-xl px-4 py-2 hover:bg-gray-800 transition"
+              >
+                <img src={appStoreBadge} alt="Download on the App Store" className="h-10 w-auto" />
+              </a>
             </div>
-            <p className="text-xs text-gray-400 text-center mt-5">
-              iOS is in final review — we'll be live very soon! 🚀
-            </p>
           </div>
         </div>
       )}

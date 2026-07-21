@@ -102,6 +102,7 @@ import AdminCategories from './pages/admin/AdminCategories';
 import AdminUniversities from './pages/admin/Adminuniversities';
 import AdminTickets from './pages/admin/AdminTickets';
 import AdminSavedEventsAnalytics from './pages/admin/AdminSavedEventsAnalytics';
+import AdminEssentialServices from './pages/admin/AdminEssentialServices';
 import EventSubmissionsPage from './pages/admin/EventSubmissionsPage';
 import AdminEarlyAccess from './pages/admin/AdminEarlyAccess';
 import AdminNotifications from './pages/admin/AdminNotifications';
@@ -392,6 +393,12 @@ function App() {
               <Route path="/admin/ambassadors" element={
                 <AdminRoute>
                   <AdminAmbassadors />
+                </AdminRoute>
+              } />
+
+              <Route path="/admin/essential-services" element={
+                <AdminRoute>
+                  <AdminEssentialServices />
                 </AdminRoute>
               } />
 
