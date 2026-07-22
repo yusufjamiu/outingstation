@@ -9,8 +9,10 @@ import { db } from '../../firebase';
 // all non-image media, including audio, under video/).
 // ⚠️ CONFIRM: replace 'YOUR_CLOUD_NAME' and 'YOUR_UPLOAD_PRESET' with your
 // actual Cloudinary values (same ones your image uploads already use).
-const CLOUDINARY_CLOUD_NAME = 'YOUR_CLOUD_NAME';
-const CLOUDINARY_UPLOAD_PRESET = 'YOUR_UPLOAD_PRESET';
+// ✅ FIXED — was hardcoded placeholder strings; now reads from .env,
+// same as your existing image uploads presumably already do
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
 async function uploadAudioToCloudinary(file) {
   const formData = new FormData();
