@@ -109,6 +109,7 @@ import AdminNotifications from './pages/admin/AdminNotifications';
 import AdminAmbassadors from './pages/admin/AdminAmbassadors';
 import AdminVendors from './pages/admin/AdminVendors'; // 
 import AdminVendorForm from './pages/admin/AdminVendorForm'; // 
+import AdminMusicTracks from './pages/admin/AdminMusicTracks';
 import AdminCreditRequests from './pages/admin/AdminCreditRequests';
 import AdminAmbassadorApplications from './pages/admin/AdminAmbassadorApplications';
 import AdminAmbassadorPayouts from './pages/admin/AdminAmbassadorPayouts';
@@ -258,6 +259,12 @@ function App() {
                   <AmbassadorNotifications />
                 </AmbassadorRoute>
               } />
+
+              <Route path="/admin/music-tracks" element={
+  <AdminRoute>
+    <AdminMusicTracks />
+  </AdminRoute>
+} />
 
               <Route path="/ambassador/submitted-events" element={
                 <AmbassadorRoute>

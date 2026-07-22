@@ -2,16 +2,14 @@ import { useState } from 'react';
 import {
   Home, Calendar, Users, Grid, GraduationCap, BarChart3, Unlock, LogOut, X,
   FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag, ClipboardList,
-  Wallet, Store, ChevronDown, BadgeCheck, Siren,
+  Wallet, Store, ChevronDown, BadgeCheck, Siren, Music,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
-// ✅ Top-level items always visible, no grouping needed
 const TOP_ITEMS = [
   { icon: Home, label: 'Dashboard', path: '/admin' },
 ];
 
-// ✅ Grouped sections — click the group header to expand/collapse
 const GROUPS = [
   {
     label: 'Listings',
@@ -43,9 +41,10 @@ const GROUPS = [
     items: [
       { icon: Grid, label: 'Categories', path: '/admin/categories' },
       { icon: GraduationCap, label: 'Universities', path: '/admin/universities' },
-      // ✅ NEW — admin-curated reference data, same nature as
-      // Categories/Universities above it.
       { icon: Siren, label: 'Essential Services', path: '/admin/essential-services' },
+      // ✅ NEW — Outings background music library, same admin-curated
+      // reference-data nature as Categories/Universities/Essential Services.
+      { icon: Music, label: 'Music Tracks', path: '/admin/music-tracks' },
     ],
   },
   {
@@ -63,8 +62,6 @@ export function AdminSidebar({ isOpen, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // ✅ Auto-expand whichever group contains the current page, so you never
-  // land on a page with its own nav item hidden inside a collapsed group
   const activeGroupLabel = GROUPS.find(g => g.items.some(i => i.path === location.pathname))?.label;
   const [openGroup, setOpenGroup] = useState(activeGroupLabel || null);
 
@@ -96,7 +93,6 @@ export function AdminSidebar({ isOpen, onClose }) {
           </div>
 
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-            {/* Top-level items */}
             {TOP_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
@@ -115,7 +111,6 @@ export function AdminSidebar({ isOpen, onClose }) {
               );
             })}
 
-            {/* Grouped sections */}
             {GROUPS.map((group) => {
               const GroupIcon = group.icon;
               const isOpenGroup = openGroup === group.label;
