@@ -1,5 +1,5 @@
 const { onRequest } = require("firebase-functions/v2/https");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore"); // ✅ NEW
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
@@ -83,18 +83,27 @@ exports.og = onRequest(
 // alongside "og" above, which is untouched.
 exports.applyPendingBusinessNames = require('./applyPendingBusinessNames').applyPendingBusinessNames;
 
-// ✅ NEW — fires a push notification (FCM) every time a notification doc
-// is created in the "notifications" collection, matching whatever your
-// web admin panel or app already writes there for the in-app
-// Notifications screen. No changes needed elsewhere — this just adds
-// push on top of the existing in-app notification flow.
+// ✅ Fires a push notification (FCM) every time a notification doc is
+// created in the "notifications" collection. Logging added throughout
+// so `firebase functions:log --only sendPushOnNotification` shows
+// exactly what happened at each step during testing.
 exports.sendPushOnNotification = onDocumentCreated('notifications/{notifId}', async (event) => {
   const data = event.data.data();
-  if (!data.userId) return;
+  console.log('sendPushOnNotification triggered, data:', JSON.stringify(data));
+
+  if (!data.userId) {
+    console.log('No userId on notification doc — skipping');
+    return;
+  }
 
   const userSnap = await db.collection('users').doc(data.userId).get();
   const tokens = userSnap.data()?.fcmTokens || [];
-  if (!tokens.length) return;
+  console.log('Found tokens:', tokens.length, tokens);
+
+  if (!tokens.length) {
+    console.log('No fcmTokens for user — skipping');
+    return;
+  }
 
   const response = await admin.messaging().sendEachForMulticast({
     tokens,
@@ -107,6 +116,13 @@ exports.sendPushOnNotification = onDocumentCreated('notifications/{notifId}', as
       link: data.link || '',
       type: data.type || 'general',
     },
+  });
+
+  console.log('FCM send result — success:', response.successCount, 'failure:', response.failureCount);
+  response.responses.forEach((r, i) => {
+    if (!r.success) {
+      console.log(`Token ${i} failed:`, r.error?.code, r.error?.message);
+    }
   });
 
   const deadTokens = [];
