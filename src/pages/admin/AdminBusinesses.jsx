@@ -7,6 +7,18 @@ import toast from 'react-hot-toast';
 
 const TABS = ['pending', 'approved', 'rejected', 'all'];
 
+// ✅ NEW — computes the tick from both verification statuses combined:
+// Gov ID approved → blue, CAC approved → green, both approved → gold
+function computeVerificationTick(cacStatus, govIdStatus) {
+  const cacApproved = cacStatus === 'approved';
+  const govIdApproved = govIdStatus === 'approved';
+
+  if (cacApproved && govIdApproved) return 'gold';
+  if (cacApproved) return 'green';
+  if (govIdApproved) return 'blue';
+  return null;
+}
+
 export default function AdminBusinesses() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [businesses, setBusinesses] = useState([]);
@@ -32,15 +44,25 @@ export default function AdminBusinesses() {
     setLoading(false);
   };
 
-  // ✅ NEW — approve/reject a business's Gov ID or CAC upload. Separate
-  // from handleDecision (which controls the whole business listing) —
-  // this only touches the specific doc's status field.
+  // ✅ UPDATED — now also recomputes and saves verificationTick every
+  // time either Gov ID or CAC status changes, based on BOTH statuses
+  // together (not just the one that just changed)
   const handleVerifyDoc = async (id, docType, approve) => {
     const statusField = docType === 'gov' ? 'govIdStatus' : 'cacStatus';
+    const newStatus = approve ? 'approved' : 'rejected';
     setUpdatingId(id);
     try {
-      await updateDoc(doc(db, 'businesses', id), { [statusField]: approve ? 'approved' : 'rejected' });
-      setBusinesses(prev => prev.map(b => b.id === id ? { ...b, [statusField]: approve ? 'approved' : 'rejected' } : b));
+      const business = businesses.find(b => b.id === id);
+      const otherStatus = docType === 'gov' ? business?.cacStatus : business?.govIdStatus;
+      const cacStatus = docType === 'cac' ? newStatus : otherStatus;
+      const govIdStatus = docType === 'gov' ? newStatus : otherStatus;
+      const verificationTick = computeVerificationTick(cacStatus, govIdStatus);
+
+      await updateDoc(doc(db, 'businesses', id), {
+        [statusField]: newStatus,
+        verificationTick,
+      });
+      setBusinesses(prev => prev.map(b => b.id === id ? { ...b, [statusField]: newStatus, verificationTick } : b));
       toast.success(approve ? `${docType === 'gov' ? 'Gov ID' : 'CAC'} approved` : `${docType === 'gov' ? 'Gov ID' : 'CAC'} rejected`);
     } catch (err) {
       console.error(err);
@@ -62,9 +84,6 @@ export default function AdminBusinesses() {
     setUpdatingId('');
   };
 
-  // ✅ NEW — was completely missing; revoke/re-approve already existed
-  // (via handleDecision above) but there was no way to permanently delete
-  // a business record at all, regardless of status.
   const handleDelete = async (id, businessName) => {
     if (!window.confirm(`Permanently delete "${businessName}"? This can't be undone.`)) return;
     setUpdatingId(id);
@@ -77,6 +96,29 @@ export default function AdminBusinesses() {
       toast.error('Failed to delete business');
     }
     setUpdatingId('');
+  };
+
+  // ✅ NEW — one-time backfill for businesses that were approved before
+  // this tick logic existed. Safe to run repeatedly — only writes when
+  // the computed tick actually differs from what's currently stored.
+  const handleBackfillTicks = async () => {
+    if (!window.confirm('Recompute verification ticks for ALL businesses based on their current approval status?')) return;
+    setLoading(true);
+    try {
+      const updates = businesses.map(async (b) => {
+        const tick = computeVerificationTick(b.cacStatus, b.govIdStatus);
+        if (tick !== (b.verificationTick || null)) {
+          await updateDoc(doc(db, 'businesses', b.id), { verificationTick: tick });
+        }
+      });
+      await Promise.all(updates);
+      toast.success('Verification ticks backfilled');
+      loadBusinesses();
+    } catch (err) {
+      console.error(err);
+      toast.error('Backfill failed');
+      setLoading(false);
+    }
   };
 
   const filtered = activeTab === 'all' ? businesses : businesses.filter(b => b.status === activeTab);
@@ -105,7 +147,7 @@ export default function AdminBusinesses() {
           <div className="max-w-5xl mx-auto">
 
             {/* Tabs */}
-            <div className="flex gap-2 mb-6">
+            <div className="flex flex-wrap items-center gap-2 mb-6">
               {TABS.map(tab => (
                 <button
                   key={tab}
@@ -117,6 +159,13 @@ export default function AdminBusinesses() {
                   {tab}
                 </button>
               ))}
+              {/* ✅ NEW — one-click backfill for existing businesses */}
+              <button
+                onClick={handleBackfillTicks}
+                className="px-4 py-2 rounded-full text-sm font-semibold bg-white text-gray-600 border border-gray-200 hover:border-cyan-400 transition"
+              >
+                Backfill verification ticks
+              </button>
             </div>
 
             {loading ? (
@@ -144,7 +193,11 @@ export default function AdminBusinesses() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <h3 className="font-bold text-gray-900">{biz.businessName}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-bold text-gray-900">{biz.businessName}</h3>
+                              {/* ✅ NEW — visual tick indicator right in the admin list */}
+                              {biz.verificationTick && <TickBadge tick={biz.verificationTick} />}
+                            </div>
                             <p className="text-sm text-cyan-600 font-medium">
                               {biz.businessType}
                               {biz.customTypeName && ` — ${biz.customTypeName}`}
@@ -152,7 +205,6 @@ export default function AdminBusinesses() {
                           </div>
                           <StatusBadge status={biz.status} />
                         </div>
-
                         <p className="text-sm text-gray-600 mt-2 line-clamp-2">{biz.description}</p>
 
                         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-gray-500">
@@ -162,8 +214,6 @@ export default function AdminBusinesses() {
                           <span className="text-gray-400">{biz.ownerEmail}</span>
                         </div>
 
-                        {/* ✅ NEW — verification documents, only rendered if this
-                            business has actually submitted at least one */}
                         {(biz.govIdUrl || biz.cacUrl) && (
                           <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
                             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Verification</p>
@@ -194,6 +244,7 @@ export default function AdminBusinesses() {
                                 )}
                               </div>
                             )}
+
                             {biz.cacUrl && (
                               <div className="flex items-center gap-3">
                                 <img src={biz.cacUrl} alt="CAC" className="w-14 h-14 rounded-lg object-cover border border-gray-200" />
@@ -263,7 +314,6 @@ export default function AdminBusinesses() {
                           </button>
                         )}
 
-                        {/* ✅ NEW — always available, any status */}
                         <button
                           onClick={() => handleDelete(biz.id, biz.businessName)}
                           disabled={updatingId === biz.id}
@@ -298,8 +348,6 @@ function StatusBadge({ status }) {
   );
 }
 
-// ✅ NEW — small status label for a single verification document
-// (govIdStatus / cacStatus), separate from the whole-business StatusBadge
 function VerifyStatusBadge({ status }) {
   const config = {
     pending: { label: 'Under Review', color: 'text-amber-600' },
@@ -307,4 +355,20 @@ function VerifyStatusBadge({ status }) {
     rejected: { label: 'Rejected', color: 'text-red-500' },
   }[status] || { label: 'Not Uploaded', color: 'text-gray-400' };
   return <p className={`text-xs font-medium ${config.color}`}>{config.label}</p>;
+}
+
+// ✅ NEW — small colored tick badge shown next to a business name in the
+// admin list, matching the same color scheme used in the mobile app
+function TickBadge({ tick }) {
+  const config = {
+    blue: { label: 'Blue', color: 'text-blue-500' },
+    green: { label: 'Green', color: 'text-emerald-500' },
+    gold: { label: 'Gold', color: 'text-amber-500' },
+  }[tick];
+  if (!config) return null;
+  return (
+    <span title={`${config.label} tick`} className={config.color}>
+      <CheckCircle size={16} fill="currentColor" className="text-white" style={{ color: config.color.includes('blue') ? '#3b82f6' : config.color.includes('emerald') ? '#22c55e' : '#f59e0b' }} />
+    </span>
+  );
 }
