@@ -1,4 +1,5 @@
 const { onRequest } = require("firebase-functions/v2/https");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore"); // ✅ NEW
 const admin = require("firebase-admin");
 
 admin.initializeApp();
@@ -81,4 +82,40 @@ exports.og = onRequest(
 // the actual logic; this just registers it as a deployed function,
 // alongside "og" above, which is untouched.
 exports.applyPendingBusinessNames = require('./applyPendingBusinessNames').applyPendingBusinessNames;
- 
+
+// ✅ NEW — fires a push notification (FCM) every time a notification doc
+// is created in the "notifications" collection, matching whatever your
+// web admin panel or app already writes there for the in-app
+// Notifications screen. No changes needed elsewhere — this just adds
+// push on top of the existing in-app notification flow.
+exports.sendPushOnNotification = onDocumentCreated('notifications/{notifId}', async (event) => {
+  const data = event.data.data();
+  if (!data.userId) return;
+
+  const userSnap = await db.collection('users').doc(data.userId).get();
+  const tokens = userSnap.data()?.fcmTokens || [];
+  if (!tokens.length) return;
+
+  const response = await admin.messaging().sendEachForMulticast({
+    tokens,
+    notification: {
+      title: data.title || 'OutingStation',
+      body: data.message || '',
+    },
+    data: {
+      eventId: data.eventId || '',
+      link: data.link || '',
+      type: data.type || 'general',
+    },
+  });
+
+  const deadTokens = [];
+  response.responses.forEach((r, i) => {
+    if (!r.success) deadTokens.push(tokens[i]);
+  });
+  if (deadTokens.length) {
+    await userSnap.ref.update({
+      fcmTokens: admin.firestore.FieldValue.arrayRemove(...deadTokens),
+    });
+  }
+});
