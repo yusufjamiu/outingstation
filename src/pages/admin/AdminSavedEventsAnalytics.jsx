@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Search, Users, Calendar, TrendingUp, Eye, Download, RefreshCw, Menu, Mail, ChevronDown, ChevronUp, Phone } from 'lucide-react';
+import { Search, Users, Calendar, TrendingUp, Eye, Download, RefreshCw, Menu, Mail, ChevronDown, ChevronUp, Phone, Bell } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -253,6 +253,39 @@ export default function AdminSavedEventsAnalytics() {
       toast.dismiss(loadingToast);
       console.error('Error sending emails:', err);
       toast.error(err.message || 'Failed to send email reminders. Check if API is deployed.');
+    }
+  };
+
+  // ✅ NEW — sends an immediate push notification reminder to everyone who
+  // saved this specific event, on demand (separate from the automatic
+  // 3-day/24-hour scheduled reminders). Writes to the same notifications
+  // collection the rest of the app already uses.
+  const sendPushReminder = async (event) => {
+    if (!confirm(`Send push notification reminder to ${event.users.length} users who saved "${event.eventTitle}"?`)) {
+      return;
+    }
+
+    const loadingToast = toast.loading(`🔔 Sending push to ${event.users.length} users...`);
+
+    try {
+      const writes = event.users.map(user =>
+        addDoc(collection(db, 'notifications'), {
+          userId: user.userId,
+          title: 'Reminder ⏰',
+          message: `${event.eventTitle} — don't forget!`,
+          type: 'event_reminder',
+          eventId: event.eventId,
+          read: false,
+          createdAt: serverTimestamp(),
+        })
+      );
+      await Promise.all(writes);
+      toast.dismiss(loadingToast);
+      toast.success(`✅ Push reminder sent to ${event.users.length} users!`);
+    } catch (err) {
+      toast.dismiss(loadingToast);
+      console.error('Error sending push reminders:', err);
+      toast.error('Failed to send push reminders');
     }
   };
 
@@ -526,6 +559,14 @@ export default function AdminSavedEventsAnalytics() {
                             >
                               <Mail size={18} />
                               Send Email Reminder
+                            </button>
+                            {/* ✅ NEW — manual push notification reminder button */}
+                            <button
+                              onClick={() => sendPushReminder(event)}
+                              className="flex items-center gap-2 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition"
+                            >
+                              <Bell size={18} />
+                              Send Push Reminder
                             </button>
                             <button
                               onClick={() => exportEventToCSV(event)}

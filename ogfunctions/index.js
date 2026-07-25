@@ -1,5 +1,6 @@
 const { onRequest, onCall } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
@@ -176,3 +177,78 @@ exports.notifyNewEventPublished = onCall(async (request) => {
 
   return { success: true };
 });
+
+// ✅ NEW — runs daily at 9am Lagos time. Sends two reminder stages per
+// event: 3 days before, and 24 hours before, to everyone who saved that
+// event. Tracks which stages have already fired per event (via fields
+// on the event doc) so each stage only fires once, even if this runs
+// more than once on the same day for any reason.
+exports.sendEventReminders = onSchedule(
+  { schedule: "0 9 * * *", timeZone: "Africa/Lagos" },
+  async () => {
+    const now = new Date();
+
+    const startOfDayOffset = (daysAhead) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() + daysAhead);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    };
+    const endOfDayOffset = (daysAhead) => {
+      const d = startOfDayOffset(daysAhead);
+      d.setHours(23, 59, 59, 999);
+      return d;
+    };
+
+    const stages = [
+      { daysAhead: 3, field: 'reminderSent3Day', title: 'Coming up in 3 days 📅', body: (t) => `${t} is happening in 3 days — plan your outing!` },
+      { daysAhead: 1, field: 'reminderSent1Day', title: 'Happening Tomorrow! ⏰', body: (t) => `${t} is happening tomorrow. Don't miss it!` },
+    ];
+
+    const usersSnap = await db.collection('users').get();
+    const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    for (const stage of stages) {
+      const startTs = admin.firestore.Timestamp.fromDate(startOfDayOffset(stage.daysAhead));
+      const endTs = admin.firestore.Timestamp.fromDate(endOfDayOffset(stage.daysAhead));
+
+      const eventsSnap = await db
+        .collection('events')
+        .where('date', '>=', startTs)
+        .where('date', '<=', endTs)
+        .get();
+
+      for (const eventDoc of eventsSnap.docs) {
+        const event = eventDoc.data();
+        const eventId = eventDoc.id;
+
+        // Skip if this stage's reminder was already sent for this event
+        if (event[stage.field]) continue;
+
+        const usersWhoSaved = users.filter(u =>
+          Array.isArray(u.savedEvents) && u.savedEvents.includes(eventId)
+        );
+
+        if (usersWhoSaved.length) {
+          const writes = usersWhoSaved.map(user =>
+            db.collection('notifications').add({
+              userId: user.id,
+              title: stage.title,
+              message: stage.body(event.title),
+              type: 'event_reminder',
+              eventId,
+              read: false,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            })
+          );
+          await Promise.all(writes);
+          console.log(`[${stage.field}] Sent to ${usersWhoSaved.length} users for "${event.title}"`);
+        }
+
+        // Mark this stage as sent, regardless of whether anyone had saved
+        // it, so we don't keep re-checking this event/stage every day
+        await eventDoc.ref.update({ [stage.field]: true });
+      }
+    }
+  }
+);
