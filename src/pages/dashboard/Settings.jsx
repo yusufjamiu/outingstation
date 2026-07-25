@@ -9,6 +9,19 @@ import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { formatCredits } from '../../utils/referralUtils';
 
+// ✅ NEW — same list used across the app for city collection (mobile
+// signup/profile, Outing upload, BecomeABusinessPage.jsx). This is what
+// makes "we'll show you events based on this city" actually work — free
+// text let people type anything, which never matched exactly.
+const NIGERIAN_STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+  'Others',
+];
+
 export default function Settings() {
   const navigate     = useNavigate();
   const fileInputRef = useRef(null);
@@ -336,7 +349,10 @@ export default function Settings() {
               <label className="block text-sm font-medium text-gray-900 mb-2">City *</label>
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <input type="text" value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })} placeholder="e.g. Lagos" className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm" />
+                <select value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })} className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm appearance-none bg-white">
+                  <option value="">Select your city</option>
+                  {NIGERIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
               <p className="text-xs text-gray-500 mt-1">We'll show you events based on this city.</p>
             </div>

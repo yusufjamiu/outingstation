@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, User, Eye, EyeOff, ArrowLeft, MapPin, Phone, Gift } from 'lucide-react';
@@ -8,6 +8,19 @@ import { sendWelcomeMessage } from '../services/whatsappService';
 import Create from './../assets/Create.jpg'
 import Image2 from './../assets/SignUp2.JPG'
 import Connected from './../assets/Connected.JPG'
+
+// ✅ NEW — same list used across the app (mobile signup/profile, Outing
+// upload, BecomeABusinessPage.jsx). This is what makes city matching
+// actually work — free text let people type "lagos", "Lagos State", etc,
+// none of which matched exactly against how Outings/events filter by city.
+const NIGERIAN_STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+  'Others',
+];
 
 export default function SignupPage() {
   const navigate = useNavigate();
@@ -31,6 +44,11 @@ export default function SignupPage() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
+  // ✅ NEW — Google signup never asked for a city at all (it was just
+  // saved as ''), so new Google users were permanently invisible to
+  // anything filtered by city until they manually fixed it in Settings.
+  // Collecting it in this same follow-up modal closes that gap.
+  const [onboardingCity, setOnboardingCity] = useState('');
 
   const { signup, loginWithGoogle, currentUser } = useAuth();
 
@@ -94,16 +112,6 @@ export default function SignupPage() {
     return null;
   };
 
-  const validateCity = (city) => {
-    const trimmedCity = city.trim();
-    if (!trimmedCity) return null;
-    if (trimmedCity.length < 2) return 'City must be at least 2 characters';
-    if (trimmedCity.length > 100) return 'City must be less than 100 characters';
-    const cityRegex = /^[a-zA-Z\s,'-]+$/;
-    if (!cityRegex.test(trimmedCity)) return 'City can only contain letters, spaces, commas, and hyphens';
-    return null;
-  };
-
   const validatePhone = (phone) => {
     const trimmedPhone = phone.trim();
     if (!trimmedPhone) return 'Phone number is required';
@@ -154,11 +162,6 @@ export default function SignupPage() {
 
     const phoneError = validatePhone(trimmedData.phone);
     if (phoneError) return setError(phoneError);
-
-    if (trimmedData.city) {
-      const cityError = validateCity(trimmedData.city);
-      if (cityError) return setError(cityError);
-    }
 
     if (!trimmedData.email) return setError('Email is required');
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -281,7 +284,13 @@ export default function SignupPage() {
       }
       
       const userRef = doc(db, 'users', userId);
-      await setDoc(userRef, { phone: formattedPhone }, { merge: true });
+      // ✅ CHANGED — now also writes onboardingCity if one was selected;
+      // previously this modal only ever saved phone, leaving city
+      // permanently empty for every Google signup.
+      await setDoc(userRef, {
+        phone: formattedPhone,
+        ...(onboardingCity ? { city: onboardingCity } : {}),
+      }, { merge: true });
 
       await sendWelcomeMessage({ phone: formattedPhone, name: currentUser?.displayName || 'there' });
       
@@ -449,15 +458,15 @@ export default function SignupPage() {
               <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
                 <MapPin className="text-gray-400" size={20} />
               </div>
-              <input
-                type="text"
+              <select
                 name="city"
                 value={formData.city}
                 onChange={handleChange}
-                maxLength={100}
-                className="w-full pl-11 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50"
-                placeholder="Your city (e.g. Lagos, Nigeria) - Optional"
-              />
+                className="w-full pl-11 pr-4 py-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50 appearance-none"
+              >
+                <option value="">Select your city (optional)</option>
+                {NIGERIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
 
             {/* ✅ Referral Code Display (if exists in URL) */}
@@ -595,13 +604,13 @@ export default function SignupPage() {
         </div>
       </div>
 
-      {/* Phone Number Modal */}
+      {/* Phone + City Modal */}
       {showPhoneModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-8 max-w-md w-full">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">One More Step! 📱</h2>
             <p className="text-gray-600 mb-6">
-              Enter your phone number to receive event updates and tickets via WhatsApp.
+              Add your phone number for WhatsApp updates, and your city so we can show you events happening near you.
             </p>
 
             {phoneError && (
@@ -610,7 +619,27 @@ export default function SignupPage() {
               </div>
             )}
 
+            {/* City — optional, but this is the only chance Google
+                signups get to set it before landing on an empty city */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">City <span className="text-gray-400 font-normal">(optional)</span></label>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <MapPin className="text-gray-400" size={18} />
+                </div>
+                <select
+                  value={onboardingCity}
+                  onChange={(e) => setOnboardingCity(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50 appearance-none"
+                >
+                  <option value="">Select your city</option>
+                  {NIGERIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+
             <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone Number</label>
               <div className="flex items-center border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-cyan-400">
                 <div className="pl-4 pr-3 flex items-center gap-2 border-r border-gray-200 py-4 flex-shrink-0">
                   <Phone className="text-gray-400" size={20} />

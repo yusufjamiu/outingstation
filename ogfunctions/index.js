@@ -84,9 +84,9 @@ exports.og = onRequest(
 exports.applyPendingBusinessNames = require('./applyPendingBusinessNames').applyPendingBusinessNames;
 
 // ✅ Fires a push notification (FCM) every time a notification doc is
-// created in the "notifications" collection. Logging added throughout
-// so `firebase functions:log --only sendPushOnNotification` shows
-// exactly what happened at each step during testing.
+// created in the "notifications" collection. Android block uses the
+// dedicated white-silhouette notification icon (ic_notification),
+// properly added to android/app/src/main/res/drawable/.
 exports.sendPushOnNotification = onDocumentCreated('notifications/{notifId}', async (event) => {
   const data = event.data.data();
   console.log('sendPushOnNotification triggered, data:', JSON.stringify(data));
@@ -111,6 +111,12 @@ exports.sendPushOnNotification = onDocumentCreated('notifications/{notifId}', as
       title: data.title || 'OutingStation',
       body: data.message || '',
     },
+    android: {
+      notification: {
+        icon: 'ic_notification',
+        color: '#5ADAEE',
+      },
+    },
     data: {
       eventId: data.eventId || '',
       link: data.link || '',
@@ -119,16 +125,22 @@ exports.sendPushOnNotification = onDocumentCreated('notifications/{notifId}', as
   });
 
   console.log('FCM send result — success:', response.successCount, 'failure:', response.failureCount);
-  response.responses.forEach((r, i) => {
-    if (!r.success) {
-      console.log(`Token ${i} failed:`, r.error?.code, r.error?.message);
-    }
-  });
+
+  const deadTokenErrorCodes = [
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token',
+  ];
 
   const deadTokens = [];
   response.responses.forEach((r, i) => {
-    if (!r.success) deadTokens.push(tokens[i]);
+    if (!r.success) {
+      console.log(`Token ${i} failed:`, r.error?.code, r.error?.message);
+      if (deadTokenErrorCodes.includes(r.error?.code)) {
+        deadTokens.push(tokens[i]);
+      }
+    }
   });
+
   if (deadTokens.length) {
     await userSnap.ref.update({
       fcmTokens: admin.firestore.FieldValue.arrayRemove(...deadTokens),

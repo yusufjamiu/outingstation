@@ -1,10 +1,25 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, Phone, MapPin } from 'lucide-react';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
+import { sendWelcomeMessage } from '../services/whatsappService';
 import Event from './../assets/event.jpg';
 import Connectwithpeople from './../assets/Connectwithpeople.JPG';
 import GetNotified from './../assets/GetNotified.JPG';
+
+// ✅ NEW — same list used everywhere else city is collected (SignupPage,
+// Settings, BecomeABusinessPage). Needed here now because Google login
+// can create a brand-new account just as easily as Google signup can.
+const NIGERIAN_STATES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+  'Others',
+];
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -16,9 +31,21 @@ export default function LoginPage() {
   const { login, loginWithGoogle, currentUser } = useAuth();
   const navigate = useNavigate();
 
+  // ✅ NEW — Firebase's Google sign-in doesn't distinguish "login" from
+  // "signup": tapping this button with no existing account silently
+  // creates one (via AuthContext's ensureUserDocument), with an empty
+  // city and no phone collected at all — unlike SignupPage.jsx's Google
+  // button, which already handles this case. This screen now does too.
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [onboardingUserId, setOnboardingUserId] = useState(null);
+  const [onboardingCity, setOnboardingCity] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [savingOnboarding, setSavingOnboarding] = useState(false);
+
   useEffect(() => {
-    if (currentUser) navigate('/');
-  }, [currentUser, navigate]);
+    if (currentUser && !showOnboardingModal) navigate('/');
+  }, [currentUser, navigate, showOnboardingModal]);
 
   const carouselImages = [
     {
@@ -44,6 +71,37 @@ export default function LoginPage() {
     }, 5000);
     return () => clearInterval(timer);
   }, []);
+
+  const validatePhone = (phone) => {
+    const trimmedPhone = phone.trim();
+    if (!trimmedPhone) return 'Phone number is required';
+    const cleanPhone = trimmedPhone.replace(/[\s\-()]/g, '');
+    if (cleanPhone.startsWith('+234')) {
+      if (cleanPhone.length !== 14) return 'Phone number must be 10 digits after +234';
+    } else if (cleanPhone.startsWith('234')) {
+      if (cleanPhone.length !== 13) return 'Phone number must be 10 digits after 234';
+    } else {
+      if (cleanPhone.length < 10 || cleanPhone.length > 11) return 'Phone number must be 10-11 digits';
+    }
+    return null;
+  };
+
+  // ✅ Create welcome notification — same as SignupPage.jsx, since a new
+  // account created via this button never went through that flow otherwise
+  const createWelcomeNotification = async (userId) => {
+    try {
+      await setDoc(doc(db, 'notifications', `welcome_${userId}`), {
+        userId: userId,
+        type: 'welcome',
+        title: 'Welcome to OutingStation! 🎉',
+        message: 'Start discovering amazing events and places in your city.',
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.error('Error creating welcome notification:', err);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -73,12 +131,61 @@ export default function LoginPage() {
     try {
       setError('');
       setLoading(true);
-      await loginWithGoogle();
-      navigate('/');
+      const result = await loginWithGoogle();
+
+      const isNewUser = result?.additionalUserInfo?.isNewUser;
+      const userId = result?.user?.uid;
+
+      if (isNewUser && userId) {
+        await createWelcomeNotification(userId);
+        setOnboardingUserId(userId);
+        setLoading(false);
+        setShowOnboardingModal(true);
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       console.error('❌ Google login error:', err);
       setError('Failed to sign in with Google. Please try again.');
       setLoading(false);
+    }
+  };
+
+  // ✅ Save phone + city from the onboarding modal — same pattern as
+  // SignupPage.jsx's savePhoneNumber
+  const saveOnboardingInfo = async () => {
+    const phoneValidationError = validatePhone(phoneNumber);
+    if (phoneValidationError) {
+      setPhoneError(phoneValidationError);
+      return false;
+    }
+
+    try {
+      setSavingOnboarding(true);
+      setPhoneError('');
+
+      let formattedPhone = phoneNumber.trim();
+      if (!formattedPhone.startsWith('+234') && !formattedPhone.startsWith('234')) {
+        formattedPhone = formattedPhone.replace(/^0/, '');
+        formattedPhone = '+234' + formattedPhone;
+      }
+
+      const userRef = doc(db, 'users', onboardingUserId);
+      await setDoc(userRef, {
+        phone: formattedPhone,
+        ...(onboardingCity ? { city: onboardingCity } : {}),
+      }, { merge: true });
+
+      await sendWelcomeMessage({ phone: formattedPhone, name: currentUser?.displayName || 'there' });
+
+      setSavingOnboarding(false);
+      setShowOnboardingModal(false);
+      return true;
+    } catch (error) {
+      console.error('❌ Error saving onboarding info:', error);
+      setPhoneError('Failed to save. Please try again.');
+      setSavingOnboarding(false);
+      return false;
     }
   };
 
@@ -234,6 +341,98 @@ export default function LoginPage() {
           ))}
         </div>
       </div>
+
+      {/* ✅ NEW — Onboarding modal for accounts created via this Google
+          button (Firebase doesn't distinguish login from signup) */}
+      {showOnboardingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome! One More Step 📱</h2>
+            <p className="text-gray-600 mb-6">
+              Add your phone number for WhatsApp updates, and your city so we can show you events happening near you.
+            </p>
+
+            {phoneError && (
+              <div className="bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg mb-4 text-sm">
+                {phoneError}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">City <span className="text-gray-400 font-normal">(optional)</span></label>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <MapPin className="text-gray-400" size={18} />
+                </div>
+                <select
+                  value={onboardingCity}
+                  onChange={(e) => setOnboardingCity(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none bg-gray-50 appearance-none"
+                >
+                  <option value="">Select your city</option>
+                  {NIGERIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone Number</label>
+              <div className="flex items-center border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-cyan-400">
+                <div className="pl-4 pr-3 flex items-center gap-2 border-r border-gray-200 py-4 flex-shrink-0">
+                  <Phone className="text-gray-400" size={20} />
+                  <span className="text-gray-600 font-medium">+234</span>
+                </div>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => {
+                    setPhoneNumber(e.target.value);
+                    if (phoneError) setPhoneError('');
+                  }}
+                  onInput={(e) => {
+                    let value = e.target.value.replace(/^0/, '');
+                    value = value.replace(/[^0-9]/g, '');
+                    e.target.value = value;
+                  }}
+                  pattern="[0-9]{10,11}"
+                  maxLength={11}
+                  placeholder="801 234 5678"
+                  className="flex-1 px-4 py-4 outline-none bg-transparent rounded-r-xl"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  const success = await saveOnboardingInfo();
+                  if (success) navigate('/');
+                }}
+                disabled={savingOnboarding || !phoneNumber}
+                className="flex-1 bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50"
+              >
+                {savingOnboarding ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Saving...
+                  </span>
+                ) : 'Continue'}
+              </button>
+              <button
+                onClick={() => { setShowOnboardingModal(false); navigate('/'); }}
+                disabled={savingOnboarding}
+                className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold hover:bg-gray-200 transition disabled:opacity-50"
+              >
+                Skip
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 text-center mt-4">
+              💡 You can add your phone number and city later in Settings
+            </p>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -62,7 +62,14 @@ const CAMPUS_PLACE_SUBCATEGORIES = [
   'Hostel', 'Chapel / Mosque', 'Admin Block', 'Market', 'Other',
 ];
 
-const CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
+const CITIES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+  'Others',
+];
 const PLATFORMS = [
   'Zoom', 'Google Meet', 'Microsoft Teams', 'YouTube Live',
   'Instagram Live', 'LinkedIn Live', 'Twitter Space', 'Other',
