@@ -1,4 +1,4 @@
-const { onRequest } = require("firebase-functions/v2/https");
+const { onRequest, onCall } = require("firebase-functions/v2/https");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 
@@ -84,9 +84,8 @@ exports.og = onRequest(
 exports.applyPendingBusinessNames = require('./applyPendingBusinessNames').applyPendingBusinessNames;
 
 // ✅ Fires a push notification (FCM) every time a notification doc is
-// created in the "notifications" collection. Android block uses the
-// dedicated white-silhouette notification icon (ic_notification),
-// properly added to android/app/src/main/res/drawable/.
+// created in the "notifications" collection. Uses the launcher icon —
+// stable on both Android and iOS, confirmed working end-to-end.
 exports.sendPushOnNotification = onDocumentCreated('notifications/{notifId}', async (event) => {
   const data = event.data.data();
   console.log('sendPushOnNotification triggered, data:', JSON.stringify(data));
@@ -113,7 +112,7 @@ exports.sendPushOnNotification = onDocumentCreated('notifications/{notifId}', as
     },
     android: {
       notification: {
-        icon: 'ic_notification',
+        icon: 'ic_launcher',
         color: '#5ADAEE',
       },
     },
@@ -146,4 +145,34 @@ exports.sendPushOnNotification = onDocumentCreated('notifications/{notifId}', as
       fcmTokens: admin.firestore.FieldValue.arrayRemove(...deadTokens),
     });
   }
+});
+
+// ✅ NEW — callable from the web admin. Broadcasts a "new event published"
+// push to every device subscribed to the "Outingstation" topic. Triggered
+// from EventSubmissionsPage.jsx right after an event is approved/published.
+exports.notifyNewEventPublished = onCall(async (request) => {
+  const { title, eventId } = request.data;
+  if (!title) {
+    throw new Error('title is required');
+  }
+
+  await admin.messaging().send({
+    topic: 'Outingstation',
+    notification: {
+      title: 'New on OutingStation 🎉',
+      body: title,
+    },
+    android: {
+      notification: {
+        icon: 'ic_launcher',
+        color: '#5ADAEE',
+      },
+    },
+    data: {
+      eventId: eventId || '',
+      type: 'new_event',
+    },
+  });
+
+  return { success: true };
 });

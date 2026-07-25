@@ -8,7 +8,7 @@ import {
   Eye, Check, X, Calendar, MapPin, DollarSign,
   Mail, Phone, ExternalLink, Clock, Filter,
   GraduationCap, Menu, RefreshCw, AlertTriangle,
-  Gift, ChevronLeft, ChevronRight, Image, Ticket, Settings, Layers
+  Gift, ChevronLeft, ChevronRight, Image, Ticket, Settings, Layers, Bell
 } from 'lucide-react';
 
 const generateSlug = (title) => {
@@ -53,7 +53,45 @@ export default function EventSubmissionsPage() {
     tiers: [],
   });
 
-  useEffect(() => { fetchSubmissions(); }, []);
+  // ✅ NEW — push notification toggle + audience targeting on approval
+  const [sendPush, setSendPush] = useState(true);
+  const [pushAudience, setPushAudience] = useState('all');
+  const [pushCity, setPushCity] = useState('');
+  const [pushRole, setPushRole] = useState('');
+  const [pushUniversity, setPushUniversity] = useState('');
+  const [cities, setCities] = useState([]);
+  const [universities, setUniversities] = useState([]);
+  const [universityFollowerCounts, setUniversityFollowerCounts] = useState({});
+  const [userCount, setUserCount] = useState(0);
+
+  useEffect(() => { fetchSubmissions(); loadAudienceOptions(); }, []);
+
+  // ✅ NEW — loads cities/universities/user count for the audience picker,
+  // same pattern as AdminNotifications.jsx
+  const loadAudienceOptions = async () => {
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      setUserCount(usersSnapshot.size);
+
+      const citySet = new Set();
+      const uniFollowCounts = {};
+      usersSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.city) citySet.add(data.city);
+        (data.followedUniversities || []).forEach(uni => {
+          uniFollowCounts[uni] = (uniFollowCounts[uni] || 0) + 1;
+        });
+      });
+      setCities(Array.from(citySet).sort());
+      setUniversityFollowerCounts(uniFollowCounts);
+
+      const uniSnapshot = await getDocs(collection(db, 'universities'));
+      const uniNames = uniSnapshot.docs.map(d => d.data().name).filter(Boolean).sort();
+      setUniversities(uniNames);
+    } catch (err) {
+      console.error('Error loading audience options:', err);
+    }
+  };
 
   const fetchSubmissions = async () => {
     setLoading(true);
@@ -107,6 +145,65 @@ export default function EventSubmissionsPage() {
     } catch (err) {
       console.error('Error awarding credit:', err);
       return null;
+    }
+  };
+
+  // ✅ NEW — resolves target user IDs for the push notification, based on
+  // the audience picker. Mirrors AdminNotifications.jsx's getTargetUsers.
+  const getPushTargetUserIds = async () => {
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+
+      if (pushAudience === 'all') {
+        return usersSnapshot.docs.map(d => d.id);
+      }
+      if (pushAudience === 'city' && pushCity) {
+        const targetCity = pushCity.toLowerCase();
+        return usersSnapshot.docs
+          .filter(d => (d.data().city || '').toLowerCase().includes(targetCity))
+          .map(d => d.id);
+      }
+      if (pushAudience === 'role' && pushRole) {
+        return usersSnapshot.docs.filter(d => d.data().role === pushRole).map(d => d.id);
+      }
+      if (pushAudience === 'university' && pushUniversity) {
+        return usersSnapshot.docs
+          .filter(d => (d.data().followedUniversities || []).includes(pushUniversity))
+          .map(d => d.id);
+      }
+      return [];
+    } catch (err) {
+      console.error('Error resolving push target users:', err);
+      return [];
+    }
+  };
+
+  // ✅ NEW — writes a per-user notification doc for each targeted user.
+  // Reuses the existing notifications collection + sendPushOnNotification
+  // Cloud Function, so this both shows in-app and fires a real push,
+  // exactly like a broadcast sent from AdminNotifications.jsx.
+  const notifyUsers = async (eventTitle, eventId) => {
+    if (!sendPush) return;
+    try {
+      const userIds = await getPushTargetUserIds();
+      if (!userIds.length) {
+        console.warn('No target users found for push notification — skipping');
+        return;
+      }
+      const promises = userIds.map(userId =>
+        addDoc(collection(db, 'notifications'), {
+          userId,
+          title: 'New on OutingStation 🎉',
+          message: eventTitle,
+          type: 'new_event',
+          eventId: eventId || null,
+          read: false,
+          createdAt: serverTimestamp(),
+        })
+      );
+      await Promise.all(promises);
+    } catch (err) {
+      console.error('Failed to send push notification:', err);
     }
   };
 
@@ -264,6 +361,9 @@ export default function EventSubmissionsPage() {
         reviewedAt: new Date(),
       });
 
+      // ✅ Notify users (respects the toggle + audience picker)
+      await notifyUsers(eventDoc.title, docRef.id);
+
       let creditMsg = '';
       if (submission.referralCode) {
         const awardedTo = await awardReferralCredit(submission.referralCode);
@@ -311,6 +411,9 @@ export default function EventSubmissionsPage() {
         reviewedAt: new Date(),
       });
 
+      // ✅ Notify users (respects the toggle + audience picker)
+      await notifyUsers(eventDoc.title, docRef.id);
+
       if (ticketingSubmission.referralCode) {
         await awardReferralCredit(ticketingSubmission.referralCode);
       }
@@ -348,6 +451,9 @@ export default function EventSubmissionsPage() {
         reviewedAt: new Date(),
         ticketingNote: 'Approved without ticketing — organizer requested OS ticketing',
       });
+
+      // ✅ Notify users (respects the toggle + audience picker)
+      await notifyUsers(eventDoc.title, docRef.id);
 
       alert(`✅ Event published (no ticketing yet)\n\nRemember to:\n• Contact ${ticketingSubmission.organizerEmail}\n• Set up ticketing in the Events editor\n\nEvent ID: ${docRef.id}`);
 
@@ -433,6 +539,77 @@ export default function EventSubmissionsPage() {
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, [field]: value } : t)
     }));
   };
+
+  // ✅ NEW — shared push notification toggle + audience picker block,
+  // rendered inside both the Detail Modal and the Ticketing Modal footers.
+  const renderPushSettings = () => (
+    <div className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 mb-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Bell size={16} className="text-cyan-600" />
+          <span className="text-sm font-bold text-gray-800">Send push notification to users</span>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" checked={sendPush}
+            onChange={(e) => setSendPush(e.target.checked)}
+            className="sr-only peer" />
+          <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+        </label>
+      </div>
+
+      {sendPush && (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <label className="block text-xs font-semibold text-gray-600 mb-2">Audience</label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+            {[
+              { value: 'all', label: `All (${userCount})` },
+              { value: 'university', label: 'University' },
+              { value: 'city', label: 'City' },
+              { value: 'role', label: 'Role' },
+            ].map(opt => (
+              <button key={opt.value} type="button"
+                onClick={() => setPushAudience(opt.value)}
+                className={`py-2 text-xs rounded-lg border-2 font-medium transition ${
+                  pushAudience === opt.value
+                    ? 'border-cyan-500 bg-cyan-50 text-cyan-700'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {pushAudience === 'university' && (
+            <select value={pushUniversity} onChange={(e) => setPushUniversity(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">Choose a university...</option>
+              {universities.map(uni => (
+                <option key={uni} value={uni}>{uni} ({universityFollowerCounts[uni] || 0} followers)</option>
+              ))}
+            </select>
+          )}
+
+          {pushAudience === 'city' && (
+            <select value={pushCity} onChange={(e) => setPushCity(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">Choose a city...</option>
+              {cities.map(city => <option key={city} value={city}>{city}</option>)}
+            </select>
+          )}
+
+          {pushAudience === 'role' && (
+            <select value={pushRole} onChange={(e) => setPushRole(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">Choose a role...</option>
+              <option value="user">Users</option>
+              <option value="organizer">Organizers</option>
+              <option value="admin">Admins</option>
+            </select>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   if (error) return (
     <div className="flex h-screen bg-gray-50">
@@ -898,36 +1075,42 @@ export default function EventSubmissionsPage() {
                 </div>
               </div>
 
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6 flex gap-3 justify-end flex-wrap">
-                {selectedSubmission.status !== 'approved' && (
-                  needsTicketing ? (
-                    <button onClick={() => handleApprove(selectedSubmission.id)} disabled={approving}
-                      className="flex items-center gap-2 px-5 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-semibold disabled:opacity-50 transition">
-                      {approving
-                        ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Publishing...</>
-                        : <><Settings size={18} />Set Up Ticketing & Publish</>
-                      }
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6">
+                {/* ✅ NEW — push notification settings, only shown when there's
+                    still an approve action to take */}
+                {selectedSubmission.status !== 'approved' && renderPushSettings()}
+
+                <div className="flex gap-3 justify-end flex-wrap">
+                  {selectedSubmission.status !== 'approved' && (
+                    needsTicketing ? (
+                      <button onClick={() => handleApprove(selectedSubmission.id)} disabled={approving}
+                        className="flex items-center gap-2 px-5 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-semibold disabled:opacity-50 transition">
+                        {approving
+                          ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Publishing...</>
+                          : <><Settings size={18} />Set Up Ticketing & Publish</>
+                        }
+                      </button>
+                    ) : (
+                      <button onClick={() => handleApprove(selectedSubmission.id)} disabled={approving}
+                        className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold disabled:opacity-50 transition">
+                        {approving
+                          ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Publishing...</>
+                          : <><Check size={20} />Approve & Publish{selectedSubmission.referralCode ? ' (+₦100)' : ''}</>
+                        }
+                      </button>
+                    )
+                  )}
+                  {selectedSubmission.status !== 'rejected' && (
+                    <button onClick={() => handleReject(selectedSubmission.id)}
+                      className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold">
+                      <X size={20} />Reject
                     </button>
-                  ) : (
-                    <button onClick={() => handleApprove(selectedSubmission.id)} disabled={approving}
-                      className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold disabled:opacity-50 transition">
-                      {approving
-                        ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Publishing...</>
-                        : <><Check size={20} />Approve & Publish{selectedSubmission.referralCode ? ' (+₦100)' : ''}</>
-                      }
-                    </button>
-                  )
-                )}
-                {selectedSubmission.status !== 'rejected' && (
-                  <button onClick={() => handleReject(selectedSubmission.id)}
-                    className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold">
-                    <X size={20} />Reject
+                  )}
+                  <button onClick={() => handleDelete(selectedSubmission.id)}
+                    className="flex items-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold">
+                    <X size={20} />Delete
                   </button>
-                )}
-                <button onClick={() => handleDelete(selectedSubmission.id)}
-                  className="flex items-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold">
-                  <X size={20} />Delete
-                </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1110,6 +1293,9 @@ export default function EventSubmissionsPage() {
                   })()}
                 </div>
               )}
+
+              {/* ✅ NEW — push notification settings for the ticketing flow */}
+              {renderPushSettings()}
             </div>
 
             <div className="border-t border-gray-200 p-5 flex flex-col sm:flex-row gap-3">
