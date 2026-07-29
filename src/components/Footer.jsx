@@ -15,7 +15,9 @@ function GooglePlayBadge() {
 
 function AppStoreBadge() {
   return (
-    <a href="https://apps.apple.com" target="_blank" rel="noopener noreferrer">
+    // ✅ FIXED — was pointing to the generic App Store homepage instead
+    // of the actual OutingStation app page.
+    <a href="https://apps.apple.com/ng/app/outingstation/id6774141538" target="_blank" rel="noopener noreferrer">
       <img src={AppStoreImg} alt="Download on the App Store" className="h-9 w-auto" />
     </a>
   );
