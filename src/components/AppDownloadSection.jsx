@@ -3,8 +3,11 @@ import { Smartphone } from 'lucide-react';
 
 // Update these when the iOS build ships
 const ANDROID_LIVE = true;
-const IOS_LIVE = false;
+const IOS_LIVE = true;
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.outingstation.app';
+// ✅ FIXED — was left empty (a syntax error on its own), now the real
+// live App Store link.
+const APP_STORE_URL = 'https://apps.apple.com/ng/app/outingstation/id6774141538';
 
 export default function AppDownloadSection() {
   return (
@@ -39,18 +42,32 @@ export default function AppDownloadSection() {
             </div>
           </a>
 
-          <div className="flex items-center gap-3 px-6 py-3 rounded-2xl border-2 border-gray-200 bg-gray-50 relative">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="#9ca3af">
+          {/* ✅ FIXED — was hardcoded to the disabled "coming soon" state
+          regardless of IOS_LIVE, and had no href at all since
+          APP_STORE_URL was empty. Now mirrors the Google Play button's
+          own conditional pattern exactly, using IOS_LIVE like it was
+          clearly meant to. */}
+          <a
+            href={IOS_LIVE ? APP_STORE_URL : undefined}
+            target="_blank"
+            rel="noreferrer"
+            className={
+              'flex items-center gap-3 px-6 py-3 rounded-2xl border-2 transition ' +
+              (IOS_LIVE
+                ? 'border-gray-800 bg-gray-900 hover:bg-gray-800 cursor-pointer'
+                : 'border-gray-200 bg-gray-50 cursor-not-allowed')
+            }
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill={IOS_LIVE ? '#ffffff' : '#9ca3af'}>
               <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8.94-.15 1.85-.9 3.14-.82.55.03 2.1.22 3.08 1.68-.08.05-1.84 1.08-1.82 3.22.02 2.55 2.24 3.4 2.27 3.41-.02.06-.36 1.22-1.18 2.42-.7 1.03-1.44 2.06-2.57 2.24zM12.03 7.25c-.15-1.7 1.28-3.17 2.9-3.25.22 1.6-1.5 3.4-2.9 3.25z"/>
             </svg>
             <div className="text-left">
-              <div className="text-xs text-gray-400">Coming soon on</div>
-              <div className="text-sm font-bold text-gray-400">App Store</div>
+              <div className={'text-xs ' + (IOS_LIVE ? 'text-gray-300' : 'text-gray-400')}>
+                {IOS_LIVE ? 'Download on the' : 'Coming soon on'}
+              </div>
+              <div className={'text-sm font-bold ' + (IOS_LIVE ? 'text-white' : 'text-gray-400')}>App Store</div>
             </div>
-            <span className="absolute -top-2.5 -right-2.5 bg-amber-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-              99% Ready
-            </span>
-          </div>
+          </a>
         </div>
       </div>
     </section>
