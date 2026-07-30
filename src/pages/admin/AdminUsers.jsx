@@ -25,6 +25,7 @@ import {
   Star,
   Lock,
   Unlock,
+  ArrowUpDown,
 } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import {
@@ -41,6 +42,7 @@ export default function AdminUsers() {
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [userFilter, setUserFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest'); // 👈 NEW: sort state
   const [expandedUser, setExpandedUser] = useState(null);
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -54,7 +56,7 @@ export default function AdminUsers() {
   });
 
   useEffect(() => { loadUsers(); }, []);
-  useEffect(() => { filterUsers(); }, [users, searchQuery, userFilter]);
+  useEffect(() => { filterUsers(); }, [users, searchQuery, userFilter, sortBy]); // 👈 added sortBy
 
   const loadUsers = async () => {
     try {
@@ -99,6 +101,18 @@ export default function AdminUsers() {
         u.id.toLowerCase().includes(q)
       );
     }
+
+    // 👇 NEW: Sort logic
+    filtered.sort((a, b) => {
+      const aTime = a.createdAt?.seconds || 0;
+      const bTime = b.createdAt?.seconds || 0;
+      if (sortBy === 'newest') return bTime - aTime;
+      if (sortBy === 'oldest') return aTime - bTime;
+      if (sortBy === 'name_az') return (a.name || '').localeCompare(b.name || '');
+      if (sortBy === 'name_za') return (b.name || '').localeCompare(a.name || '');
+      return 0;
+    });
+
     setFilteredUsers(filtered);
   };
 
@@ -396,6 +410,20 @@ export default function AdminUsers() {
                     <option value="banned">🚫 Banned Users</option>
                     <option value="credits_locked">🔒 Credits Locked</option>
                     <option value="credits_unlocked">🔓 Credits Unlocked</option>
+                  </select>
+                </div>
+                {/* 👇 NEW: Sort dropdown */}
+                <div className="flex items-center gap-2">
+                  <ArrowUpDown size={18} className="text-gray-400" />
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+                  >
+                    <option value="newest">🆕 Newest First</option>
+                    <option value="oldest">📅 Oldest First</option>
+                    <option value="name_az">🔤 Name A-Z</option>
+                    <option value="name_za">🔤 Name Z-A</option>
                   </select>
                 </div>
                 <button

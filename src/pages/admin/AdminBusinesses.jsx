@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Menu, Store, CheckCircle, XCircle, Clock, Phone, MapPin, DollarSign } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
-import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../../firebase';
 import toast from 'react-hot-toast';
 
@@ -17,6 +17,68 @@ function computeVerificationTick(cacStatus, govIdStatus) {
   if (cacApproved) return 'green';
   if (govIdApproved) return 'blue';
   return null;
+}
+
+// ✅ NEW — deletes every Outing this business posted, before the business
+// document itself is deleted, so their videos stop appearing in the feed
+// instead of becoming orphaned. Uses a batched delete since a business
+// could have many posts.
+//
+// ⚠️ ASSUMPTION — I don't have your `outings` schema, so this assumes each
+// Outing document has a `posterId` field storing the business's Firestore
+// doc id (separate from `linkedId`, which is what the video promotes and
+// could be tagged by someone else). If the actual field is named
+// differently (e.g. `businessId`, `ownerId`), update the `where('posterId', ...)`
+// line below to match — otherwise this silently deletes nothing.
+//
+// Also note: if outing comments/likes live in subcollections
+// (`outings/{id}/comments`, etc.) rather than top-level collections,
+// deleting the outing document does NOT delete those subcollections —
+// Firestore never cascades subcollections automatically. Flag it if that's
+// your setup and I'll add cleanup for those too.
+async function deleteBusinessOutings(businessId) {
+  const q = query(
+    collection(db, 'outings'),
+    where('posterId', '==', businessId),
+    where('posterType', '==', 'business')
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return;
+
+  // Firestore batches cap at 500 writes — chunk just in case a business
+  // has posted more than that.
+  const chunks = [];
+  for (let i = 0; i < snap.docs.length; i += 450) {
+    chunks.push(snap.docs.slice(i, i + 450));
+  }
+  for (const chunk of chunks) {
+    const batch = writeBatch(db);
+    chunk.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+}
+
+// ✅ NEW — one-time cleanup for videos left behind by businesses that were
+// deleted BEFORE the cascade-delete above existed. Scans every Outing
+// posted by a business and deletes any whose business no longer has a
+// document in `businesses`. Same `posterId`/`posterType` field assumption
+// as above — confirm the real field name if this finds nothing but you
+// know orphans exist.
+async function cleanupOrphanedBusinessOutings(existingBusinessIds) {
+  const snap = await getDocs(query(collection(db, 'outings'), where('posterType', '==', 'business')));
+  const orphaned = snap.docs.filter(d => !existingBusinessIds.has(d.data().posterId));
+  if (orphaned.length === 0) return 0;
+
+  const chunks = [];
+  for (let i = 0; i < orphaned.length; i += 450) {
+    chunks.push(orphaned.slice(i, i + 450));
+  }
+  for (const chunk of chunks) {
+    const batch = writeBatch(db);
+    chunk.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  return orphaned.length;
 }
 
 export default function AdminBusinesses() {
@@ -84,13 +146,17 @@ export default function AdminBusinesses() {
     setUpdatingId('');
   };
 
+  // ✅ CHANGED — cascade-deletes the business's Outings first, so their
+  // videos don't keep showing in the feed after the business account
+  // itself is gone.
   const handleDelete = async (id, businessName) => {
     if (!window.confirm(`Permanently delete "${businessName}"? This can't be undone.`)) return;
     setUpdatingId(id);
     try {
+      await deleteBusinessOutings(id); // ✅ NEW
       await deleteDoc(doc(db, 'businesses', id));
       setBusinesses(prev => prev.filter(b => b.id !== id));
-      toast.success('Business deleted');
+      toast.success('Business and its Outings deleted');
     } catch (err) {
       console.error(err);
       toast.error('Failed to delete business');
@@ -119,6 +185,22 @@ export default function AdminBusinesses() {
       toast.error('Backfill failed');
       setLoading(false);
     }
+  };
+
+  // ✅ NEW — one-time button to purge videos left behind by businesses
+  // deleted before the cascade-delete fix existed.
+  const handleCleanupOrphans = async () => {
+    if (!window.confirm('Scan all business Outings and delete any whose business account no longer exists? This is a one-time cleanup and can\'t be undone.')) return;
+    setLoading(true);
+    try {
+      const existingIds = new Set(businesses.map(b => b.id));
+      const count = await cleanupOrphanedBusinessOutings(existingIds);
+      toast.success(count > 0 ? `Deleted ${count} orphaned video(s)` : 'No orphaned videos found');
+    } catch (err) {
+      console.error(err);
+      toast.error('Cleanup failed');
+    }
+    setLoading(false);
   };
 
   const filtered = activeTab === 'all' ? businesses : businesses.filter(b => b.status === activeTab);
@@ -165,6 +247,13 @@ export default function AdminBusinesses() {
                 className="px-4 py-2 rounded-full text-sm font-semibold bg-white text-gray-600 border border-gray-200 hover:border-cyan-400 transition"
               >
                 Backfill verification ticks
+              </button>
+              {/* ✅ NEW — one-time cleanup for videos orphaned by businesses deleted before the cascade fix existed */}
+              <button
+                onClick={handleCleanupOrphans}
+                className="px-4 py-2 rounded-full text-sm font-semibold bg-white text-gray-600 border border-gray-200 hover:border-red-400 transition"
+              >
+                Clean up orphaned videos
               </button>
             </div>
 
