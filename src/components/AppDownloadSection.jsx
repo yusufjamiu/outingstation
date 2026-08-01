@@ -4,7 +4,7 @@ import { Smartphone } from 'lucide-react';
 // Update these when the iOS build ships
 const ANDROID_LIVE = true;
 const IOS_LIVE = true;
-const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.outingstation.app';
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.outingstation';
 // ✅ FIXED — was left empty (a syntax error on its own), now the real
 // live App Store link.
 const APP_STORE_URL = 'https://apps.apple.com/ng/app/outingstation/id6774141538';

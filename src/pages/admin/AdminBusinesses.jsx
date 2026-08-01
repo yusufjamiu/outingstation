@@ -36,10 +36,10 @@ function computeVerificationTick(cacStatus, govIdStatus) {
 // deleting the outing document does NOT delete those subcollections —
 // Firestore never cascades subcollections automatically. Flag it if that's
 // your setup and I'll add cleanup for those too.
-async function deleteBusinessOutings(businessId) {
+async function deleteBusinessOutings(ownerId) {
   const q = query(
     collection(db, 'outings'),
-    where('posterId', '==', businessId),
+    where('posterId', '==', ownerId), // ✅ FIXED — posterId is the owner's Auth UID (required by the isOwner() security rule), not the business document's own Firestore id
     where('posterType', '==', 'business')
   );
   const snap = await getDocs(q);
@@ -64,9 +64,9 @@ async function deleteBusinessOutings(businessId) {
 // document in `businesses`. Same `posterId`/`posterType` field assumption
 // as above — confirm the real field name if this finds nothing but you
 // know orphans exist.
-async function cleanupOrphanedBusinessOutings(existingBusinessIds) {
+async function cleanupOrphanedBusinessOutings(existingOwnerIds) {
   const snap = await getDocs(query(collection(db, 'outings'), where('posterType', '==', 'business')));
-  const orphaned = snap.docs.filter(d => !existingBusinessIds.has(d.data().posterId));
+  const orphaned = snap.docs.filter(d => !existingOwnerIds.has(d.data().posterId));
   if (orphaned.length === 0) return 0;
 
   const chunks = [];
@@ -149,11 +149,11 @@ export default function AdminBusinesses() {
   // ✅ CHANGED — cascade-deletes the business's Outings first, so their
   // videos don't keep showing in the feed after the business account
   // itself is gone.
-  const handleDelete = async (id, businessName) => {
+  const handleDelete = async (id, ownerId, businessName) => {
     if (!window.confirm(`Permanently delete "${businessName}"? This can't be undone.`)) return;
     setUpdatingId(id);
     try {
-      await deleteBusinessOutings(id); // ✅ NEW
+      await deleteBusinessOutings(ownerId); // ✅ FIXED — was passing the business doc id; now passes the owner's Auth UID, which is what posterId actually stores
       await deleteDoc(doc(db, 'businesses', id));
       setBusinesses(prev => prev.filter(b => b.id !== id));
       toast.success('Business and its Outings deleted');
@@ -193,7 +193,7 @@ export default function AdminBusinesses() {
     if (!window.confirm('Scan all business Outings and delete any whose business account no longer exists? This is a one-time cleanup and can\'t be undone.')) return;
     setLoading(true);
     try {
-      const existingIds = new Set(businesses.map(b => b.id));
+      const existingIds = new Set(businesses.map(b => b.ownerId)); // ✅ FIXED — was b.id (business doc id); posterId on Outings stores the owner's Auth UID instead
       const count = await cleanupOrphanedBusinessOutings(existingIds);
       toast.success(count > 0 ? `Deleted ${count} orphaned video(s)` : 'No orphaned videos found');
     } catch (err) {
@@ -404,7 +404,7 @@ export default function AdminBusinesses() {
                         )}
 
                         <button
-                          onClick={() => handleDelete(biz.id, biz.businessName)}
+                          onClick={() => handleDelete(biz.id, biz.ownerId, biz.businessName)}
                           disabled={updatingId === biz.id}
                           className="mt-2 text-xs text-gray-400 hover:text-red-500 font-medium block disabled:opacity-50"
                         >
