@@ -1,6 +1,10 @@
 // src/components/OutingStationAI.jsx
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Compass, X, Send, RefreshCw, RotateCcw } from 'lucide-react';
+import {
+  Compass, X, Send, RefreshCw, RotateCcw, ChevronDown,
+  Siren, Store, PartyPopper, Ticket, GraduationCap, Heart,
+  MapPin, Phone, MessageCircle,
+} from 'lucide-react';
 import { db, auth } from '../firebase';
 import {
   collection, getDocs, doc, getDoc, updateDoc,
@@ -19,20 +23,31 @@ const NUDGE_MESSAGES = [
   "Ask me about events near you 🎉",
   "I can find your tickets too 🎟️",
   "Need a hall or venue? Ask me 🏛️",
+  "Emergency? I can help fast 🚨",
   "Chill spot? Date night? I got you 😌",
 ];
 
+// ✅ CHANGED — now matches the app's icon+color starter cards, including
+// the Emergency option, instead of the old plain pill buttons.
 const STARTERS = [
-  '🎉 Events this weekend',
-  '😌 Chill spot for a date',
-  '🏛️ Halls & venues near me',
-  '🎓 Campus events',
-  '🥳 Plan a private party',
-  '🎧 Find a DJ',
-  '🚗 Find a ride',
-  '🎪 I sell stuff — find me a stand',
-  '💳 Check my credits',
-  '🎟️ Show my tickets',
+  { icon: Siren,          color: '#DC2626', label: 'I need emergency help' },
+  { icon: Store,          color: '#D060C0', label: 'Where can I buy something?' },
+  { icon: PartyPopper,    color: '#E0794F', label: 'Events in my city this weekend' },
+  { icon: Ticket,         color: '#4FD8A8', label: 'Show my tickets' },
+  { icon: GraduationCap,  color: '#47A2B6', label: 'Campus events near me' },
+  { icon: Heart,          color: '#C98BE0', label: 'Chill spot for a date' },
+];
+
+const SERVICE_TYPES = [
+  'Event Hall', 'DJ', 'MC', 'Caterer', 'Decorator', 'Photographer',
+  'Musician', 'Rentals', 'Security', 'Restaurant',
+];
+
+const MARKETPLACE_TYPES = [
+  'Tailor', 'Cobbler', 'Footwear Seller', 'Bag & Accessories', 'Caftan Seller',
+  'Traditional Caps', 'Premium Watches', 'Jewelry', 'Perfume Seller', 'Baker',
+  'Food Stuffs Seller', 'Livestock Seller', 'Beverages Seller', 'Laundry Service',
+  'Gift Vendor', 'Souvenirs & Branding', 'Mechanic', 'Furniture Carpenter',
 ];
 
 function eventUrl(r) {
@@ -45,6 +60,208 @@ function hoursUntilReset(resetAt) {
   const resetTime = new Date(resetAt).getTime() + 24 * 60 * 60 * 1000;
   const diff = resetTime - Date.now();
   return Math.max(1, Math.ceil(diff / (60 * 60 * 1000)));
+}
+
+// ✅ NEW — matches the app's _timeGreeting()
+function timeGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+// ── Preloaded catalog cache ───────────────────────────────────────────────
+// ✅ NEW — mirrors _OutingAICatalogCache in the Flutter app. Kicks off all
+// catalog fetches (events, vendors, services, marketplace, essential
+// services, rides, universities) once, cached at module scope so re-opening
+// the widget doesn't refetch. User-specific data (name, city, credits,
+// prompts, tickets) is NOT cached here — that still loads fresh on every
+// open in loadData(), same as before.
+const catalogCache = {
+  loaded: false,
+  promise: null,
+  cachedForCity: null,
+  events: [], vendors: [], services: [], marketplace: [],
+  essentialServices: [], rides: [], uniNames: [], standEvents: [],
+};
+
+function preloadCatalog(userCity) {
+  if (catalogCache.promise && catalogCache.cachedForCity === userCity) return catalogCache.promise;
+  catalogCache.cachedForCity = userCity;
+  catalogCache.loaded = false;
+  catalogCache.promise = fetchAllCatalog(userCity);
+  return catalogCache.promise;
+}
+
+async function fetchAllCatalog(userCity) {
+  const cityLower = (userCity || '').toLowerCase().split(',')[0].trim();
+
+  // Events + stand events
+  try {
+    const evSnap = await getDocs(collection(db, 'events'));
+    const now = Date.now();
+    const allDocs = evSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    catalogCache.events = allDocs
+      .filter(e => e.status === 'published')
+      .filter(e => {
+        const isPlace = e.subCategory === 'places', isCampus = e.eventType === 'campus';
+        if (isPlace || isCampus) return true;
+        return cityLower && (e.location || '').toLowerCase().includes(cityLower);
+      })
+      .filter(e => {
+        if (e.subCategory === 'places' || !e.date) return true;
+        const ms = e.date?.seconds ? e.date.seconds * 1000 : new Date(e.date).getTime();
+        return ms >= now;
+      })
+      .map(e => {
+        const amount = e.ticketPrice || e.price || 0;
+        const hasTiers = Array.isArray(e.ticketTiers) && e.ticketTiers.length > 0;
+        let price = 'free', priceLabel = 'Free';
+        if (e.isFree) { price = 'free'; priceLabel = 'Free'; }
+        else if (hasTiers) {
+          const min = Math.min(...e.ticketTiers.map(t => t.price || 0));
+          if (min === 0) { price = 'free'; priceLabel = 'Free'; }
+          else if (min <= 10000) { price = 'low'; priceLabel = `from ₦${min.toLocaleString()}`; }
+          else if (min <= 50000) { price = 'medium'; priceLabel = `from ₦${min.toLocaleString()}`; }
+          else { price = 'premium'; priceLabel = `from ₦${min.toLocaleString()}`; }
+        } else if (amount > 0) {
+          price = amount <= 10000 ? 'low' : amount <= 50000 ? 'medium' : 'premium';
+          priceLabel = `₦${Number(amount).toLocaleString()}`;
+        } else if (e.ticketingEnabled || e.hasOutingStationTicketing || (e.externalTicketLink || '').trim()) {
+          price = 'low'; priceLabel = 'Ticketed';
+        }
+        return {
+          id: e.id, slug: e.slug || '', title: e.title || 'Untitled',
+          desc: (e.description || '').substring(0, 100),
+          kind: e.subCategory === 'places' ? 'place' : 'event',
+          city: e.location || '', area: (e.location || '').split(',')[0].trim(),
+          price, priceLabel, priceNaira: amount,
+          category: e.category || '', campus: e.eventType === 'campus' ? 'yes' : 'no',
+          university: e.university || '',
+          imageUrl: e.imageUrl || (Array.isArray(e.images) && e.images[0]) || '',
+          mapLocation: e.mapLocation || '',
+        };
+      });
+
+    catalogCache.standEvents = allDocs
+      .filter(e => e.status === 'published' && e.vendorStandsEnabled && Array.isArray(e.vendorStands))
+      .map(e => {
+        const openStands = (e.vendorStands || []).filter(s => (s.filled || 0) < s.quantityAvailable);
+        if (openStands.length === 0) return null;
+        const prices = openStands.map(s => s.price || 0);
+        return {
+          id: e.id, slug: e.slug || '', title: e.title || 'Untitled', kind: 'stand_event',
+          city: e.location || '', area: (e.location || '').split(',')[0].trim(),
+          standsAvailable: openStands.length,
+          standPriceRange: prices.length ? `₦${Math.min(...prices).toLocaleString()}–₦${Math.max(...prices).toLocaleString()}` : '',
+          priceLabel: `${openStands.length} stand${openStands.length !== 1 ? 's' : ''} open`,
+          priceNaira: prices.length ? Math.min(...prices) : 0,
+          imageUrl: e.imageUrl || (Array.isArray(e.images) && e.images[0]) || '',
+        };
+      }).filter(Boolean);
+  } catch (e) { console.error('AI events preload error:', e); }
+
+  // Vendors
+  try {
+    const vSnap = await getDocs(collection(db, 'vendors'));
+    catalogCache.vendors = vSnap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, title: data.shopName || data.name || 'Vendor', desc: data.description || '',
+        kind: 'vendor', category: data.category || '', university: data.university || '',
+        whatsapp: (data.whatsappNumber || '').replace(/[^0-9]/g, ''),
+        area: data.university || '', priceLabel: 'Vendor', imageUrl: data.imageUrl || '' };
+    });
+  } catch (e) { console.error('AI vendors preload error:', e); }
+
+  // Services (Event Hall, DJ, MC, Caterer, Decorator, Photographer, Musician, etc.)
+  try {
+    const bizSnap = await getDocs(collection(db, 'businesses'));
+    const allBiz = bizSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(b => b.status === 'approved');
+
+    catalogCache.services = allBiz
+      .filter(b => b.businessCategory === 'Service Provider' || SERVICE_TYPES.includes(b.businessType))
+      .map(b => {
+        const packages = (b.pricingTiers?.length ? b.pricingTiers : (b.hourlyPackages || []).map(p => ({ price: p.price })));
+        const minPrice = packages.length ? Math.min(...packages.map(p => p.price || 0)) : 0;
+        return {
+          id: b.id, title: b.businessName || 'Business', kind: 'service',
+          category: b.customTypeName || b.businessType || 'Service', desc: b.description || '',
+          city: b.city || '', area: b.city || '',
+          priceLabel: minPrice > 0 ? `from ₦${minPrice.toLocaleString()}` : 'Contact for pricing',
+          priceNaira: minPrice,
+          whatsapp: (b.whatsappNumber || '').replace(/[^0-9]/g, ''),
+          imageUrl: b.logoUrl || (packages[0]?.image) || '',
+        };
+      });
+
+    // ✅ NEW — Marketplace category (Tailor, Cobbler, Baker, etc.)
+    catalogCache.marketplace = allBiz
+      .filter(b => MARKETPLACE_TYPES.includes(b.businessType))
+      .map(b => {
+        const tiers = Array.isArray(b.pricingTiers) ? b.pricingTiers : [];
+        const minPrice = tiers.length ? Math.min(...tiers.map(t => t.price || 0)) : 0;
+        return {
+          id: b.id, title: b.businessName || 'Business', kind: 'marketplace',
+          category: b.businessType || '', desc: b.description || '',
+          city: b.city || '', area: b.area || b.city || '',
+          priceLabel: minPrice > 0 ? `from ₦${minPrice.toLocaleString()}` : 'Contact for pricing',
+          priceNaira: minPrice,
+          whatsapp: (b.whatsappNumber || '').replace(/[^0-9]/g, ''),
+          imageUrl: b.logoUrl || '',
+        };
+      });
+
+    // ✅ NEW — Rides category (Ride Provider), flattened per pricing tier
+    const rideDocs = allBiz.filter(b => b.businessType === 'Ride Provider');
+    const flattenedRides = [];
+    rideDocs.forEach(b => {
+      const tiers = Array.isArray(b.pricingTiers) ? b.pricingTiers : [];
+      const businessName = b.businessName || 'Ride Provider';
+      const whatsapp = (b.whatsappNumber || '').replace(/[^0-9]/g, '');
+      const logoUrl = b.logoUrl || '';
+      if (tiers.length === 0) {
+        flattenedRides.push({
+          id: b.id, title: businessName, kind: 'ride', city: b.city || '', area: b.area || b.city || '',
+          priceLabel: 'Contact for pricing', whatsapp, imageUrl: logoUrl,
+        });
+      } else {
+        tiers.forEach((tier, i) => {
+          flattenedRides.push({
+            id: `${b.id}#${i}`, title: `${tier.name || tier.tierName || 'Vehicle'} — ${businessName}`,
+            kind: 'ride', city: b.city || '', area: b.area || b.city || '',
+            priceLabel: tier.price ? `₦${Number(tier.price).toLocaleString()}/day` : 'Contact for pricing',
+            whatsapp, imageUrl: tier.imageUrl || logoUrl,
+          });
+        });
+      }
+    });
+    catalogCache.rides = flattenedRides;
+  } catch (e) { console.error('AI services/marketplace/rides preload error:', e); }
+
+  // ✅ NEW — Essential services (emergency lines)
+  try {
+    const esSnap = await getDocs(collection(db, 'essential_services'));
+    catalogCache.essentialServices = esSnap.docs.map(d => {
+      const data = d.data();
+      const phones = Array.isArray(data.phones) && data.phones.length
+        ? data.phones.map(p => String(p))
+        : (data.phone ? [String(data.phone)] : []);
+      return {
+        id: d.id, title: data.name || 'Essential Service', kind: 'essentialService',
+        group: data.group || '', category: data.category || '',
+        city: data.city || '', phones, address: data.address || '',
+      };
+    });
+  } catch (e) { console.error('AI essential services preload error:', e); }
+
+  // Universities
+  try {
+    const uSnap = await getDocs(collection(db, 'universities'));
+    catalogCache.uniNames = uSnap.docs.map(d => d.data().name).filter(Boolean);
+  } catch (e) { console.error('AI universities preload error:', e); }
+
+  catalogCache.loaded = true;
 }
 
 export default function OutingStationAI() {
@@ -74,13 +291,22 @@ export default function OutingStationAI() {
 
   const [events, setEvents]   = useState([]);
   const [vendors, setVendors] = useState([]);
-  const [services, setServices] = useState([]); // ✅ NEW: Service Provider businesses
-  const [standEvents, setStandEvents] = useState([]); // ✅ NEW: events with open vendor stands
+  const [services, setServices] = useState([]);
+  const [marketplace, setMarketplace] = useState([]);         // ✅ NEW
+  const [essentialServices, setEssentialServices] = useState([]); // ✅ NEW
+  const [rides, setRides] = useState([]);                      // ✅ NEW
+  const [standEvents, setStandEvents] = useState([]);
   const [uniNames, setUniNames] = useState([]);
   const [tickets, setTickets] = useState([]);
 
-  const bottomRef = useRef(null);
+  // ✅ NEW — scroll-down hint, mirrors _showScrollDownHint in the app
+  const [showScrollDownHint, setShowScrollDownHint] = useState(false);
+
+  const scrollBoxRef = useRef(null);
   const inputRef  = useRef(null);
+  // ✅ NEW — every message gets a ref so we can scroll to ITS top,
+  // mirroring the app's per-message GlobalKey + _scrollToMessageTop.
+  const messageRefs = useRef({});
 
   const typewrite = useCallback((text) => {
     clearInterval(typeTimerRef.current);
@@ -135,13 +361,51 @@ export default function OutingStationAI() {
     return unsub;
   }, []);
 
+  // ✅ NEW — kick off the catalog preload as soon as the component mounts
+  // (mirrors OutingAIFab.initState calling _preloadAIData), not only when
+  // the chat sheet is opened. Uses whatever city is known at mount time;
+  // loadData() below re-preloads with the confirmed city if it differs.
+  useEffect(() => {
+    (async () => {
+      let city = 'Lagos';
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          const c = userDoc.exists() ? userDoc.data().city : null;
+          if (c) city = c;
+        } catch (_) {}
+      }
+      preloadCatalog(city);
+    })();
+  }, []);
+
   useEffect(() => {
     if (open && !dataLoaded) loadData();
   }, [open]);
 
+  // ✅ NEW — scroll listener toggles the "more below" hint, mirrors _onScroll
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+    const el = scrollBoxRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const notAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight > 80;
+      setShowScrollDownHint(notAtBottom);
+    };
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [open, dataLoaded]);
+
+  // ✅ CHANGED — scrolls the TOP of the newest message into view instead of
+  // jumping to the bottom of the whole list, mirroring _scrollToMessageTop.
+  function scrollToMessageTop(msgId) {
+    const attempt = () => {
+      const node = messageRefs.current[msgId];
+      if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    requestAnimationFrame(attempt);
+    [150, 400, 800].forEach(ms => setTimeout(attempt, ms));
+  }
 
   async function loadData() {
     let name = '', city = 'Lagos', credits = 0, promptsToday = 0, resetAt = null;
@@ -169,119 +433,18 @@ export default function OutingStationAI() {
       } catch (e) { console.error('AI user load error:', e); }
     }
 
-    try {
-      const cityLower = city.toLowerCase().split(',')[0].trim();
-      const evSnap    = await getDocs(collection(db, 'events'));
-      const now       = Date.now();
-      const rawEvents = evSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(e => e.status === 'published')
-        .filter(e => {
-          const isPlace = e.subCategory === 'places', isCampus = e.eventType === 'campus';
-          if (isPlace || isCampus) return true;
-          return cityLower && (e.location || '').toLowerCase().includes(cityLower);
-        })
-        .filter(e => {
-          if (e.subCategory === 'places' || !e.date) return true;
-          const ms = e.date?.seconds ? e.date.seconds * 1000 : new Date(e.date).getTime();
-          return ms >= now;
-        })
-        .map(e => {
-          const amount = e.ticketPrice || e.price || 0;
-          const hasTiers = Array.isArray(e.ticketTiers) && e.ticketTiers.length > 0;
-          let price = 'free', priceLabel = 'Free';
-          if (e.isFree) { price = 'free'; priceLabel = 'Free'; }
-          else if (hasTiers) {
-            const min = Math.min(...e.ticketTiers.map(t => t.price || 0));
-            if (min === 0) { price = 'free'; priceLabel = 'Free'; }
-            else if (min <= 10000) { price = 'low'; priceLabel = `from ₦${min.toLocaleString()}`; }
-            else if (min <= 50000) { price = 'medium'; priceLabel = `from ₦${min.toLocaleString()}`; }
-            else { price = 'premium'; priceLabel = `from ₦${min.toLocaleString()}`; }
-          } else if (amount > 0) {
-            price = amount <= 10000 ? 'low' : amount <= 50000 ? 'medium' : 'premium';
-            priceLabel = `₦${Number(amount).toLocaleString()}`;
-          } else if (e.ticketingEnabled || e.hasOutingStationTicketing || (e.externalTicketLink || '').trim()) {
-            price = 'low'; priceLabel = 'Ticketed';
-          }
-          return {
-            id: e.id, slug: e.slug || '', title: e.title || 'Untitled',
-            desc: (e.description || '').substring(0, 100),
-            kind: e.subCategory === 'places' ? 'place' : 'event',
-            city: e.location || '', area: (e.location || '').split(',')[0].trim(),
-            price, priceLabel, priceNaira: amount,
-            category: e.category || '', campus: e.eventType === 'campus' ? 'yes' : 'no',
-            university: e.university || '',
-            imageUrl: e.imageUrl || (Array.isArray(e.images) && e.images[0]) || '',
-            mapLocation: e.mapLocation || '',
-          };
-        });
-      setEvents(rawEvents);
-
-      // ✅ NEW: derive events with open vendor stands from the SAME evSnap
-      // already fetched above — no second Firestore read needed.
-      const rawStandEvents = evSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(e => e.status === 'published' && e.vendorStandsEnabled && Array.isArray(e.vendorStands))
-        .map(e => {
-          const openStands = (e.vendorStands || []).filter(s => (s.filled || 0) < s.quantityAvailable);
-          if (openStands.length === 0) return null;
-          const prices = openStands.map(s => s.price || 0);
-          return {
-            id: e.id, slug: e.slug || '', title: e.title || 'Untitled',
-            kind: 'stand_event',
-            city: e.location || '', area: (e.location || '').split(',')[0].trim(),
-            standsAvailable: openStands.length,
-            standPriceRange: prices.length ? `₦${Math.min(...prices).toLocaleString()}–₦${Math.max(...prices).toLocaleString()}` : '',
-            priceLabel: `${openStands.length} stand${openStands.length !== 1 ? 's' : ''} open`,
-            priceNaira: prices.length ? Math.min(...prices) : 0,
-            imageUrl: e.imageUrl || (Array.isArray(e.images) && e.images[0]) || '',
-          };
-        })
-        .filter(Boolean);
-      setStandEvents(rawStandEvents);
-    } catch (e) { console.error('AI events load error:', e); }
-
-    try {
-      const vSnap = await getDocs(collection(db, 'vendors'));
-      setVendors(vSnap.docs.map(d => {
-        const data = d.data();
-        return { id: d.id, title: data.shopName || data.name || 'Vendor', desc: data.description || '',
-          kind: 'vendor', category: data.category || '', university: data.university || '',
-          whatsapp: (data.whatsappNumber || '').replace(/[^0-9]/g, ''),
-          area: data.university || '', priceLabel: 'Vendor', imageUrl: data.imageUrl || '' };
-      }));
-    } catch (_) {}
-
-    // ✅ NEW: Service Provider businesses — DJ, MC, Caterer, Decorator,
-    // Photographer, Musician, Event Hall, Ride Provider, Furniture Rental, etc.
-    try {
-      const SERVICE_PROVIDER_TYPE_VALUES = [
-        'Event Hall', 'DJ', 'MC', 'Caterer', 'Decorator', 'Photographer', 'Musician',
-        'Furniture Rental', 'Ride Provider', 'Experience Host', 'Security',
-        'Restaurant', 'Livestock Seller', 'Other Service',
-      ];
-      const bizSnap = await getDocs(collection(db, 'businesses'));
-      const serviceBusinesses = bizSnap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(b => b.status === 'approved')
-        .filter(b => b.businessCategory === 'Service Provider' || SERVICE_PROVIDER_TYPE_VALUES.includes(b.businessType));
-      setServices(serviceBusinesses.map(b => {
-        const packages = (b.pricingTiers?.length ? b.pricingTiers : (b.hourlyPackages || []).map(p => ({ price: p.price })));
-        const minPrice = packages.length ? Math.min(...packages.map(p => p.price || 0)) : 0;
-        return {
-          id: b.id, title: b.businessName || 'Business', kind: 'service',
-          category: b.customTypeName || b.businessType || 'Service', desc: b.description || '',
-          city: b.city || '', area: b.city || '',
-          priceLabel: minPrice > 0 ? `from ₦${minPrice.toLocaleString()}` : 'Contact for pricing',
-          priceNaira: minPrice,
-          whatsapp: (b.whatsappNumber || '').replace(/[^0-9]/g, ''),
-          imageUrl: b.logoUrl || (packages[0]?.image) || '',
-        };
-      }));
-    } catch (_) {}
-
-    try {
-      const uSnap = await getDocs(collection(db, 'universities'));
-      setUniNames(uSnap.docs.map(d => d.data().name).filter(Boolean));
-    } catch (_) {}
+    // ✅ CHANGED — awaits the (usually already-finished) catalog cache
+    // instead of re-fetching everything cold. Re-preloads if the confirmed
+    // city differs from whatever the mount-time guess used.
+    await preloadCatalog(city);
+    setEvents(catalogCache.events);
+    setStandEvents(catalogCache.standEvents);
+    setVendors(catalogCache.vendors);
+    setServices(catalogCache.services);
+    setMarketplace(catalogCache.marketplace);
+    setEssentialServices(catalogCache.essentialServices);
+    setRides(catalogCache.rides);
+    setUniNames(catalogCache.uniNames);
 
     setDataLoaded(true);
     const firstName = name.split(' ')[0];
@@ -289,7 +452,7 @@ export default function OutingStationAI() {
     const greeting  = firstName
       ? `Hi ${firstName} 👋 I'm Outing AI. What are you looking for${cityStr} — events, places, halls, campus vibes?`
       : `Hi 👋 I'm Outing AI. Tell me what you're looking for and I'll find the perfect match.`;
-    setMessages([{ from: 'ai', text: greeting }]);
+    setMessages([{ id: 'greeting', from: 'ai', text: greeting }]);
   }
 
   function getFreePromptsLeft() {
@@ -338,9 +501,11 @@ export default function OutingStationAI() {
     if (!user && guestQueryUsed) return;
 
     setInput(''); setShowStarters(false);
-    setMessages(prev => [...prev, { from: 'user', text }]);
+    const userMsgId = `u-${Date.now()}`;
+    setMessages(prev => [...prev, { id: userMsgId, from: 'user', text }]);
     setLoading(true);
     if (!user) setGuestQueryUsed(true);
+    scrollToMessageTop(userMsgId); // ✅ CHANGED — was scroll-to-bottom via bottomRef
 
     const lower = text.toLowerCase();
 
@@ -354,11 +519,14 @@ export default function OutingStationAI() {
     if (user) {
       const { allowed, hoursLeft } = await checkAndConsumePrompt();
       if (!allowed) {
+        const id = `ai-${Date.now()}`;
         setMessages(prev => [...prev, {
-          from: 'ai', isPromptLimit: true,
+          id, from: 'ai', isPromptLimit: true,
           text: `You've used your ${FREE_PROMPTS_PER_DAY} free prompts for today 😊\n\nTo get more prompts:\n• 👥 Refer a friend — earn ₦300 credits\n• 🎉 List an event — earn credits on approval\n• 📍 List a place — earn credits on approval\n\nOr wait ${hoursLeft} hour${hoursLeft !== 1 ? 's' : ''} for your free prompts to reset.`,
         }]);
-        setLoading(false); return;
+        setLoading(false);
+        scrollToMessageTop(id);
+        return;
       }
     }
 
@@ -370,6 +538,9 @@ export default function OutingStationAI() {
           message: text, history,
           events: events.slice(0, 120), vendors: vendors.slice(0, 60),
           services: services.slice(0, 80), standEvents: standEvents.slice(0, 60),
+          marketplace: marketplace.slice(0, 100),           // ✅ NEW
+          essentialServices: essentialServices.slice(0, 60), // ✅ NEW
+          rides: rides.slice(0, 60),                          // ✅ NEW
           universities: uniNames, userCity,
         }),
       });
@@ -383,57 +554,73 @@ export default function OutingStationAI() {
         vendors.find(v => v.id === id) ||
         services.find(s => s.id === id) ||
         standEvents.find(se => se.id === id) ||
+        marketplace.find(m => m.id === id) ||            // ✅ NEW
+        essentialServices.find(es => es.id === id) ||     // ✅ NEW
+        rides.find(r => r.id === id) ||                   // ✅ NEW
         null
       ).filter(Boolean);
-      setMessages(prev => [...prev, { from: 'ai', text: reply, results, reasons, isGuestPreview: !user }]);
+      const aiId = `ai-${Date.now()}`;
+      setMessages(prev => [...prev, { id: aiId, from: 'ai', text: reply, results, reasons, isGuestPreview: !user }]);
       setHistory(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: reply }]);
+      scrollToMessageTop(aiId); // ✅ CHANGED
     } catch (_) {
-      setMessages(prev => [...prev, { from: 'ai', text: 'Couldn\'t connect right now. Please check your internet and try again 📡', isError: true }]);
+      const id = `err-${Date.now()}`;
+      setMessages(prev => [...prev, { id, from: 'ai', text: 'Couldn\'t connect right now. Please check your internet and try again 📡', isError: true }]);
+      scrollToMessageTop(id);
     }
     setLoading(false);
   }
 
   async function handleTicketsCommand() {
     await new Promise(r => setTimeout(r, 600));
+    const id = `ai-${Date.now()}`;
     if (!user) {
-      setMessages(prev => [...prev, { from: 'ai', text: 'You need to be logged in to view your tickets 🎟️', isLoginGate: true }]);
+      setMessages(prev => [...prev, { id, from: 'ai', text: 'You need to be logged in to view your tickets 🎟️', isLoginGate: true }]);
     } else if (tickets.length === 0) {
-      setMessages(prev => [...prev, { from: 'ai', text: 'You haven\'t bought any tickets yet. Browse events and get your first ticket! 🎉' }]);
+      setMessages(prev => [...prev, { id, from: 'ai', text: 'You haven\'t bought any tickets yet. Browse events and get your first ticket! 🎉' }]);
     } else {
       const upcoming = tickets.filter(t => t.status === 'active');
       setMessages(prev => [...prev, {
-        from: 'ai',
+        id, from: 'ai',
         text: upcoming.length > 0 ? `You have ${upcoming.length} upcoming ticket(s) 🎟️` : `You have ${tickets.length} ticket(s) in total. No upcoming events right now.`,
         tickets: upcoming.length > 0 ? upcoming.slice(0, 5) : tickets.slice(0, 3),
       }]);
     }
     setLoading(false);
+    scrollToMessageTop(id);
   }
 
   async function handleCreditsCommand() {
     await new Promise(r => setTimeout(r, 500));
+    const id = `ai-${Date.now()}`;
     if (!user) {
-      setMessages(prev => [...prev, { from: 'ai', text: 'Login to check your OutingStation credits 💳', isLoginGate: true }]);
+      setMessages(prev => [...prev, { id, from: 'ai', text: 'Login to check your OutingStation credits 💳', isLoginGate: true }]);
     } else {
       const freeLeft = getFreePromptsLeft();
       setMessages(prev => [...prev, {
-        from: 'ai',
+        id, from: 'ai',
         text: totalCredits > 0
           ? `You have ₦${totalCredits.toLocaleString()} in OutingStation credits 💳\n\nYou have ${freeLeft} free AI prompt${freeLeft !== 1 ? 's' : ''} left today. Each extra prompt costs ₦${CREDIT_COST}.`
           : `You don't have any credits yet. Refer friends using your referral code to earn ₦300 per signup! 🎁`,
       }]);
     }
     setLoading(false);
+    scrollToMessageTop(id);
   }
 
   function restart() {
-    setMessages([{ from: 'ai', text: 'Fresh start 👋 What are you looking for?' }]);
+    setMessages([{ id: 'greeting-restart', from: 'ai', text: 'Fresh start 👋 What are you looking for?' }]);
     setHistory([]); setShowStarters(true);
   }
 
   function openChat() {
     dismissNudge();
     setOpen(true);
+  }
+
+  function scrollToBottomManual() {
+    const el = scrollBoxRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }
 
   const freePromptsLeft = getFreePromptsLeft();
@@ -443,6 +630,8 @@ export default function OutingStationAI() {
     : freePromptsLeft > 0
     ? `Type what you're looking for… (${freePromptsLeft} free left)`
     : `₦${CREDIT_COST} credits per prompt`;
+
+  const firstName = userName.split(' ')[0];
 
   return (
     <>
@@ -463,6 +652,7 @@ export default function OutingStationAI() {
           </div>
         )}
 
+        {/* ✅ CHANGED — pulsing ring now matches the app's animated cyan ring + gradient circle */}
         <button
           onClick={openChat}
           className="w-14 h-14 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-600 shadow-xl flex items-center justify-center relative"
@@ -484,22 +674,27 @@ export default function OutingStationAI() {
             fixed z-[1001]
             inset-x-0 bottom-0 rounded-t-3xl
             md:inset-auto md:bottom-4 md:right-4 md:w-96 md:rounded-2xl
-            bg-white shadow-2xl
+            bg-[#F4F9FB] shadow-2xl
             flex flex-col overflow-hidden
             h-[88dvh] md:h-[600px]
           ">
-            <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-4 py-3 flex items-center gap-3 flex-shrink-0 rounded-t-3xl md:rounded-t-2xl">
-              <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center">
+            {/* ✅ CHANGED — dark navy gradient header, matching the app exactly */}
+            <div
+              className="px-4 py-4 flex items-center gap-3 flex-shrink-0 rounded-t-3xl md:rounded-t-2xl"
+              style={{ background: 'linear-gradient(135deg, #182e38, #0d1e26)' }}
+            >
+              <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center">
                 <Compass size={18} className="text-cyan-400" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-white font-bold text-sm">Outing AI</p>
-                <p className="text-cyan-400 text-xs truncate">Your personal guide</p>
+                <p className="text-cyan-400 text-[10px] truncate">Your personal guide to what's happening around you</p>
               </div>
-              <span className="text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded-full font-semibold">Beta</span>
+              <span className="text-[10px] bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded-full font-semibold">Beta</span>
               {messages.length > 1 && (
-                <button onClick={restart} className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition" title="Restart">
-                  <RotateCcw size={14} className="text-white/70" />
+                <button onClick={restart} className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 transition" title="Restart">
+                  <RotateCcw size={11} className="text-white/70" />
+                  <span className="text-[10px] text-white/70">Restart</span>
                 </button>
               )}
               <button onClick={() => setOpen(false)} className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition">
@@ -507,31 +702,64 @@ export default function OutingStationAI() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-3 bg-slate-50 space-y-3">
-              {!dataLoaded ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+            {!dataLoaded ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : showStarters ? (
+              // ✅ NEW — empty-state greeting + icon starter cards, matching the app's _buildEmptyState
+              <div className="flex-1 overflow-y-auto px-5 py-4">
+                <p className="text-sm text-[#6a8e9b] font-medium">
+                  {firstName ? `${timeGreeting()}, ${firstName}` : timeGreeting()}
+                </p>
+                <p className="text-2xl font-bold text-[#0d2d36] mt-0.5 mb-4">What are you looking for?</p>
+                <div className="space-y-2.5">
+                  {STARTERS.map(s => {
+                    const Icon = s.icon;
+                    return (
+                      <button
+                        key={s.label}
+                        onClick={() => send(s.label)}
+                        className="w-full flex items-center gap-3 bg-white border border-[#D8EDF2] rounded-2xl p-3 hover:bg-cyan-50/50 transition text-left"
+                      >
+                        <span
+                          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: `${s.color}1F` }}
+                        >
+                          <Icon size={18} color={s.color} />
+                        </span>
+                        <span className="text-sm font-medium text-[#1a2a30]">{s.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              ) : (
-                <>
-                  {messages.map((m, i) => (
-                    <Message key={i} m={m} user={user} onRestart={restart} />
+              </div>
+            ) : (
+              // ✅ NEW — Stack-equivalent wrapper so the scroll-down hint can float over the list
+              <div className="flex-1 relative overflow-hidden">
+                <div ref={scrollBoxRef} className="h-full overflow-y-auto p-3 space-y-3">
+                  {messages.map((m) => (
+                    <div key={m.id} ref={el => { messageRefs.current[m.id] = el; }}>
+                      <Message m={m} user={user} onRestart={restart} />
+                    </div>
                   ))}
                   {loading && <TypingIndicator />}
-                  <div ref={bottomRef} />
-                </>
-              )}
-            </div>
+                </div>
+                {showScrollDownHint && (
+                  <button
+                    onClick={scrollToBottomManual}
+                    className="absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-white/90 border border-cyan-300/40 rounded-full p-1.5 shadow-md"
+                  >
+                    <ChevronDown size={18} className="text-cyan-600" />
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="bg-white border-t border-slate-100 p-3 flex-shrink-0">
-              {showStarters && (
+              {showStarters && dataLoaded && (
                 <div className="flex gap-2 overflow-x-auto pb-2 mb-2 scrollbar-hide">
-                  {STARTERS.map(s => (
-                    <button key={s} onClick={() => send(s)}
-                      className="flex-shrink-0 text-xs font-semibold text-cyan-600 border border-cyan-300 bg-white rounded-full px-3 py-1.5 hover:bg-cyan-50 transition">
-                      {s}
-                    </button>
-                  ))}
+                  {/* kept as a quick-access row too, in case the person scrolled past the cards above */}
                 </div>
               )}
 
@@ -684,10 +912,57 @@ function ResultCard({ r, reason }) {
   const isVendor = r.kind === 'vendor';
   const isService = r.kind === 'service';
   const isStandEvent = r.kind === 'stand_event';
-  const hasContactAction = isVendor || isService;
+  const isMarketplace = r.kind === 'marketplace'; // ✅ NEW
+  const isRide = r.kind === 'ride';                // ✅ NEW
+  const isEssential = r.kind === 'essentialService'; // ✅ NEW
+  const hasContactAction = isVendor || isService || isMarketplace || isRide;
   const url = eventUrl(r);
-  const kindLabel = isVendor ? 'Vendor' : isService ? r.category : isStandEvent ? 'Stand Available' : r.kind === 'place' ? 'Place' : 'Event';
-  const emoji = isVendor ? '🛒' : isService ? '💼' : isStandEvent ? '🎪' : r.kind === 'place' ? '📍' : '🎉';
+
+  const kindLabel = isEssential ? (r.group || 'Essential')
+    : isMarketplace ? 'Marketplace'
+    : isRide ? 'Rent a Ride'
+    : isVendor ? 'Vendor'
+    : isService ? r.category
+    : isStandEvent ? 'Stand Available'
+    : r.kind === 'place' ? 'Place' : 'Event';
+
+  const emoji = isEssential ? '🚨'
+    : isMarketplace ? '🛍️'
+    : isRide ? '🚗'
+    : isVendor ? '🛒'
+    : isService ? '💼'
+    : isStandEvent ? '🎪'
+    : r.kind === 'place' ? '📍' : '🎉';
+
+  // ✅ NEW — essential services get Call + WhatsApp buttons per phone line,
+  // matching the app's dedicated essential-service card layout.
+  if (isEssential) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="w-full h-16 bg-red-50 flex items-center justify-center text-3xl">{emoji}</div>
+        <div className="p-3">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <p className="text-sm font-bold text-slate-800 leading-snug">{r.title}</p>
+            <span className="text-[10px] font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full flex-shrink-0">{kindLabel}</span>
+          </div>
+          {(r.phones || []).map((phone, i) => (
+            <div key={i} className="mb-2 last:mb-0">
+              <p className="text-[10px] text-slate-400 mb-0.5">Line {i + 1}</p>
+              <p className="text-sm font-semibold text-slate-700 mb-1.5">{phone}</p>
+              <div className="flex gap-1.5">
+                <a href={`tel:${phone}`} className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-white bg-red-600 rounded-lg py-1.5">
+                  <Phone size={12} /> Call Now
+                </a>
+                <a href={`https://wa.me/${phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" className="flex-1 flex items-center justify-center gap-1 text-[11px] font-bold text-green-600 border border-green-500 rounded-lg py-1.5">
+                  <MessageCircle size={12} /> WhatsApp
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -703,7 +978,7 @@ function ResultCard({ r, reason }) {
           </span>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
-          {r.area && <span>📍 {r.area}</span>}
+          {r.area && <span className="flex items-center gap-0.5"><MapPin size={11} />{r.area}</span>}
           <span>{isStandEvent ? r.standPriceRange : r.priceLabel}</span>
         </div>
         {reason && (
@@ -716,7 +991,9 @@ function ResultCard({ r, reason }) {
             ? <a href={`https://wa.me/${r.whatsapp}`} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-green-500 rounded-lg py-1.5 text-center">WhatsApp</a>
             : isStandEvent
             ? <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-cyan-500 rounded-lg py-1.5 text-center">View Event & Apply</a>
-            : <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-cyan-500 rounded-lg py-1.5 text-center">View Details</a>
+            : !hasContactAction
+            ? <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-cyan-500 rounded-lg py-1.5 text-center">View Details</a>
+            : <span className="flex-1 text-[11px] font-bold text-slate-400 bg-slate-50 rounded-lg py-1.5 text-center">Contact for pricing</span>
           }
           {r.mapLocation && <a href={r.mapLocation} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-slate-600 bg-slate-100 rounded-lg py-1.5 px-2.5">Directions</a>}
           <button onClick={() => navigator.share?.({ title: r.title, url })} className="text-[11px] font-bold text-slate-600 bg-slate-100 rounded-lg py-1.5 px-2.5">Share</button>
