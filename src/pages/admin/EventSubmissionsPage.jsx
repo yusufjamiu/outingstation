@@ -8,7 +8,7 @@ import {
   Eye, Check, X, Calendar, MapPin, DollarSign,
   Mail, Phone, ExternalLink, Clock, Filter,
   GraduationCap, Menu, RefreshCw, AlertTriangle,
-  Gift, ChevronLeft, ChevronRight, Image, Ticket, Settings, Layers, Bell
+  Gift, ChevronLeft, ChevronRight, Image, Ticket, Settings, Layers, Bell, UserPlus
 } from 'lucide-react';
 
 const generateSlug = (title) => {
@@ -207,6 +207,11 @@ export default function EventSubmissionsPage() {
     }
   };
 
+  // ✅ NEW — helper: does this submission use free registration?
+  // SubmitEventPage.jsx writes ticketingOption: 'free_registration' directly,
+  // so this is the source of truth.
+  const isFreeRegistrationSubmission = (sub) => sub.ticketingOption === 'free_registration';
+
   // ✅ Build the event doc from submission
   const buildEventDoc = (submission, ticketingOverride = null) => {
     const isPlace = submission.listingType === 'place';
@@ -265,7 +270,26 @@ export default function EventSubmissionsPage() {
       externalTicketLink: submission.externalTicketLink || null,
       ticketTiers: submission.ticketTiers || [],
       hasTicketTiers: submission.hasTicketTiers || false,
+      // ✅ NEW — free registration defaults, filled in below when applicable
+      maxGroupSize: null,
+      customQuestions: [],
     };
+
+    // ✅ NEW — Free Registration branch. No money moves here, so this skips
+    // the service-fee/bank-remittance concerns entirely — it just needs a
+    // manageKey (for the organizer's check-in dashboard) and the capacity +
+    // custom question config the organizer already set at submission time.
+    if (isFreeRegistrationSubmission(submission)) {
+      eventDoc.ticketingEnabled = true;
+      eventDoc.ticketingOption = 'free_registration';
+      eventDoc.hasOutingStationTicketing = true;
+      eventDoc.ticketPrice = 0;
+      eventDoc.ticketsAvailable = submission.ticketsAvailable || 100;
+      eventDoc.maxGroupSize = submission.maxGroupSize || 1;
+      eventDoc.customQuestions = submission.customQuestions || [];
+      eventDoc.manageKey = generateManageKey();
+      return eventDoc; // no date/schedule logic differs, fall through below still applies
+    }
 
     // ✅ If ticketing was configured by admin — generate manageKey for organizer
     if (ticketingOverride) {
@@ -318,7 +342,7 @@ export default function EventSubmissionsPage() {
     return eventDoc;
   };
 
-  // ✅ Direct approve — for free events or external ticketing
+  // ✅ Direct approve — for free events, free-registration events, or external ticketing
   const handleApprove = async (submissionId) => {
     const submission = submissions.find(s => s.id === submissionId);
     if (!submission) return;
@@ -326,6 +350,49 @@ export default function EventSubmissionsPage() {
     const isPlace = submission.listingType === 'place';
     const wantsOSTicketing = submission.wantOutingstationTicketing === 'yes' || submission.wantOutingstationTicketing === true;
     const label = isPlace ? 'place' : 'event';
+
+    // ✅ Free registration events skip the ticketing-setup modal entirely —
+    // the organizer already configured spots/group size/questions when they
+    // submitted, so there's nothing left for admin to configure.
+    if (isFreeRegistrationSubmission(submission)) {
+      if (!confirm(`Approve and publish this free ${label} (with registration tracking) to the live app?`)) return;
+
+      setApproving(true);
+      try {
+        const eventDoc = buildEventDoc(submission);
+        const docRef = await addDoc(collection(db, 'events'), eventDoc);
+
+        await updateDoc(doc(db, 'event_submissions', submissionId), {
+          status: 'approved',
+          approvedEventId: docRef.id,
+          reviewedAt: new Date(),
+        });
+
+        await notifyUsers(eventDoc.title, docRef.id);
+
+        let creditMsg = '';
+        if (submission.referralCode) {
+          const awardedTo = await awardReferralCredit(submission.referralCode);
+          creditMsg = awardedTo
+            ? `\n✅ Awarded ₦100 credit to ${awardedTo}`
+            : `\n⚠️ Referral code "${submission.referralCode}" not found`;
+        }
+
+        alert(`✅ ${label.charAt(0).toUpperCase() + label.slice(1)} is now LIVE with free registration!\n\nEvent ID: ${docRef.id}${creditMsg}`);
+        fetchSubmissions();
+        setSelectedSubmission(null);
+
+        // Show manage link so admin can share the check-in dashboard with organizer
+        setApprovedEventForManage({ id: docRef.id, ...eventDoc });
+        setShowManageModal(true);
+      } catch (err) {
+        console.error('Error approving free registration event:', err);
+        alert('❌ Failed to approve: ' + err.message);
+      } finally {
+        setApproving(false);
+      }
+      return;
+    }
 
     if (wantsOSTicketing) {
       const hasTiers = submission.hasTicketTiers && submission.ticketTiers?.length > 0;
@@ -720,6 +787,7 @@ export default function EventSubmissionsPage() {
                   ) : filteredSubmissions.map((sub) => {
                     const allImages = getAllImages(sub);
                     const hasTiers = sub.hasTicketTiers && sub.ticketTiers?.length > 0;
+                    const isFreeReg = isFreeRegistrationSubmission(sub);
                     return (
                       <tr key={sub.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4">
@@ -763,7 +831,14 @@ export default function EventSubmissionsPage() {
                           {sub.isUniversityEvent && <div className="text-xs text-blue-600 font-semibold mt-1">🎓 Campus</div>}
                         </td>
                         <td className="px-6 py-4">
-                          {wantsTicketing(sub) ? (
+                          {isFreeReg ? (
+                            <div className="flex flex-col gap-1">
+                              <span className="inline-flex items-center gap-1 text-xs bg-cyan-100 text-cyan-700 px-2 py-1 rounded-full font-semibold">
+                                <UserPlus size={11} />Free Registration
+                              </span>
+                              <span className="text-xs text-gray-500">{sub.ticketsAvailable || 0} spots · max {sub.maxGroupSize || 1}/reg</span>
+                            </div>
+                          ) : wantsTicketing(sub) ? (
                             <div className="flex flex-col gap-1">
                               <span className="inline-flex items-center gap-1 text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-semibold">
                                 <Ticket size={11} />Wants OS Ticketing
@@ -809,6 +884,7 @@ export default function EventSubmissionsPage() {
       {selectedSubmission && (() => {
         const allImages = getAllImages(selectedSubmission);
         const needsTicketing = wantsTicketing(selectedSubmission);
+        const isFreeReg = isFreeRegistrationSubmission(selectedSubmission);
         const hasTiers = selectedSubmission.hasTicketTiers && selectedSubmission.ticketTiers?.length > 0;
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -818,7 +894,12 @@ export default function EventSubmissionsPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-2xl font-bold text-gray-900">{selectedSubmission.eventTitle}</h2>
                     {getStatusBadge(selectedSubmission.status)}
-                    {needsTicketing && (
+                    {isFreeReg && (
+                      <span className="inline-flex items-center gap-1 bg-cyan-100 text-cyan-700 px-3 py-1 rounded-full text-sm font-semibold">
+                        <UserPlus size={14} />Free Registration
+                      </span>
+                    )}
+                    {needsTicketing && !isFreeReg && (
                       <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-sm font-semibold">
                         <Ticket size={14} />Needs Ticketing Setup
                       </span>
@@ -848,7 +929,26 @@ export default function EventSubmissionsPage() {
 
               <div className="p-6 space-y-6">
 
-                {needsTicketing && selectedSubmission.status !== 'approved' && (
+                {/* ✅ NEW — Free Registration summary panel */}
+                {isFreeReg && selectedSubmission.status !== 'approved' && (
+                  <div className="bg-cyan-50 border-2 border-cyan-200 rounded-xl p-4 flex items-start gap-3">
+                    <UserPlus size={22} className="text-cyan-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-cyan-800 text-sm">Free event with registration tracking</p>
+                      <p className="text-cyan-700 text-sm mt-1">
+                        {selectedSubmission.ticketsAvailable || 0} spots · max {selectedSubmission.maxGroupSize || 1} people per registration
+                      </p>
+                      {selectedSubmission.customQuestions?.length > 0 && (
+                        <p className="text-cyan-600 text-xs mt-1">
+                          {selectedSubmission.customQuestions.length} custom question{selectedSubmission.customQuestions.length !== 1 ? 's' : ''} configured
+                        </p>
+                      )}
+                      <p className="text-cyan-600 text-xs mt-1">No payment involved — organizer already configured everything, nothing to set up here.</p>
+                    </div>
+                  </div>
+                )}
+
+                {needsTicketing && !isFreeReg && selectedSubmission.status !== 'approved' && (
                   <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4 flex items-start gap-3">
                     <Ticket size={22} className="text-orange-500 flex-shrink-0 mt-0.5" />
                     <div>
@@ -862,6 +962,25 @@ export default function EventSubmissionsPage() {
                           : `Requested price: ₦${parseFloat(selectedSubmission.ticketPrice || 0).toLocaleString()}`
                         }
                       </p>
+                    </div>
+                  </div>
+                )}
+
+                {isFreeReg && selectedSubmission.customQuestions?.length > 0 && (
+                  <div className="border-2 border-cyan-100 rounded-xl p-4">
+                    <h3 className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                      <UserPlus size={16} className="text-cyan-600" />
+                      Custom Questions ({selectedSubmission.customQuestions.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {selectedSubmission.customQuestions.map((q, i) => (
+                        <div key={i} className="py-2.5 px-3 bg-gray-50 rounded-xl border border-gray-100">
+                          <p className="text-sm font-bold text-gray-800">{q.label} {q.required && <span className="text-red-500">*</span>}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {q.type === 'select' ? `Options: ${q.options.join(', ')}` : q.type === 'yes_no' ? 'Yes / No' : 'Short text'}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -1008,7 +1127,12 @@ export default function EventSubmissionsPage() {
                     </div>
                     <div>
                       <h4 className="text-sm font-semibold text-gray-700 mb-1">Pricing</h4>
-                      {hasTiers ? (
+                      {isFreeReg ? (
+                        <div className="flex items-center gap-2">
+                          <UserPlus size={16} />
+                          <span className="text-cyan-600 font-semibold">FREE — Registration Required</span>
+                        </div>
+                      ) : hasTiers ? (
                         <div className="space-y-1">
                           {selectedSubmission.ticketTiers.map((t, i) => (
                             <div key={i} className="flex justify-between text-sm">
@@ -1025,7 +1149,7 @@ export default function EventSubmissionsPage() {
                             : <span className="text-gray-900">₦{parseFloat(selectedSubmission.ticketPrice || 0).toLocaleString()}</span>}
                         </div>
                       )}
-                      {needsTicketing && (
+                      {needsTicketing && !isFreeReg && (
                         <p className="text-xs text-orange-600 mt-1 font-medium">🎫 Requested OutingStation ticketing</p>
                       )}
                       {selectedSubmission.externalTicketLink && (
@@ -1082,7 +1206,15 @@ export default function EventSubmissionsPage() {
 
                 <div className="flex gap-3 justify-end flex-wrap">
                   {selectedSubmission.status !== 'approved' && (
-                    needsTicketing ? (
+                    isFreeReg ? (
+                      <button onClick={() => handleApprove(selectedSubmission.id)} disabled={approving}
+                        className="flex items-center gap-2 px-6 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 font-semibold disabled:opacity-50 transition">
+                        {approving
+                          ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Publishing...</>
+                          : <><UserPlus size={18} />Approve & Publish{selectedSubmission.referralCode ? ' (+₦100)' : ''}</>
+                        }
+                      </button>
+                    ) : needsTicketing ? (
                       <button onClick={() => handleApprove(selectedSubmission.id)} disabled={approving}
                         className="flex items-center gap-2 px-5 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-semibold disabled:opacity-50 transition">
                         {approving
@@ -1117,7 +1249,7 @@ export default function EventSubmissionsPage() {
         );
       })()}
 
-      {/* Ticketing Setup Modal */}
+      {/* Ticketing Setup Modal — unchanged, never shown for free-registration submissions */}
       {showTicketingModal && ticketingSubmission && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">

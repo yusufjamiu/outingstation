@@ -8,6 +8,10 @@ export default function ManageLinkModal({ event, onClose }) {
     return null;
   }
 
+  // ✅ NEW — free registration flag, mirrors the pattern used across
+  // EventDetails/ManageEvent/EventSubmissionsPage
+  const isFreeRegistration = event.ticketingOption === 'free_registration';
+
   const manageLink = `https://outingstation.com/manage/${event.manageKey}`;
 
   const handleCopy = () => {
@@ -53,11 +57,25 @@ export default function ManageLinkModal({ event, onClose }) {
             Share this link with the event organizer so they can:
           </p>
           
+          {/* ✅ Bullet list — swaps "ticket sales" / "revenue" language for
+              registration-flavored copy on free registration events, since
+              no money moves for these */}
           <ul className="text-sm text-gray-700 mb-4 space-y-1 ml-4">
-            <li>✅ View all ticket sales</li>
-            <li>✅ Check attendees in at the door</li>
-            <li>✅ Export attendee list to CSV</li>
-            <li>✅ See real-time stats and revenue</li>
+            {isFreeRegistration ? (
+              <>
+                <li>✅ View all registrations</li>
+                <li>✅ Check attendees in at the door</li>
+                <li>✅ Export attendee list to CSV</li>
+                <li>✅ See real-time headcount and spots remaining</li>
+              </>
+            ) : (
+              <>
+                <li>✅ View all ticket sales</li>
+                <li>✅ Check attendees in at the door</li>
+                <li>✅ Export attendee list to CSV</li>
+                <li>✅ See real-time stats and revenue</li>
+              </>
+            )}
           </ul>
 
           {/* Link Display */}
@@ -109,13 +127,18 @@ export default function ManageLinkModal({ event, onClose }) {
         </div>
 
         {/* Event Stats */}
+        {/* ✅ NEW — free registration events show "Free" + spots available
+            instead of "₦0" for ticket price, which read like a broken/unset
+            price rather than an intentionally free event */}
         <div className="grid grid-cols-2 gap-4 mb-6">
           <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-xs text-gray-500 mb-1">Ticket Price</p>
-            <p className="text-lg font-bold text-gray-900">₦{event.ticketPrice?.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mb-1">{isFreeRegistration ? 'Price' : 'Ticket Price'}</p>
+            <p className="text-lg font-bold text-gray-900">
+              {isFreeRegistration ? 'Free' : `₦${event.ticketPrice?.toLocaleString()}`}
+            </p>
           </div>
           <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-xs text-gray-500 mb-1">Available Tickets</p>
+            <p className="text-xs text-gray-500 mb-1">{isFreeRegistration ? 'Spots Available' : 'Available Tickets'}</p>
             <p className="text-lg font-bold text-gray-900">{event.ticketsAvailable}</p>
           </div>
         </div>

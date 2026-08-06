@@ -7,6 +7,7 @@ import { db, auth } from '../../firebase';
 import { uploadWithProgress, compressImage } from '../../services/cloudinaryService';
 import NotifyUsersModal from '../../components/NotifyUsersModal';
 import ManageLinkModal from '../../components/ManageLinkModal';
+import CustomQuestionBuilder from '../../components/CustomQuestionBuilder';
 
 const generateManageKey = () => {
   return Array.from({length: 32}, () =>
@@ -193,6 +194,10 @@ export default function AdminEventForm() {
     saleEndDate: '',
   }]);
 
+  // ✅ NEW — free registration state
+  const [maxGroupSize, setMaxGroupSize] = useState(1);
+  const [customQuestions, setCustomQuestions] = useState([]);
+
   const [formData, setFormData] = useState({
     title: '', description: '', category: '',
     subCategory: 'events',
@@ -286,6 +291,11 @@ export default function AdminEventForm() {
                 quantity: t.quantity || '',
                 saleEndDate: t.saleEndDate || '',
               })));
+            }
+            // ✅ NEW — hydrate free registration config on edit
+            if (data.ticketingOption === 'free_registration') {
+              setMaxGroupSize(data.maxGroupSize || 1);
+              setCustomQuestions(data.customQuestions || []);
             }
           }
         } catch (err) {
@@ -406,6 +416,14 @@ export default function AdminEventForm() {
       }
     }
     if (!isOpportunity && ticketingOption === 'external' && !externalTicketLink) { alert('Please enter an external ticket link'); return; }
+    // ✅ NEW — free registration validation
+    if (!isOpportunity && ticketingOption === 'free_registration') {
+      if (!ticketsAvailable || parseInt(ticketsAvailable) <= 0) { alert('Please enter number of spots available'); return; }
+      for (const q of customQuestions) {
+        if (!q.label?.trim()) { alert('All custom questions need question text'); return; }
+        if (q.type === 'select' && (!q.options || q.options.length === 0)) { alert(`"${q.label}" needs at least one option`); return; }
+      }
+    }
 
     setLoading(true);
     try {
@@ -423,6 +441,19 @@ export default function AdminEventForm() {
           }))
         : [];
 
+      // ✅ NEW — normalize custom questions for storage
+      const questionsData = ticketingOption === 'free_registration'
+        ? customQuestions.map((q, i) => ({
+            id: q.id || `q_${i + 1}`,
+            label: q.label.trim(),
+            type: q.type,
+            options: q.options || [],
+            required: !!q.required,
+          }))
+        : [];
+
+      const usesOutingStationTracking = ticketingOption === 'outingstation' || ticketingOption === 'free_registration';
+
       const eventData = {
         ...formData,
         subCategory: isOpportunity ? 'opportunities' : 'events',
@@ -438,20 +469,20 @@ export default function AdminEventForm() {
         country: isOpportunity && formData.locationType === 'International' ? formData.country : null,
         images: formData.images || [],
         ticketingOption: isOpportunity ? 'none' : ticketingOption,
-        ticketingEnabled: !isOpportunity && ticketingOption === 'outingstation',
-        hasOutingStationTicketing: !isOpportunity && ticketingOption === 'outingstation',
+        ticketingEnabled: !isOpportunity && usesOutingStationTracking,
+        hasOutingStationTicketing: !isOpportunity && usesOutingStationTracking,
         ticketPrice: !isOpportunity && ticketingOption === 'outingstation'
           ? (useTicketTiers && tiersData.length > 0
               ? Math.min(...tiersData.map(t => t.price))
               : Number(ticketPrice))
           : 0,
-        ticketsAvailable: !isOpportunity && ticketingOption === 'outingstation'
-          ? (useTicketTiers
+        ticketsAvailable: !isOpportunity && usesOutingStationTracking
+          ? (ticketingOption === 'outingstation' && useTicketTiers
               ? tiersData.reduce((sum, t) => sum + (t.quantity || 0), 0) || Number(ticketsAvailable)
               : Number(ticketsAvailable))
           : 0,
         ticketsSold: isEdit ? formData.ticketsSold || 0 : 0,
-        ...(!isOpportunity && ticketingOption === 'outingstation' && !isEdit && { manageKey: generateManageKey() }),
+        ...(!isOpportunity && usesOutingStationTracking && !isEdit && { manageKey: generateManageKey() }),
         serviceFeeType,
         serviceFeeAmount: serviceFeeType === 'fixed' ? Number(serviceFeeAmount) : 0,
         serviceFeePercentage: serviceFeeType === 'percentage' ? Number(serviceFeePercentage) : 0,
@@ -459,6 +490,9 @@ export default function AdminEventForm() {
         externalTicketLink: !isOpportunity && ticketingOption === 'external' ? externalTicketLink : null,
         hasTicketTiers: !isOpportunity && useTicketTiers && ticketingOption === 'outingstation' && tiersData.length > 0,
         ticketTiers: tiersData,
+        // ✅ NEW — free registration fields
+        maxGroupSize: !isOpportunity && ticketingOption === 'free_registration' ? maxGroupSize : null,
+        customQuestions: !isOpportunity && ticketingOption === 'free_registration' ? questionsData : [],
         campusSubCategory: formData.eventType === 'campus' && formData.subCategory === 'places'
           ? (formData.campusSubCategory || '') : '',
         campusEventCategory: formData.eventType === 'campus' && formData.subCategory !== 'places'
@@ -831,6 +865,48 @@ export default function AdminEventForm() {
                               </div>
                             </div>
                           )}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                </div>
+
+                {/* ✅ NEW — Free Registration option */}
+                <div className="mb-3">
+                  <label className="flex items-start gap-3 cursor-pointer p-4 border rounded-lg hover:bg-gray-50">
+                    <input type="radio" name="ticketingOption" value="free_registration" checked={ticketingOption === 'free_registration'} onChange={(e) => setTicketingOption(e.target.value)} className="mt-1" />
+                    <div className="flex-1">
+                      <p className="font-semibold">Free Registration 🎟️</p>
+                      <p className="text-sm text-gray-600 mb-2">Event is free, but you want a headcount and check-in tracking</p>
+
+                      {ticketingOption === 'free_registration' && (
+                        <div className="mt-4 space-y-4 border-l-2 border-cyan-500 pl-4">
+                          <div>
+                            <label className="block text-sm font-medium mb-1">Spots Available *</label>
+                            <input type="number" value={ticketsAvailable}
+                              onChange={(e) => setTicketsAvailable(e.target.value)}
+                              placeholder="e.g., 100" className="w-full px-3 py-2 border rounded-lg" />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium mb-2">Max people per registration</label>
+                            <div className="flex gap-2">
+                              {[1, 2, 3, 4, 5, 6].map(n => (
+                                <button key={n} type="button" onClick={() => setMaxGroupSize(n)}
+                                  className={`flex-1 py-2 rounded-lg border-2 text-sm font-bold transition ${
+                                    maxGroupSize === n ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600'
+                                  }`}>
+                                  {n}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">1 = no plus-ones allowed. Higher lets one person register a group (they must arrive together).</p>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium mb-2">Custom Questions (optional)</label>
+                            <CustomQuestionBuilder questions={customQuestions} onChange={setCustomQuestions} />
+                          </div>
                         </div>
                       )}
                     </div>

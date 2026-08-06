@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { 
   Calendar, Clock, MapPin, Users, Download, CheckCircle, XCircle,
-  Ticket, Mail, Search, Filter, AlertCircle, Layers
+  Ticket, Mail, Search, Filter, AlertCircle, Layers, UserPlus
 } from 'lucide-react';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -117,23 +117,49 @@ export default function ManageEvent() {
     }
   };
 
+  // ✅ NEW — free registration flag, drives several display tweaks below
+  const isFreeRegistration = event?.ticketingOption === 'free_registration';
+
   const exportToCSV = () => {
-    // ✅ Include tier in CSV export
-    const headers = ['Ticket ID', 'Buyer Name', 'Email', 'Tier', 'Quantity', 'Ticket Price', 'Service Fee', 'Total Paid', 'Purchase Date', 'Checked In'];
-    const rows = filteredTickets.map(ticket => [
-      ticket.ticketId,
-      ticket.buyerName,
-      ticket.buyerEmail,
-      ticket.tierName || 'Standard',
-      ticket.quantity || 1,
-      `₦${(ticket.ticketPrice * (ticket.quantity || 1))?.toLocaleString()}`,
-      `₦${(ticket.serviceFee * (ticket.quantity || 1))?.toLocaleString()}`,
-      `₦${ticket.totalPaid?.toLocaleString()}`,
-      ticket.purchasedAt?.seconds 
-        ? new Date(ticket.purchasedAt.seconds * 1000).toLocaleDateString()
-        : 'N/A',
-      ticket.checkedIn ? 'Yes' : 'No'
-    ]);
+    // ✅ NEW — free-registration events drop the price/fee columns (always
+    // ₦0, just noise) and add guest names + custom question answers instead
+    const customQuestions = event?.customQuestions || [];
+
+    const headers = isFreeRegistration
+      ? ['Ticket ID', 'Buyer Name', 'Email', 'Phone', 'Group Size', 'Guest Names', ...customQuestions.map(q => q.label), 'Registered On', 'Checked In']
+      : ['Ticket ID', 'Buyer Name', 'Email', 'Tier', 'Quantity', 'Ticket Price', 'Service Fee', 'Total Paid', 'Purchase Date', 'Checked In'];
+
+    const rows = filteredTickets.map(ticket => {
+      if (isFreeRegistration) {
+        return [
+          ticket.ticketId,
+          ticket.buyerName,
+          ticket.buyerEmail,
+          ticket.buyerPhone || 'N/A',
+          ticket.groupSize || ticket.quantity || 1,
+          (ticket.guests || []).map(g => g.name).join('; ') || 'N/A',
+          ...customQuestions.map(q => ticket.customAnswers?.[q.id] || ''),
+          ticket.purchasedAt?.seconds
+            ? new Date(ticket.purchasedAt.seconds * 1000).toLocaleDateString()
+            : 'N/A',
+          ticket.checkedIn ? 'Yes' : 'No'
+        ];
+      }
+      return [
+        ticket.ticketId,
+        ticket.buyerName,
+        ticket.buyerEmail,
+        ticket.tierName || 'Standard',
+        ticket.quantity || 1,
+        `₦${((ticket.ticketPrice || 0) * (ticket.quantity || 1))?.toLocaleString()}`,
+        `₦${((ticket.serviceFee || 0) * (ticket.quantity || 1))?.toLocaleString()}`,
+        `₦${ticket.totalPaid?.toLocaleString()}`,
+        ticket.purchasedAt?.seconds
+          ? new Date(ticket.purchasedAt.seconds * 1000).toLocaleDateString()
+          : 'N/A',
+        ticket.checkedIn ? 'Yes' : 'No'
+      ];
+    });
 
     const csvContent = [
       headers.join(','),
@@ -153,7 +179,7 @@ export default function ManageEvent() {
 
   // ✅ Get unique tier names from tickets for filter dropdown
   const uniqueTiers = [...new Set(tickets.map(t => t.tierName).filter(Boolean))];
-  const hasTierData = uniqueTiers.length > 0;
+  const hasTierData = uniqueTiers.length > 0 && !isFreeRegistration;
 
   // ✅ Filter tickets — includes tier filter
   const filteredTickets = tickets.filter(ticket => {
@@ -213,7 +239,14 @@ export default function ManageEvent() {
         <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
           <div className="flex items-start justify-between mb-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{event.title}</h1>
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <h1 className="text-3xl font-bold text-gray-900">{event.title}</h1>
+                {isFreeRegistration && (
+                  <span className="inline-flex items-center gap-1 bg-cyan-100 text-cyan-700 px-3 py-1 rounded-full text-sm font-semibold">
+                    <UserPlus size={14} />Free Registration
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap gap-4 text-sm text-gray-600">
                 <div className="flex items-center gap-2">
                   <Calendar size={16} />
@@ -244,7 +277,8 @@ export default function ManageEvent() {
           <div className="bg-white rounded-xl p-6 shadow-sm">
             <div className="flex items-center gap-3 mb-2">
               <Ticket className="text-cyan-500" size={24} />
-              <p className="text-sm text-gray-600">Total Sold</p>
+              {/* ✅ Label reads "Registered" instead of "Sold" for free-registration events */}
+              <p className="text-sm text-gray-600">{isFreeRegistration ? 'Total Registered' : 'Total Sold'}</p>
             </div>
             <p className="text-3xl font-bold text-gray-900">{stats.totalSold}</p>
             <p className="text-xs text-gray-500 mt-1">
@@ -269,20 +303,35 @@ export default function ManageEvent() {
               <p className="text-sm text-gray-600">Attendees</p>
             </div>
             <p className="text-3xl font-bold text-gray-900">{tickets.length}</p>
-            <p className="text-xs text-gray-500 mt-1">unique buyers</p>
+            <p className="text-xs text-gray-500 mt-1">unique {isFreeRegistration ? 'registrations' : 'buyers'}</p>
           </div>
 
-          <div className="bg-white rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-2xl">💰</span>
-              <p className="text-sm text-gray-600">Your Revenue</p>
+          {/* ✅ NEW — for free registration events, show "Spots Remaining"
+              instead of "Your Revenue" since there's no money involved */}
+          {isFreeRegistration ? (
+            <div className="bg-white rounded-xl p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <UserPlus className="text-cyan-500" size={24} />
+                <p className="text-sm text-gray-600">Spots Remaining</p>
+              </div>
+              <p className="text-3xl font-bold text-gray-900">
+                {Math.max(0, (event.ticketsAvailable || 0) - stats.totalSold)}
+              </p>
+              <p className="text-xs text-gray-500 mt-1">out of {event.ticketsAvailable}</p>
             </div>
-            <p className="text-3xl font-bold text-gray-900">₦{stats.totalRevenue.toLocaleString()}</p>
-            <p className="text-xs text-gray-500 mt-1">ticket sales only</p>
-          </div>
+          ) : (
+            <div className="bg-white rounded-xl p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl">💰</span>
+                <p className="text-sm text-gray-600">Your Revenue</p>
+              </div>
+              <p className="text-3xl font-bold text-gray-900">₦{stats.totalRevenue.toLocaleString()}</p>
+              <p className="text-xs text-gray-500 mt-1">ticket sales only</p>
+            </div>
+          )}
         </div>
 
-        {/* ✅ Tier Breakdown — shown when event has tiers */}
+        {/* ✅ Tier Breakdown — shown when event has tiers (never for free registration) */}
         {hasTierData && stats.tierBreakdown.length > 0 && (
           <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
             <div className="flex items-center gap-2 mb-4">
@@ -387,9 +436,16 @@ export default function ManageEvent() {
                   {hasTierData && (
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tier</th>
                   )}
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Paid</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purchase Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {isFreeRegistration ? 'Group Size' : 'Quantity'}
+                  </th>
+                  {/* ✅ "Total Paid" column hidden entirely for free registration — always ₦0, pure noise */}
+                  {!isFreeRegistration && (
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Paid</th>
+                  )}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {isFreeRegistration ? 'Registered On' : 'Purchase Date'}
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                 </tr>
@@ -397,10 +453,10 @@ export default function ManageEvent() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredTickets.length === 0 ? (
                   <tr>
-                    <td colSpan={hasTierData ? 8 : 7} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={hasTierData ? 8 : (isFreeRegistration ? 6 : 7)} className="px-6 py-12 text-center text-gray-500">
                       {searchTerm || filterStatus !== 'all' || filterTier !== 'all'
                         ? 'No tickets match your search'
-                        : 'No tickets sold yet'}
+                        : (isFreeRegistration ? 'No registrations yet' : 'No tickets sold yet')}
                     </td>
                   </tr>
                 ) : (
@@ -417,6 +473,12 @@ export default function ManageEvent() {
                           <p className="text-xs text-gray-500">{ticket.buyerEmail}</p>
                           {ticket.buyerPhone && (
                             <p className="text-xs text-gray-400">{ticket.buyerPhone}</p>
+                          )}
+                          {/* ✅ NEW — show guest names inline for free registration group registrations */}
+                          {isFreeRegistration && ticket.guests?.length > 0 && (
+                            <p className="text-xs text-cyan-600 mt-0.5">
+                              + {ticket.guests.map(g => g.name).join(', ')}
+                            </p>
                           )}
                         </div>
                       </td>
@@ -435,14 +497,16 @@ export default function ManageEvent() {
                       )}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm font-semibold text-gray-900">
-                          {ticket.quantity || 1}
+                          {ticket.groupSize || ticket.quantity || 1}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm font-semibold text-gray-900">
-                          ₦{((ticket.ticketPrice || 0) * (ticket.quantity || 1)).toLocaleString()}
-                        </span>
-                      </td>
+                      {!isFreeRegistration && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm font-semibold text-gray-900">
+                            ₦{((ticket.ticketPrice || 0) * (ticket.quantity || 1)).toLocaleString()}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {ticket.purchasedAt?.seconds 
                           ? new Date(ticket.purchasedAt.seconds * 1000).toLocaleDateString()
@@ -470,7 +534,12 @@ export default function ManageEvent() {
                               : 'bg-cyan-500 text-white hover:bg-cyan-600'
                           }`}
                         >
-                          {ticket.checkedIn ? 'Undo' : 'Check In'}
+                          {/* ✅ Button reflects group size for free-registration group registrations */}
+                          {ticket.checkedIn
+                            ? 'Undo'
+                            : (isFreeRegistration && (ticket.groupSize || 1) > 1
+                                ? `Check In (${ticket.groupSize})`
+                                : 'Check In')}
                         </button>
                       </td>
                     </tr>
@@ -486,6 +555,7 @@ export default function ManageEvent() {
           <p className="text-sm text-blue-800">
             💡 <strong>Tip:</strong> Use the search bar to quickly find attendees at the door.
             {hasTierData && ' Filter by tier to see specific ticket types.'}
+            {isFreeRegistration && ' A "Check In (N)" button means the registration covers a group — confirm everyone listed has arrived before checking in.'}
             {' '}Click "Check In" to mark their arrival. Export the full list anytime!
           </p>
         </div>

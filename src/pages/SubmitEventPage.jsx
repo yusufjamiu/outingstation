@@ -4,7 +4,8 @@ import { useLocation } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { Gift, X, Upload, Plus, ChevronRight, ChevronLeft, Check, Ticket, Trash2, Building2 } from 'lucide-react';
+import { Gift, X, Upload, Plus, ChevronRight, ChevronLeft, Check, Ticket, Trash2, Building2, UserPlus } from 'lucide-react';
+import CustomQuestionBuilder from '../components/CustomQuestionBuilder';
 
 const makeSlug = (title, id) =>
   title.toLowerCase().trim()
@@ -440,6 +441,9 @@ const SubmitEventPage = () => {
   const [schoolIdImage, setSchoolIdImage] = useState([]);
   // ✅ Ticket tiers state
   const [ticketTiers, setTicketTiers] = useState([]);
+  // ✅ NEW — free registration state
+  const [maxGroupSize, setMaxGroupSize] = useState(1);
+  const [customQuestions, setCustomQuestions] = useState([]);
 
   // ✅ NEW — /create-event, /create-place, /list-vendor pre-select the
   // listing type and skip straight past the step-0 picker. /create itself
@@ -455,6 +459,7 @@ const SubmitEventPage = () => {
       setListingType(preselected);
       setEventImages([]); setVendorImages([]);
       setSchoolIdImage([]); setTicketTiers([]);
+      setMaxGroupSize(1); setCustomQuestions([]);
       setStep(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -474,6 +479,8 @@ const SubmitEventPage = () => {
     isFree: 'yes', ticketPrice: '',
     wantOutingstationTicketing: 'no', externalTicketLink: '',
     useTicketTiers: false,
+    // ✅ NEW — free registration toggle + capacity, only meaningful when isFree === 'yes'
+    useFreeRegistration: false, ticketsAvailable: '',
     accountName: '', accountNumber: '', bankName: '',
     additionalInfo: '', agreedToTerms: false,
     shopName: '', vendorCategory: '',
@@ -581,29 +588,42 @@ const SubmitEventPage = () => {
       if (!form.platform) e.platform = 'Select a platform';
       if (!form.webinarLink.trim()) e.webinarLink = 'Registration link is required';
     }
-    if (!isVendor && s === S.ticket && form.isFree === 'no') {
-      if (isEvent && form.wantOutingstationTicketing === 'yes') {
-        if (!form.accountName.trim()) e.accountName = 'Account name is required';
-        if (!form.accountNumber.trim()) e.accountNumber = 'Account number is required';
-        else if (!/^\d{10}$/.test(form.accountNumber.trim())) e.accountNumber = 'Enter a valid 10-digit account number';
-        if (!form.bankName) e.bankName = 'Select your bank';
-        if (form.useTicketTiers) {
-          if (ticketTiers.length === 0) {
-            e.ticketTiers = 'Add at least 1 ticket tier';
+    if (!isVendor && s === S.ticket) {
+      // ✅ NEW — Free Registration branch: skip the normal free/paid checks,
+      // validate spots + custom questions instead
+      if (isEvent && form.isFree === 'yes' && form.useFreeRegistration) {
+        if (!form.ticketsAvailable || parseInt(form.ticketsAvailable) <= 0) {
+          e.ticketsAvailable = 'Enter number of spots available';
+        }
+        customQuestions.forEach((q, i) => {
+          if (!q.label?.trim()) e[`question_${i}_label`] = 'Question text is required';
+          if (q.type === 'select' && (!q.options || q.options.length === 0)) e[`question_${i}_options`] = 'Add at least one option';
+        });
+      } else if (form.isFree === 'no') {
+        if (isEvent && form.wantOutingstationTicketing === 'yes') {
+          if (!form.accountName.trim()) e.accountName = 'Account name is required';
+          if (!form.accountNumber.trim()) e.accountNumber = 'Account number is required';
+          else if (!/^\d{10}$/.test(form.accountNumber.trim())) e.accountNumber = 'Enter a valid 10-digit account number';
+          if (!form.bankName) e.bankName = 'Select your bank';
+          if (form.useTicketTiers) {
+            if (ticketTiers.length === 0) {
+              e.ticketTiers = 'Add at least 1 ticket tier';
+            } else {
+              ticketTiers.forEach((tier, i) => {
+                if (!tier.name.trim()) e[`tier_${i}_name`] = 'Tier name is required';
+                if (!tier.price || isNaN(tier.price) || Number(tier.price) < 0) e[`tier_${i}_price`] = 'Valid price is required';
+              });
+            }
           } else {
-            ticketTiers.forEach((tier, i) => {
-              if (!tier.name.trim()) e[`tier_${i}_name`] = 'Tier name is required';
-              if (!tier.price || isNaN(tier.price) || Number(tier.price) < 0) e[`tier_${i}_price`] = 'Valid price is required';
-            });
+            if (!form.ticketPrice.trim()) e.ticketPrice = 'Enter ticket price';
           }
         } else {
-          if (!form.ticketPrice.trim()) e.ticketPrice = 'Enter ticket price';
+          if (!form.ticketPrice.trim()) e.ticketPrice = isPlace ? 'Enter the entry fee' : 'Enter ticket price';
+          if (isEvent && form.wantOutingstationTicketing === 'no' && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
+          if (isPlace && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
         }
-      } else {
-        if (!form.ticketPrice.trim()) e.ticketPrice = isPlace ? 'Enter the entry fee' : 'Enter ticket price';
-        if (isEvent && form.wantOutingstationTicketing === 'no' && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
-        if (isPlace && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
       }
+      // note: form.isFree === 'yes' && !useFreeRegistration ("just show up") needs no validation
     }
     if (!isVendor && s === S.photos) {
       if (eventImages.length === 0) e.eventImage = 'At least 1 image is required';
@@ -651,12 +671,26 @@ const SubmitEventPage = () => {
         const [imageUrl = '', ...additionalImages] = eventImages;
         const finalCategory = form.eventCategory === 'Other' && form.customCategory.trim() ? form.customCategory.trim() : form.eventCategory;
         const finalCity = form.city === 'Others' && form.customCity.trim() ? form.customCity.trim() : form.city;
-        const hasTiers = isEvent && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers && ticketTiers.length > 0;
+        const hasTiers = isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers && ticketTiers.length > 0;
         const tiersData = hasTiers ? ticketTiers.map((t, i) => ({
           id: `tier_${i + 1}`, name: t.name.trim(), price: parseFloat(t.price) || 0,
           benefits: t.benefits.trim() || null, quantity: t.quantity ? parseInt(t.quantity) : null,
           sold: 0, saleEndDate: t.saleEndDate || null,
         })) : [];
+
+        // ✅ NEW — free registration flag + normalized custom questions
+        const isFreeRegistration = isEvent && form.isFree === 'yes' && form.useFreeRegistration;
+        const questionsData = isFreeRegistration ? customQuestions.map((q, i) => ({
+          id: q.id || `q_${i + 1}`, label: q.label.trim(), type: q.type,
+          options: q.options || [], required: !!q.required,
+        })) : [];
+
+        // ✅ NEW — resolved ticketing option for this submission
+        const resolvedTicketingOption = isFreeRegistration
+          ? 'free_registration'
+          : (isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes'
+              ? 'outingstation'
+              : (isEvent && form.isFree === 'no' ? 'external' : 'none'));
 
         await addDoc(collection(db, 'event_submissions'), {
           organizerName: form.organizerName, organizerEmail: form.organizerEmail,
@@ -674,10 +708,15 @@ const SubmitEventPage = () => {
           city: finalCity, venueName: form.venueName, address: form.address, mapsLink: form.mapsLink || null,
           platform: form.platform || null, webinarLink: form.webinarLink || null,
           isFree: form.isFree === 'yes',
+          ticketingOption: resolvedTicketingOption,
           ticketPrice: hasTiers ? Math.min(...tiersData.map(t => t.price)) : (form.isFree === 'yes' ? 0 : parseFloat(form.ticketPrice) || 0),
           wantOutingstationTicketing: form.wantOutingstationTicketing === 'yes',
           externalTicketLink: form.externalTicketLink || null,
           ticketTiers: tiersData, hasTicketTiers: hasTiers,
+          // ✅ NEW — free registration fields
+          ticketsAvailable: isFreeRegistration ? (parseInt(form.ticketsAvailable) || 0) : null,
+          maxGroupSize: isFreeRegistration ? maxGroupSize : null,
+          customQuestions: questionsData,
           bankAccount: form.wantOutingstationTicketing === 'yes' && form.isFree === 'no' ? {
             accountName: form.accountName.trim(),
             accountNumber: form.accountNumber.trim(),
@@ -709,6 +748,7 @@ const SubmitEventPage = () => {
   if (submitSuccess) {
     const title = isVendor ? form.shopName : form.eventTitle;
     const type  = isVendor ? 'Vendor' : isPlace ? 'Place' : 'Event';
+    const isFreeRegistration = isEvent && form.isFree === 'yes' && form.useFreeRegistration;
     return (
       <div className="min-h-screen bg-gradient-to-br from-cyan-50 to-blue-50 flex items-center justify-center px-4 py-16">
         <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 text-center">
@@ -724,6 +764,7 @@ const SubmitEventPage = () => {
               "📧 You'll get an email update on approval",
               form.referralCode ? '💰 Earn ₦100 credits when approved!' : null,
               '🚀 Once approved, you go live immediately',
+              isFreeRegistration ? '🎟️ Attendees will register and check in on OutingStation — no payment involved' : null,
               form.wantOutingstationTicketing === 'yes' && form.isFree === 'no'
                 ? `💳 Ticket sales remitted to ${form.bankName} (${form.accountNumber}) within 48hrs after event` : null,
             ].filter(Boolean).map((item, i) => (
@@ -737,7 +778,8 @@ const SubmitEventPage = () => {
             <button onClick={() => {
               setSubmitSuccess(false); setStep(0); setListingType('');
               setEventImages([]); setVendorImages([]); setSchoolIdImage([]); setTicketTiers([]);
-              setForm(f => ({ ...f, agreedToTerms: false, useTicketTiers: false, accountName: '', accountNumber: '', bankName: '' }));
+              setMaxGroupSize(1); setCustomQuestions([]);
+              setForm(f => ({ ...f, agreedToTerms: false, useTicketTiers: false, useFreeRegistration: false, ticketsAvailable: '', accountName: '', accountNumber: '', bankName: '' }));
             }} className="w-full border-2 border-gray-200 text-gray-700 py-4 rounded-2xl font-bold hover:bg-gray-50 transition">
               Submit Another {type}
             </button>
@@ -769,7 +811,9 @@ const SubmitEventPage = () => {
             ].map(item => (
               <button key={item.value} type="button" onClick={() => {
                 setListingType(item.value); setEventImages([]); setVendorImages([]);
-                setSchoolIdImage([]); setTicketTiers([]); setStep(1); scrollTop();
+                setSchoolIdImage([]); setTicketTiers([]);
+                setMaxGroupSize(1); setCustomQuestions([]);
+                setStep(1); scrollTop();
               }} className="w-full flex items-center gap-5 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-cyan-400 hover:shadow-lg transition-all text-left group">
                 <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${item.color} flex items-center justify-center text-2xl flex-shrink-0 shadow-md`}>{item.icon}</div>
                 <div className="flex-1">
@@ -1108,6 +1152,51 @@ const SubmitEventPage = () => {
                 </div>
               </FormField>
 
+              {/* ✅ NEW — Free Registration option, only for free events */}
+              {form.isFree === 'yes' && isEvent && (
+                <FormField label="Want to track attendees?" hint="Optional — lets you cap spots, require registration, and check people in">
+                  <div className="grid grid-cols-2 gap-3">
+                    <ToggleButton selected={!form.useFreeRegistration} onClick={() => set('useFreeRegistration', false)}>
+                      🎉 Just show up
+                    </ToggleButton>
+                    <ToggleButton selected={form.useFreeRegistration} onClick={() => set('useFreeRegistration', true)}>
+                      🎟️ Free Registration
+                    </ToggleButton>
+                  </div>
+                </FormField>
+              )}
+
+              {form.isFree === 'yes' && isEvent && form.useFreeRegistration && (
+                <div className="border-2 border-cyan-100 rounded-2xl p-5 bg-gradient-to-br from-cyan-50/50 to-blue-50/50 space-y-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <UserPlus size={18} className="text-cyan-600" />
+                    <div>
+                      <p className="text-sm font-black text-gray-900">Free Registration Setup</p>
+                      <p className="text-xs text-gray-500">Attendees will register on OutingStation — no payment involved</p>
+                    </div>
+                  </div>
+                  <FormField label="Spots Available" required error={errors.ticketsAvailable}>
+                    <StyledInput type="number" name="ticketsAvailable" value={form.ticketsAvailable}
+                      onChange={handle} error={errors.ticketsAvailable} placeholder="e.g. 100" />
+                  </FormField>
+                  <FormField label="Max people per registration" hint="1 = no plus-ones. Higher allows groups (must arrive together).">
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5, 6].map(n => (
+                        <button key={n} type="button" onClick={() => setMaxGroupSize(n)}
+                          className={`flex-1 py-2 rounded-lg border-2 text-sm font-bold transition ${
+                            maxGroupSize === n ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600'
+                          }`}>
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </FormField>
+                  <FormField label="Custom Questions" hint="Optional — ask attendees anything extra you need to know">
+                    <CustomQuestionBuilder questions={customQuestions} onChange={setCustomQuestions} />
+                  </FormField>
+                </div>
+              )}
+
               {form.isFree === 'no' && (
                 <>
                   {isEvent && (
@@ -1243,6 +1332,8 @@ const SubmitEventPage = () => {
                     ? { label: '🎓 Campus Category', value: form.campusEventCategory } : null,
                   !isVendor && form.isUniversityEvent && isPlace && form.campusSubCategory
                     ? { label: '🎓 Place Type', value: form.campusSubCategory } : null,
+                  isEvent && form.isFree === 'yes' && form.useFreeRegistration
+                    ? { label: '🎟️ Free Registration', value: `${form.ticketsAvailable || 0} spots · max ${maxGroupSize}/registration` } : null,
                   isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers && ticketTiers.length > 0
                     ? { label: '🎟️ Ticket Tiers', value: `${ticketTiers.length} tier${ticketTiers.length !== 1 ? 's' : ''}: ${ticketTiers.map(t => t.name).join(', ')}` }
                     : isEvent && form.isFree === 'no' && form.ticketPrice
@@ -1258,6 +1349,22 @@ const SubmitEventPage = () => {
                   </div>
                 ))}
               </div>
+
+              {isEvent && form.isFree === 'yes' && form.useFreeRegistration && customQuestions.length > 0 && (
+                <div className="border-2 border-cyan-100 rounded-2xl p-4">
+                  <p className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                    <UserPlus size={16} className="text-cyan-600" /> Custom Questions
+                  </p>
+                  <div className="space-y-2">
+                    {customQuestions.map((q, i) => (
+                      <div key={i} className="py-2 px-3 bg-gray-50 rounded-xl">
+                        <p className="text-sm font-bold text-gray-800">{q.label} {q.required && <span className="text-red-500">*</span>}</p>
+                        <p className="text-xs text-gray-500">{q.type === 'select' ? `Options: ${q.options.join(', ')}` : q.type === 'yes_no' ? 'Yes / No' : 'Short text'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {isEvent && form.isFree === 'no' && form.useTicketTiers && ticketTiers.length > 0 && (
                 <div className="border-2 border-cyan-100 rounded-2xl p-4">

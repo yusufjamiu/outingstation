@@ -16,6 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import VendorStandsSection from '../../components/VendorStandsSection';
+import FreeRegistrationSection from '../../components/FreeRegistrationSection';
 import { formatEventDateFull, formatEventTime } from '../../utils/dateTimeHelpers';
 import { PaystackButton } from 'react-paystack';
 import {
@@ -1000,6 +1001,16 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
 
+  // ✅ NEW — free registration events scroll down to the registration form
+  if (event.ticketingOption === 'free_registration') {
+    const section = document.getElementById('ticket-purchase-section');
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      toast.success('👇 Register below to reserve your spot');
+    }
+    return;
+  }
+
   if (event.ticketingOption === 'outingstation' && event.ticketingEnabled) {
     const ticketSection = document.getElementById('ticket-purchase-section');
     if (ticketSection) {
@@ -1102,6 +1113,19 @@ export default function EventDetails() {
       ticketTiers: prev.ticketTiers.map(t =>
         t.id === tierId ? { ...t, sold: (t.sold || 0) + qty } : t
       )
+    }));
+  };
+
+  // ✅ NEW — same optimistic-update idea as handlePurchaseComplete, but for
+  // free registrations. There's no Paystack webhook to update ticketsSold
+  // here (the register-free-event endpoint does that server-side), so this
+  // just keeps the UI's "spots remaining" count in sync immediately without
+  // a re-fetch.
+  const handleRegistrationComplete = (groupSize) => {
+    if (!groupSize) return;
+    setEvent(prev => ({
+      ...prev,
+      ticketsSold: (prev.ticketsSold || 0) + groupSize
     }));
   };
 
@@ -1257,6 +1281,8 @@ export default function EventDetails() {
   const eventDate = formatEventDateFull(event);
   const eventTime = formatEventTime(event);
   const hasOutingStationTicketing = event.ticketingOption === 'outingstation' && event.ticketingEnabled;
+  // ✅ NEW — free registration flag, mirrors hasOutingStationTicketing
+  const hasFreeRegistration = event.ticketingOption === 'free_registration' && event.ticketingEnabled;
   // ✅ Tier flag for sidebar
   const hasTiers = event.hasTicketTiers && event.ticketTiers?.length > 0;
   const canonicalUrl = event.slug
@@ -1287,7 +1313,7 @@ export default function EventDetails() {
 
             <div className="lg:col-span-2">
               <EventImageCarousel event={event} isPlace={isPlace} />
-              {hasOutingStationTicketing && (
+              {(hasOutingStationTicketing || hasFreeRegistration) && (
   <div
     onClick={() => {
       document.getElementById('ticket-purchase-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1297,7 +1323,9 @@ export default function EventDetails() {
   >
     <Ticket size={16} />
     <span>
-      {hasTiers ? 'Select your ticket type below' : 'Get your ticket — scroll down'}
+      {hasFreeRegistration
+        ? 'Register for free — scroll down'
+        : hasTiers ? 'Select your ticket type below' : 'Get your ticket — scroll down'}
     </span>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
       <path d="M12 5v14M5 12l7 7 7-7"/>
@@ -1351,6 +1379,13 @@ export default function EventDetails() {
                 <div id="ticket-purchase-section" className="mb-6">
                   {/* ✅ CHANGE 3: Pass onPurchaseComplete so tier counts refresh after purchase */}
                   <TicketPurchaseSection event={event} currentUser={currentUser} navigate={navigate} onPurchaseComplete={handlePurchaseComplete} />
+                </div>
+              )}
+
+              {/* ✅ NEW — Free Registration section, mutually exclusive with TicketPurchaseSection */}
+              {hasFreeRegistration && (
+                <div id="ticket-purchase-section" className="mb-6">
+                  <FreeRegistrationSection event={event} currentUser={currentUser} onRegistrationComplete={handleRegistrationComplete} />
                 </div>
               )}
 
@@ -1488,6 +1523,10 @@ export default function EventDetails() {
                             <p className="text-xs text-gray-400">+{event.ticketTiers.length - 4} more tiers</p>
                           )}
                         </div>
+                      ) : hasFreeRegistration ? (
+                        <p className="text-gray-600 text-sm">
+                          <span className="text-emerald-600 font-semibold">Free — Registration Required</span>
+                        </p>
                       ) : (
                         <p className="text-gray-600 text-sm">
                           {hasOutingStationTicketing ? (
@@ -1520,8 +1559,10 @@ export default function EventDetails() {
                     className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
                   >
                     <CheckCircle size={20} />
-                    {/* ✅ Button label — "Select Ticket" for tier events */}
-                    {hasOutingStationTicketing
+                    {/* ✅ Button label — accounts for free registration too */}
+                    {hasFreeRegistration
+                      ? 'Register'
+                      : hasOutingStationTicketing
                       ? (hasTiers ? 'Select Ticket' : 'Buy Tickets')
                       : isPlace ? 'Get Info'
                       : (event.isFree ? 'Register' : 'Buy Tickets')}
