@@ -11,7 +11,7 @@ import {
   reauthenticateWithCredential,
   sendEmailVerification
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, runTransaction } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 const AuthContext = createContext();
@@ -129,162 +129,148 @@ export function AuthProvider({ children }) {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // ✅ REWRITTEN — now runs the check-then-write as a single Firestore
+  // transaction instead of a plain getDoc() + setDoc()/updateDoc(). This
+  // is the actual fix for signup silently losing name/city/phone.
+  //
+  // The earlier version patched only the "existing document" branch to
+  // backfill city/phone — but that only helps if one call's getDoc() runs
+  // AFTER the other call's write has already landed. createUserWithEmail-
+  // AndPassword() fires the onAuthStateChanged listener below almost
+  // immediately, which calls ensureUserDocument(user) with NO
+  // additionalData — racing signup()'s own ensureUserDocument(user,
+  // {name, city, phone, referralCode}) call. Both calls' getDoc() reads
+  // can easily both return "doesn't exist" before either write lands
+  // (neither call knows about the other), so BOTH take the "create new
+  // document" branch — and the listener's payload explicitly includes
+  // phone:'' and city:'' (not omitted), so if its write reaches Firestore
+  // after signup()'s write, it silently stomps the real data with blanks.
+  // No amount of patching the "existing" branch fixes that specific
+  // interleaving, because neither call ever saw the doc as existing.
+  //
+  // A transaction closes this properly: Firestore detects when two
+  // transactions conflict over the same document and automatically
+  // retries the loser. On retry, that call's transaction.get() sees the
+  // doc now DOES exist (the other transaction already committed it), so
+  // it correctly falls into the backfill branch with its own real data —
+  // regardless of which call "wins" the race to create the document.
   async function ensureUserDocument(user, additionalData = {}) {
     console.log('🔍 ensureUserDocument called for:', user.uid);
     console.log('📦 Additional data:', additionalData);
 
     const userRef = doc(db, 'users', user.uid);
-    
+    let wasCreated = false;
+    let resultData = null;
+
     try {
-      const userSnap = await getDoc(userRef);
-      
-      if (!userSnap.exists()) {
-        console.log('🆕 Creating NEW user document');
-        
-        const userName = additionalData.name || 
-                        user.displayName || 
-                        user.email?.split('@')[0] || 
-                        'User';
-        
-        const referralCode = generateReferralCode(userName, user.uid);
+      resultData = await runTransaction(db, async (transaction) => {
+        const userSnap = await transaction.get(userRef);
 
-        console.log('👤 User name:', userName);
-        console.log('🎟️ Referral code:', referralCode);
+        if (!userSnap.exists()) {
+          console.log('🆕 Creating NEW user document (transaction)');
 
-        const userData = {
-          uid: user.uid,
-          name: userName,
-          email: user.email || '',
-          phone: additionalData.phone || user.phoneNumber || '',
-          city: additionalData.city || '',
-          avatar: user.photoURL || '',
-          savedEvents: [],
-          role: 'user',
-          status: 'active',
-          isNewUser: true,
-          assignedCampuses: [],          // 🆕 campuses a campus-ambassador is scoped to
-          isCampusAmbassador: false,     // 🆕 new campus-admin role (separate from reward badge below)
-          isAmbassador: false,
-          ambassadorSince: null,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          lastLoginAt: serverTimestamp(),
-          creditsHistory: [],
-          totalCredits: 0,
-          referralCode: referralCode,
-          totalReferrals: 0,
-          eventsListed: 0,
-          ...(additionalData.referralCode ? { referredBy: additionalData.referralCode.toUpperCase() } : {}),
-        };
+          const userName = additionalData.name ||
+                          user.displayName ||
+                          user.email?.split('@')[0] ||
+                          'User';
 
-        await setDoc(userRef, userData, { merge: true });
-        console.log('✅ User document created successfully!');
-        
-        if (additionalData.referralCode) {
-          console.log('🎁 Awarding referral credits...');
-          const isValid = await validateReferralCode(additionalData.referralCode);
-          if (isValid) {
-            await awardReferralCredits(user.uid, userName, additionalData.referralCode.toUpperCase());
-          }
-        }
-        
-        return userData;
-      } else {
-        console.log('👤 User document exists, checking fields...');
-        
-        const existingData = userSnap.data();
-        const updates = {
-          lastLoginAt: serverTimestamp(),
-          isNewUser: false,
-        };
+          const referralCode = generateReferralCode(userName, user.uid);
 
-        if (!existingData.name || existingData.name === 'User') {
-          const newName = additionalData.name || 
-                         user.displayName || 
-                         user.email?.split('@')[0] || 
-                         'User';
-          updates.name = newName;
-          console.log('🔧 Fixing missing name:', newName);
-        }
+          const userData = {
+            uid: user.uid,
+            name: userName,
+            email: user.email || '',
+            phone: additionalData.phone || user.phoneNumber || '',
+            city: additionalData.city || '',
+            avatar: user.photoURL || '',
+            savedEvents: [],
+            role: 'user',
+            status: 'active',
+            isNewUser: true,
+            assignedCampuses: [],
+            isCampusAmbassador: false,
+            isAmbassador: false,
+            ambassadorSince: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            lastLoginAt: serverTimestamp(),
+            creditsHistory: [],
+            totalCredits: 0,
+            referralCode: referralCode,
+            totalReferrals: 0,
+            eventsListed: 0,
+            ...(additionalData.referralCode ? { referredBy: additionalData.referralCode.toUpperCase() } : {}),
+          };
 
-        // ✅ FIXED — this is the actual root cause of "signup doesn't save
-        // full info". createUserWithEmailAndPassword() fires the
-        // onAuthStateChanged listener below almost immediately, which
-        // calls ensureUserDocument(user) with NO additionalData — racing
-        // against signup()'s own ensureUserDocument(user, {name, city,
-        // phone, referralCode}) call that DOES have the real data. If the
-        // listener's empty call wins that race and creates the doc first,
-        // the real city/phone the person typed into the signup form was
-        // silently discarded forever — this "existing document" branch
-        // never looked at additionalData.city or additionalData.phone at
-        // all, only name. Now it backfills both the same way name already
-        // gets backfilled, so whichever call runs second (carrying the
-        // real data) still writes it, regardless of which call won the
-        // race to create the doc.
-        if ((!existingData.city || existingData.city === '') && additionalData.city) {
-          updates.city = additionalData.city;
-          console.log('🔧 Backfilling missing city:', additionalData.city);
-        }
-        if ((!existingData.phone || existingData.phone === '') && additionalData.phone) {
-          updates.phone = additionalData.phone;
-          console.log('🔧 Backfilling missing phone:', additionalData.phone);
-        }
-
-        if (!existingData.referralCode) {
-          const userName = existingData.name || updates.name || 'User';
-          const newReferralCode = generateReferralCode(userName, user.uid);
-          updates.referralCode = newReferralCode;
-          console.log('🔧 Adding missing referral code:', newReferralCode);
-        }
-
-        if (!existingData.hasOwnProperty('totalCredits')) {
-          updates.totalCredits = 0;
-          console.log('🔧 Adding totalCredits field');
-        }
-        if (!existingData.hasOwnProperty('totalReferrals')) {
-          updates.totalReferrals = 0;
-          console.log('🔧 Adding totalReferrals field');
-        }
-        if (!existingData.hasOwnProperty('eventsListed')) {
-          updates.eventsListed = 0;
-          console.log('🔧 Adding eventsListed field');
-        }
-        if (!existingData.hasOwnProperty('creditsHistory')) {
-          updates.creditsHistory = [];
-          console.log('🔧 Adding creditsHistory field');
-        }
-        if (!existingData.hasOwnProperty('isAmbassador')) {
-          updates.isAmbassador = false;
-          console.log('🔧 Adding isAmbassador field');
-        }
-        if (!existingData.hasOwnProperty('assignedCampuses')) {
-          updates.assignedCampuses = [];
-          console.log('🔧 Adding assignedCampuses field');
-        }
-        if (!existingData.hasOwnProperty('isCampusAmbassador')) {
-          updates.isCampusAmbassador = false;
-          console.log('🔧 Adding isCampusAmbassador field');
-        }
-        if (!existingData.email && user.email) {
-          updates.email = user.email;
-          console.log('🔧 Adding missing email');
-        }
-        if (!existingData.avatar && user.photoURL) {
-          updates.avatar = user.photoURL;
-          console.log('🔧 Adding missing avatar');
-        }
-
-        if (Object.keys(updates).length > 2) {
-          console.log('🔧 Applying fixes:', Object.keys(updates));
-          await updateDoc(userRef, updates);
-          console.log('✅ User document fixed!');
+          transaction.set(userRef, userData, { merge: true });
+          wasCreated = true;
+          return userData;
         } else {
-          await updateDoc(userRef, updates);
+          console.log('👤 User document exists (transaction), checking fields...');
+
+          const existingData = userSnap.data();
+          const updates = {
+            lastLoginAt: serverTimestamp(),
+            isNewUser: false,
+          };
+
+          if (!existingData.name || existingData.name === 'User') {
+            const newName = additionalData.name ||
+                           user.displayName ||
+                           user.email?.split('@')[0] ||
+                           'User';
+            updates.name = newName;
+            console.log('🔧 Fixing missing name:', newName);
+          }
+
+          if ((!existingData.city || existingData.city === '') && additionalData.city) {
+            updates.city = additionalData.city;
+            console.log('🔧 Backfilling missing city:', additionalData.city);
+          }
+          if ((!existingData.phone || existingData.phone === '') && additionalData.phone) {
+            updates.phone = additionalData.phone;
+            console.log('🔧 Backfilling missing phone:', additionalData.phone);
+          }
+
+          if (!existingData.referralCode) {
+            const userName = existingData.name || updates.name || 'User';
+            const newReferralCode = generateReferralCode(userName, user.uid);
+            updates.referralCode = newReferralCode;
+            console.log('🔧 Adding missing referral code:', newReferralCode);
+          }
+
+          if (!existingData.hasOwnProperty('totalCredits')) updates.totalCredits = 0;
+          if (!existingData.hasOwnProperty('totalReferrals')) updates.totalReferrals = 0;
+          if (!existingData.hasOwnProperty('eventsListed')) updates.eventsListed = 0;
+          if (!existingData.hasOwnProperty('creditsHistory')) updates.creditsHistory = [];
+          if (!existingData.hasOwnProperty('isAmbassador')) updates.isAmbassador = false;
+          if (!existingData.hasOwnProperty('assignedCampuses')) updates.assignedCampuses = [];
+          if (!existingData.hasOwnProperty('isCampusAmbassador')) updates.isCampusAmbassador = false;
+          if (!existingData.email && user.email) updates.email = user.email;
+          if (!existingData.avatar && user.photoURL) updates.avatar = user.photoURL;
+
+          transaction.update(userRef, updates);
+          wasCreated = false;
+          return { ...existingData, ...updates };
         }
-        
-        const updatedSnap = await getDoc(userRef);
-        return updatedSnap.data();
+      });
+
+      console.log('✅ Transaction committed. Created new doc:', wasCreated);
+
+      // ✅ Referral credit awarding stays OUTSIDE the transaction — it's
+      // its own separate multi-document read/write and doesn't need to be
+      // atomic with the user doc creation itself. Only runs the first
+      // time this specific call actually created the document, matching
+      // the original behavior (never re-runs on subsequent logins).
+      if (wasCreated && additionalData.referralCode) {
+        console.log('🎁 Awarding referral credits...');
+        const isValid = await validateReferralCode(additionalData.referralCode);
+        if (isValid) {
+          await awardReferralCredits(user.uid, resultData.name, additionalData.referralCode.toUpperCase());
+        }
       }
+
+      return resultData;
     } catch (error) {
       console.error('❌ Error in ensureUserDocument:', error);
       throw error;
