@@ -207,6 +207,29 @@ export function AuthProvider({ children }) {
           console.log('🔧 Fixing missing name:', newName);
         }
 
+        // ✅ FIXED — this is the actual root cause of "signup doesn't save
+        // full info". createUserWithEmailAndPassword() fires the
+        // onAuthStateChanged listener below almost immediately, which
+        // calls ensureUserDocument(user) with NO additionalData — racing
+        // against signup()'s own ensureUserDocument(user, {name, city,
+        // phone, referralCode}) call that DOES have the real data. If the
+        // listener's empty call wins that race and creates the doc first,
+        // the real city/phone the person typed into the signup form was
+        // silently discarded forever — this "existing document" branch
+        // never looked at additionalData.city or additionalData.phone at
+        // all, only name. Now it backfills both the same way name already
+        // gets backfilled, so whichever call runs second (carrying the
+        // real data) still writes it, regardless of which call won the
+        // race to create the doc.
+        if ((!existingData.city || existingData.city === '') && additionalData.city) {
+          updates.city = additionalData.city;
+          console.log('🔧 Backfilling missing city:', additionalData.city);
+        }
+        if ((!existingData.phone || existingData.phone === '') && additionalData.phone) {
+          updates.phone = additionalData.phone;
+          console.log('🔧 Backfilling missing phone:', additionalData.phone);
+        }
+
         if (!existingData.referralCode) {
           const userName = existingData.name || updates.name || 'User';
           const newReferralCode = generateReferralCode(userName, user.uid);

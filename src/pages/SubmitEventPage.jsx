@@ -731,6 +731,15 @@ const SubmitEventPage = () => {
           status: 'pending', submittedAt: serverTimestamp(),
           slug: form.eventTitle ? form.eventTitle.toLowerCase().trim()
             .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') : null,
+          // ✅ NEW — links this submission to the logged-in account, matching
+          // the mobile app's osb_create_event_screen.dart. Without this, an
+          // approved event/place has no way to be traced back to who
+          // created it — it can never show up in "My Roles" on either
+          // platform, and therefore can never be opened in Manage Event.
+          // This was previously only written for vendor_submissions
+          // (as ownerId) — events and places never got an equivalent field
+          // at all.
+          userId: currentUser?.uid || null,
         });
       }
       setSubmitSuccess(true);

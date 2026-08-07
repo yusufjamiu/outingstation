@@ -14,7 +14,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 const API_URL              = '/api/ai-recommend';
 const BASE_URL             = 'https://www.outingstation.com';
-const FREE_PROMPTS_PER_DAY = 10;
+const FREE_PROMPTS_PER_DAY = 3;
 const CREDIT_COST          = 50;
 
 const NUDGE_MESSAGES = [
