@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { 
@@ -23,6 +23,9 @@ export default function ManageEvent() {
   const [filterStatus, setFilterStatus] = useState('all');
   // ✅ Tier filter
   const [filterTier, setFilterTier] = useState('all');
+  // ✅ NEW — tracks which ticket's row is expanded to show custom question
+  // answers on-screen (previously only visible via CSV export)
+  const [expandedTicketId, setExpandedTicketId] = useState(null);
   const [stats, setStats] = useState({
     totalSold: 0,
     totalCheckedIn: 0,
@@ -460,8 +463,19 @@ export default function ManageEvent() {
                     </td>
                   </tr>
                 ) : (
-                  filteredTickets.map((ticket) => (
-                    <tr key={ticket.id} className="hover:bg-gray-50">
+                  filteredTickets.map((ticket) => {
+                    // ✅ NEW — does this ticket have any custom question
+                    // answers worth showing an expand toggle for?
+                    const hasAnswers = isFreeRegistration
+                      && (event.customQuestions?.length > 0)
+                      && ticket.customAnswers
+                      && Object.keys(ticket.customAnswers).length > 0;
+                    const isExpanded = expandedTicketId === ticket.id;
+                    const colCount = hasTierData ? 8 : (isFreeRegistration ? 6 : 7);
+
+                    return (
+                    <Fragment key={ticket.id}>
+                    <tr className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm font-mono font-semibold text-cyan-600">
                           {ticket.ticketId}
@@ -479,6 +493,17 @@ export default function ManageEvent() {
                             <p className="text-xs text-cyan-600 mt-0.5">
                               + {ticket.guests.map(g => g.name).join(', ')}
                             </p>
+                          )}
+                          {/* ✅ NEW — expand/collapse toggle for custom question answers.
+                              Previously these were only visible via CSV export; this
+                              surfaces them directly on the check-in screen. */}
+                          {hasAnswers && (
+                            <button
+                              onClick={() => setExpandedTicketId(isExpanded ? null : ticket.id)}
+                              className="text-xs text-cyan-600 hover:text-cyan-700 font-semibold mt-1 flex items-center gap-1"
+                            >
+                              {isExpanded ? '▲ Hide answers' : '▼ View answers'}
+                            </button>
                           )}
                         </div>
                       </td>
@@ -543,7 +568,32 @@ export default function ManageEvent() {
                         </button>
                       </td>
                     </tr>
-                  ))
+                    {/* ✅ NEW — expanded row showing every custom question
+                        paired with this attendee's answer */}
+                    {isExpanded && hasAnswers && (
+                      <tr key={`${ticket.id}-answers`} className="bg-cyan-50/50">
+                        <td colSpan={colCount} className="px-6 py-4">
+                          <div className="max-w-lg">
+                            <p className="text-xs font-bold text-cyan-700 uppercase tracking-wide mb-2">
+                              {ticket.buyerName}'s Answers
+                            </p>
+                            <div className="space-y-2">
+                              {event.customQuestions.map(q => (
+                                <div key={q.id} className="flex items-start justify-between gap-4 bg-white rounded-lg px-3 py-2 border border-cyan-100">
+                                  <span className="text-sm text-gray-600">{q.label}</span>
+                                  <span className="text-sm font-semibold text-gray-900 text-right">
+                                    {ticket.customAnswers?.[q.id] || <span className="text-gray-400 italic">No answer</span>}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>
