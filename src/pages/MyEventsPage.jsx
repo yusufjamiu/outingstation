@@ -4,7 +4,7 @@ import { collection, query, where, getDocs, doc, updateDoc, getDoc, deleteDoc } 
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 
-// ✅ FIX: eventDate should always be a 'YYYY-MM-DD' string, but some plans
+// ✅ FIX: event Date should always be a 'YYYY-MM-DD' string, but some plans
 // created via the mobile app before a bug was fixed wrote it as a raw
 // Firestore Timestamp instead. Rendering a Timestamp object directly as a
 // React child crashes the whole page (React error #31) — this formats
