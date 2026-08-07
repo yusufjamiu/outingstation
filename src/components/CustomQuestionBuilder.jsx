@@ -1,10 +1,4 @@
-import { Plus, Trash2, HelpCircle } from 'lucide-react';
-
-const QUESTION_PRESETS = [
-  { label: 'Dietary restrictions?', type: 'text' },
-  { label: 'How did you hear about this event?', type: 'select', options: ['Instagram', 'Friend', 'OutingStation', 'Other'] },
-  { label: 'Any special accommodations needed?', type: 'text' },
-];
+import { Plus, Trash2, User, Mail, Phone, Lock } from 'lucide-react';
 
 const QUESTION_TYPES = [
   { value: 'text', label: 'Short Text' },
@@ -13,15 +7,15 @@ const QUESTION_TYPES = [
 ];
 
 export default function CustomQuestionBuilder({ questions, onChange }) {
-  const addQuestion = (preset = null) => {
+  const addQuestion = () => {
     if (questions.length >= 5) return;
     onChange([
       ...questions,
       {
         id: `q_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-        label: preset?.label || '',
-        type: preset?.type || 'text',
-        options: preset?.options || [],
+        label: '',
+        type: 'text',
+        options: [],
         required: false,
       },
     ]);
@@ -32,27 +26,76 @@ export default function CustomQuestionBuilder({ questions, onChange }) {
   const updateQuestion = (index, field, value) =>
     onChange(questions.map((q, i) => (i === index ? { ...q, [field]: value } : q)));
 
-  const updateOptions = (index, rawText) => {
-    const options = rawText.split(',').map(o => o.trim()).filter(Boolean);
-    updateQuestion(index, 'options', options);
+  // ✅ NEW — switching a question TO "Multiple Choice" seeds it with 2 empty
+  // option slots so the organizer sees the add-option UI immediately,
+  // instead of an empty box with nothing to click
+  const updateQuestionType = (index, newType) => {
+    onChange(questions.map((q, i) => {
+      if (i !== index) return q;
+      const options = newType === 'select' && q.options.length === 0
+        ? ['', '']
+        : q.options;
+      return { ...q, type: newType, options };
+    }));
+  };
+
+  const addOption = (qIndex) => {
+    onChange(questions.map((q, i) =>
+      i === qIndex ? { ...q, options: [...q.options, ''] } : q
+    ));
+  };
+
+  const updateOption = (qIndex, optIndex, value) => {
+    onChange(questions.map((q, i) =>
+      i === qIndex
+        ? { ...q, options: q.options.map((o, oi) => (oi === optIndex ? value : o)) }
+        : q
+    ));
+  };
+
+  const removeOption = (qIndex, optIndex) => {
+    onChange(questions.map((q, i) =>
+      i === qIndex ? { ...q, options: q.options.filter((_, oi) => oi !== optIndex) } : q
+    ));
   };
 
   return (
     <div className="space-y-4">
-      {questions.length === 0 && (
-        <div className="text-center py-6 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
-          <HelpCircle className="mx-auto text-gray-300 mb-2" size={28} />
-          <p className="text-sm font-bold text-gray-700 mb-1">No custom questions yet</p>
-          <p className="text-xs text-gray-400 mb-4">Ask attendees anything extra you need to know — dietary needs, how they heard about you, anything.</p>
-          <div className="flex flex-wrap gap-1.5 justify-center">
-            {QUESTION_PRESETS.map((p, i) => (
-              <button key={i} type="button" onClick={() => addQuestion(p)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-600 hover:border-cyan-400 hover:text-cyan-600 transition">
-                + {p.label}
-              </button>
-            ))}
+      {/* ✅ NEW — visual mock-up of the always-collected fields, so
+          organizers SEE the form rather than read a sentence about it.
+          Shown as locked/disabled-looking inputs, exactly like the real
+          registration form's first 3 fields. */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+          <Lock size={11} /> Every registration form always starts with these — you don't need to add them:
+        </p>
+        <div className="space-y-2 bg-gray-100 border border-gray-200 rounded-xl p-3">
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 opacity-70">
+            <User size={14} className="text-gray-400 flex-shrink-0" />
+            <span className="text-sm text-gray-500">Full Name</span>
+            <span className="text-red-400 text-xs ml-auto">*</span>
+          </div>
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 opacity-70">
+            <Mail size={14} className="text-gray-400 flex-shrink-0" />
+            <span className="text-sm text-gray-500">Email Address</span>
+            <span className="text-red-400 text-xs ml-auto">*</span>
+          </div>
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 opacity-70">
+            <Phone size={14} className="text-gray-400 flex-shrink-0" />
+            <span className="text-sm text-gray-500">Phone Number</span>
+            <span className="text-red-400 text-xs ml-auto">*</span>
           </div>
         </div>
+        <p className="text-xs text-gray-400 mt-2">
+          Anything you add below shows up <span className="font-semibold text-gray-500">after</span> these three, on the same form.
+        </p>
+      </div>
+
+      {questions.length === 0 && (
+        <button type="button" onClick={addQuestion}
+          className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-cyan-300 rounded-xl text-sm font-semibold text-cyan-600 hover:bg-cyan-50 hover:border-cyan-500 transition">
+          <Plus size={16} /> Add Question
+        </button>
       )}
 
       {questions.map((q, index) => (
@@ -70,7 +113,7 @@ export default function CustomQuestionBuilder({ questions, onChange }) {
               <label className="block text-xs font-medium text-gray-600 mb-1">Question Text</label>
               <input type="text" value={q.label}
                 onChange={(e) => updateQuestion(index, 'label', e.target.value)}
-                placeholder="e.g. Dietary restrictions?"
+                placeholder="Type your question"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
             </div>
 
@@ -78,7 +121,7 @@ export default function CustomQuestionBuilder({ questions, onChange }) {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Answer Type</label>
                 <select value={q.type}
-                  onChange={(e) => updateQuestion(index, 'type', e.target.value)}
+                  onChange={(e) => updateQuestionType(index, e.target.value)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none">
                   {QUESTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
@@ -95,13 +138,30 @@ export default function CustomQuestionBuilder({ questions, onChange }) {
 
             {q.type === 'select' && (
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Options <span className="text-gray-400">(comma separated)</span>
-                </label>
-                <input type="text" value={q.options.join(', ')}
-                  onChange={(e) => updateOptions(index, e.target.value)}
-                  placeholder="e.g. Instagram, Friend, OutingStation, Other"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+                <label className="block text-xs font-medium text-gray-600 mb-2">Answer Options</label>
+                <div className="space-y-2">
+                  {q.options.map((opt, optIndex) => (
+                    <div key={optIndex} className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-cyan-100 text-cyan-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
+                        {String.fromCharCode(65 + optIndex)}
+                      </span>
+                      <input type="text" value={opt}
+                        onChange={(e) => updateOption(index, optIndex, e.target.value)}
+                        placeholder={`Option ${String.fromCharCode(65 + optIndex)}`}
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-cyan-400 outline-none" />
+                      {q.options.length > 1 && (
+                        <button type="button" onClick={() => removeOption(index, optIndex)}
+                          className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition flex-shrink-0">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => addOption(index)}
+                  className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-cyan-600 hover:text-cyan-700 transition">
+                  <Plus size={13} /> Add Option
+                </button>
               </div>
             )}
           </div>
@@ -109,7 +169,7 @@ export default function CustomQuestionBuilder({ questions, onChange }) {
       ))}
 
       {questions.length > 0 && questions.length < 5 && (
-        <button type="button" onClick={() => addQuestion()}
+        <button type="button" onClick={addQuestion}
           className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-cyan-300 rounded-xl text-sm font-semibold text-cyan-600 hover:bg-cyan-50 hover:border-cyan-500 transition">
           <Plus size={16} /> Add Question ({questions.length}/5)
         </button>

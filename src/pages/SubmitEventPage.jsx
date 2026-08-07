@@ -597,7 +597,7 @@ const SubmitEventPage = () => {
         }
         customQuestions.forEach((q, i) => {
           if (!q.label?.trim()) e[`question_${i}_label`] = 'Question text is required';
-          if (q.type === 'select' && (!q.options || q.options.length === 0)) e[`question_${i}_options`] = 'Add at least one option';
+          if (q.type === 'select' && (!q.options || q.options.filter(o => o.trim()).length === 0)) e[`question_${i}_options`] = 'Add at least one option';
         });
       } else if (form.isFree === 'no') {
         if (isEvent && form.wantOutingstationTicketing === 'yes') {
@@ -682,7 +682,7 @@ const SubmitEventPage = () => {
         const isFreeRegistration = isEvent && form.isFree === 'yes' && form.useFreeRegistration;
         const questionsData = isFreeRegistration ? customQuestions.map((q, i) => ({
           id: q.id || `q_${i + 1}`, label: q.label.trim(), type: q.type,
-          options: q.options || [], required: !!q.required,
+          options: (q.options || []).map(o => o.trim()).filter(Boolean), required: !!q.required,
         })) : [];
 
         // ✅ NEW — resolved ticketing option for this submission

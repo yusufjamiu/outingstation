@@ -421,7 +421,7 @@ export default function AdminEventForm() {
       if (!ticketsAvailable || parseInt(ticketsAvailable) <= 0) { alert('Please enter number of spots available'); return; }
       for (const q of customQuestions) {
         if (!q.label?.trim()) { alert('All custom questions need question text'); return; }
-        if (q.type === 'select' && (!q.options || q.options.length === 0)) { alert(`"${q.label}" needs at least one option`); return; }
+        if (q.type === 'select' && (!q.options || q.options.filter(o => o.trim()).length === 0)) { alert(`"${q.label}" needs at least one option`); return; }
       }
     }
 
@@ -447,7 +447,7 @@ export default function AdminEventForm() {
             id: q.id || `q_${i + 1}`,
             label: q.label.trim(),
             type: q.type,
-            options: q.options || [],
+            options: (q.options || []).map(o => o.trim()).filter(Boolean),
             required: !!q.required,
           }))
         : [];
