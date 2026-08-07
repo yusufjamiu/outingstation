@@ -196,7 +196,19 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
           customAnswers: answers,
         }),
       });
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        // Response wasn't JSON (e.g. a 404/HTML page from a dev server
+        // that isn't routing /api requests) — surface a readable error
+        // instead of crashing on "Unexpected end of JSON input"
+        throw new Error(
+          res.status === 404
+            ? 'Registration service not found (404) — the API route may not be running locally.'
+            : `Registration failed (status ${res.status})`
+        );
+      }
       if (!res.ok) throw new Error(data.error || 'Registration failed');
 
       setConfirmData({
@@ -235,81 +247,90 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
           </div>
         )}
 
-        <div className="space-y-3 mb-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)}
-              placeholder="John Doe"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="john@example.com"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
-            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-              placeholder="+234 800 000 0000"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-          </div>
+        {/* ✅ NEW — the entire form (name/email/phone/group size/guests/
+            custom questions) only renders while spots remain. Previously
+            all fields stayed fillable even when sold out, and only the
+            submit button at the bottom got disabled — someone could fill
+            in custom question answers for a registration that could never
+            go through. Once sold out, none of it renders; just the notice
+            below and a disabled button. */}
+        {!soldOut ? (
+          <>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+                  placeholder="John Doe"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                  placeholder="john@example.com"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+234 800 000 0000"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
+              </div>
 
-          {maxGroupSize > 1 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
-                <Users size={15} /> How many people (including you)?
-              </label>
-              <div className="flex gap-2">
-                {Array.from({ length: maxGroupSize }, (_, i) => i + 1).map(n => (
-                  <button key={n} type="button" onClick={() => updateGroupSize(n)}
-                    className={`flex-1 py-2 rounded-lg border-2 text-sm font-bold transition ${
-                      groupSize === n ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600'
-                    }`}>
-                    {n}
-                  </button>
+              {maxGroupSize > 1 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                    <Users size={15} /> How many people (including you)?
+                  </label>
+                  <div className="flex gap-2">
+                    {Array.from({ length: maxGroupSize }, (_, i) => i + 1).map(n => (
+                      <button key={n} type="button" onClick={() => updateGroupSize(n)}
+                        className={`flex-1 py-2 rounded-lg border-2 text-sm font-bold transition ${
+                          groupSize === n ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600'
+                        }`}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {groupSize > 1 && (
+              <div className="space-y-3 mb-4">
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-xs text-orange-700">
+                  ⚠️ <strong>You must arrive together.</strong> This registration covers {groupSize} people under one confirmation. If a guest arrives separately, you'll need to be present to check them in.
+                </div>
+                {guests.map((guest, i) => (
+                  <GuestBlock key={guest.id} index={i + 1} guest={guest}
+                    onChange={(g) => updateGuest(i, g)} />
                 ))}
               </div>
-            </div>
-          )}
-        </div>
+            )}
 
-        {groupSize > 1 && (
-          <div className="space-y-3 mb-4">
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-xs text-orange-700">
-              ⚠️ <strong>You must arrive together.</strong> This registration covers {groupSize} people under one confirmation. If a guest arrives separately, you'll need to be present to check them in.
-            </div>
-            {guests.map((guest, i) => (
-              <GuestBlock key={guest.id} index={i + 1} guest={guest}
-                onChange={(g) => updateGuest(i, g)} />
-            ))}
-          </div>
-        )}
+            {customQuestions.length > 0 && (
+              <div className="space-y-3 mb-4 pt-2 border-t border-gray-100">
+                {customQuestions.map(q => (
+                  <CustomQuestionField key={q.id} question={q} value={answers[q.id]}
+                    onChange={(v) => updateAnswer(q.id, v)} />
+                ))}
+              </div>
+            )}
 
-        {customQuestions.length > 0 && (
-          <div className="space-y-3 mb-4 pt-2 border-t border-gray-100">
-            {customQuestions.map(q => (
-              <CustomQuestionField key={q.id} question={q} value={answers[q.id]}
-                onChange={(v) => updateAnswer(q.id, v)} />
-            ))}
-          </div>
-        )}
+            <button onClick={handleSubmit} disabled={submitting}
+              className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50">
+              <UserPlus size={20} />
+              {submitting ? 'Registering...' : 'Register for Free'}
+            </button>
 
-        {!soldOut ? (
-          <button onClick={handleSubmit} disabled={submitting}
-            className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50">
-            <UserPlus size={20} />
-            {submitting ? 'Registering...' : 'Register for Free'}
-          </button>
+            <p className="text-xs text-gray-500 text-center mt-3">
+              🎫 Registration confirmation sent to your email
+            </p>
+          </>
         ) : (
           <button disabled className="w-full bg-gray-300 text-gray-500 py-3 rounded-xl font-semibold cursor-not-allowed">
             Fully Booked
           </button>
         )}
-
-        <p className="text-xs text-gray-500 text-center mt-3">
-          🎫 Registration confirmation sent to your email
-        </p>
       </div>
 
       {showConfirm && confirmData && (

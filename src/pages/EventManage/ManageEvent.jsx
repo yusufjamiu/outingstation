@@ -1,9 +1,9 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { 
   Calendar, Clock, MapPin, Users, Download, CheckCircle, XCircle,
-  Ticket, Mail, Search, Filter, AlertCircle, Layers, UserPlus
+  Ticket, Mail, Search, Filter, AlertCircle, Layers, UserPlus, FileSpreadsheet, FileText
 } from 'lucide-react';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -11,6 +11,8 @@ import PublicNavbar from '../../components/PublicNavbar';
 import Footer from '../../components/Footer';
 import VendorStandsManager from '../../components/VendorStandsManager';
 import { formatEventDateFull, formatEventTime } from '../../utils/dateTimeHelpers';
+// ✅ NEW — SheetJS, for the Excel (.xlsx) export option alongside CSV
+import * as XLSX from 'xlsx';
 
 export default function ManageEvent() {
   const { manageKey } = useParams();
@@ -23,9 +25,6 @@ export default function ManageEvent() {
   const [filterStatus, setFilterStatus] = useState('all');
   // ✅ Tier filter
   const [filterTier, setFilterTier] = useState('all');
-  // ✅ NEW — tracks which ticket's row is expanded to show custom question
-  // answers on-screen (previously only visible via CSV export)
-  const [expandedTicketId, setExpandedTicketId] = useState(null);
   const [stats, setStats] = useState({
     totalSold: 0,
     totalCheckedIn: 0,
@@ -123,9 +122,9 @@ export default function ManageEvent() {
   // ✅ NEW — free registration flag, drives several display tweaks below
   const isFreeRegistration = event?.ticketingOption === 'free_registration';
 
-  const exportToCSV = () => {
-    // ✅ NEW — free-registration events drop the price/fee columns (always
-    // ₦0, just noise) and add guest names + custom question answers instead
+  // ✅ NEW — shared row-building logic, used by both exportToCSV and
+  // exportToExcel so the two formats never drift out of sync with each other
+  const getExportData = () => {
     const customQuestions = event?.customQuestions || [];
 
     const headers = isFreeRegistration
@@ -164,6 +163,12 @@ export default function ManageEvent() {
       ];
     });
 
+    return { headers, rows };
+  };
+
+  const exportToCSV = () => {
+    const { headers, rows } = getExportData();
+
     const csvContent = [
       headers.join(','),
       ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
@@ -177,7 +182,33 @@ export default function ManageEvent() {
     a.click();
     window.URL.revokeObjectURL(url);
 
-    toast.success('✅ Attendee list exported!');
+    toast.success('✅ Attendee list exported (CSV)!');
+  };
+
+  // ✅ NEW — Excel export via SheetJS, reusing the same headers/rows as CSV
+  // so both formats always show identical data
+  const exportToExcel = () => {
+    const { headers, rows } = getExportData();
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    // ✅ auto-size columns roughly by content length, so the sheet doesn't
+    // open with everything crammed into default-width columns
+    const colWidths = headers.map((header, colIndex) => {
+      const maxLen = Math.max(
+        header.length,
+        ...rows.map(row => String(row[colIndex] ?? '').length)
+      );
+      return { wch: Math.min(Math.max(maxLen + 2, 10), 40) };
+    });
+    worksheet['!cols'] = colWidths;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendees');
+
+    XLSX.writeFile(workbook, `${event.title}-attendees-${Date.now()}.xlsx`);
+
+    toast.success('✅ Attendee list exported (Excel)!');
   };
 
   // ✅ Get unique tier names from tickets for filter dropdown
@@ -265,13 +296,23 @@ export default function ManageEvent() {
                 </div>
               </div>
             </div>
-            <button
-              onClick={exportToCSV}
-              className="flex items-center gap-2 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition"
-            >
-              <Download size={20} />
-              Export CSV
-            </button>
+            {/* ✅ NEW — Excel export added alongside CSV */}
+            <div className="flex gap-2">
+              <button
+                onClick={exportToCSV}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+              >
+                <FileText size={18} />
+                CSV
+              </button>
+              <button
+                onClick={exportToExcel}
+                className="flex items-center gap-2 px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition"
+              >
+                <FileSpreadsheet size={18} />
+                Excel
+              </button>
+            </div>
           </div>
         </div>
 
@@ -435,6 +476,14 @@ export default function ManageEvent() {
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket ID</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Buyer Info</th>
+                  {/* ✅ NEW — one column per custom question, so every
+                      attendee's answers are visible directly in the table
+                      without needing to click anything */}
+                  {isFreeRegistration && (event.customQuestions || []).map(q => (
+                    <th key={q.id} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider max-w-[160px]">
+                      {q.label}
+                    </th>
+                  ))}
                   {/* ✅ Tier column — shown when tickets have tier data */}
                   {hasTierData && (
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tier</th>
@@ -456,7 +505,15 @@ export default function ManageEvent() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredTickets.length === 0 ? (
                   <tr>
-                    <td colSpan={hasTierData ? 8 : (isFreeRegistration ? 6 : 7)} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={
+                      2 // Ticket ID + Buyer Info
+                      + (isFreeRegistration ? (event.customQuestions || []).length : 0)
+                      + (hasTierData ? 1 : 0)
+                      + 1 // Quantity/Group Size
+                      + (!isFreeRegistration ? 1 : 0) // Total Paid
+                      + 2 // Date + Status
+                      + 1 // Action
+                    } className="px-6 py-12 text-center text-gray-500">
                       {searchTerm || filterStatus !== 'all' || filterTier !== 'all'
                         ? 'No tickets match your search'
                         : (isFreeRegistration ? 'No registrations yet' : 'No tickets sold yet')}
@@ -464,18 +521,8 @@ export default function ManageEvent() {
                   </tr>
                 ) : (
                   filteredTickets.map((ticket) => {
-                    // ✅ NEW — does this ticket have any custom question
-                    // answers worth showing an expand toggle for?
-                    const hasAnswers = isFreeRegistration
-                      && (event.customQuestions?.length > 0)
-                      && ticket.customAnswers
-                      && Object.keys(ticket.customAnswers).length > 0;
-                    const isExpanded = expandedTicketId === ticket.id;
-                    const colCount = hasTierData ? 8 : (isFreeRegistration ? 6 : 7);
-
                     return (
-                    <Fragment key={ticket.id}>
-                    <tr className="hover:bg-gray-50">
+                    <tr key={ticket.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm font-mono font-semibold text-cyan-600">
                           {ticket.ticketId}
@@ -494,19 +541,17 @@ export default function ManageEvent() {
                               + {ticket.guests.map(g => g.name).join(', ')}
                             </p>
                           )}
-                          {/* ✅ NEW — expand/collapse toggle for custom question answers.
-                              Previously these were only visible via CSV export; this
-                              surfaces them directly on the check-in screen. */}
-                          {hasAnswers && (
-                            <button
-                              onClick={() => setExpandedTicketId(isExpanded ? null : ticket.id)}
-                              className="text-xs text-cyan-600 hover:text-cyan-700 font-semibold mt-1 flex items-center gap-1"
-                            >
-                              {isExpanded ? '▲ Hide answers' : '▼ View answers'}
-                            </button>
-                          )}
                         </div>
                       </td>
+                      {/* ✅ NEW — one answer cell per custom question, always
+                          visible for every attendee (no toggle needed) */}
+                      {isFreeRegistration && (event.customQuestions || []).map(q => (
+                        <td key={q.id} className="px-6 py-4 max-w-[160px]">
+                          <span className="text-sm text-gray-700">
+                            {ticket.customAnswers?.[q.id] || <span className="text-gray-300 italic">—</span>}
+                          </span>
+                        </td>
+                      ))}
                       {/* ✅ Tier cell */}
                       {hasTierData && (
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -568,30 +613,6 @@ export default function ManageEvent() {
                         </button>
                       </td>
                     </tr>
-                    {/* ✅ NEW — expanded row showing every custom question
-                        paired with this attendee's answer */}
-                    {isExpanded && hasAnswers && (
-                      <tr key={`${ticket.id}-answers`} className="bg-cyan-50/50">
-                        <td colSpan={colCount} className="px-6 py-4">
-                          <div className="max-w-lg">
-                            <p className="text-xs font-bold text-cyan-700 uppercase tracking-wide mb-2">
-                              {ticket.buyerName}'s Answers
-                            </p>
-                            <div className="space-y-2">
-                              {event.customQuestions.map(q => (
-                                <div key={q.id} className="flex items-start justify-between gap-4 bg-white rounded-lg px-3 py-2 border border-cyan-100">
-                                  <span className="text-sm text-gray-600">{q.label}</span>
-                                  <span className="text-sm font-semibold text-gray-900 text-right">
-                                    {ticket.customAnswers?.[q.id] || <span className="text-gray-400 italic">No answer</span>}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                    </Fragment>
                     );
                   })
                 )}
@@ -606,7 +627,7 @@ export default function ManageEvent() {
             💡 <strong>Tip:</strong> Use the search bar to quickly find attendees at the door.
             {hasTierData && ' Filter by tier to see specific ticket types.'}
             {isFreeRegistration && ' A "Check In (N)" button means the registration covers a group — confirm everyone listed has arrived before checking in.'}
-            {' '}Click "Check In" to mark their arrival. Export the full list anytime!
+            {' '}Click "Check In" to mark their arrival. Export the full list as CSV or Excel anytime!
           </p>
         </div>
       </main>
