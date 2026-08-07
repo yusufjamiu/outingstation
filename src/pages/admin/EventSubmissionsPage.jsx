@@ -66,8 +66,6 @@ export default function EventSubmissionsPage() {
 
   useEffect(() => { fetchSubmissions(); loadAudienceOptions(); }, []);
 
-  // ✅ NEW — loads cities/universities/user count for the audience picker,
-  // same pattern as AdminNotifications.jsx
   const loadAudienceOptions = async () => {
     try {
       const usersSnapshot = await getDocs(collection(db, 'users'));
@@ -118,7 +116,6 @@ export default function EventSubmissionsPage() {
     setTimeout(() => setRefreshing(false), 500);
   };
 
-  // ✅ Award ₦100 referral credit
   const awardReferralCredit = async (referralCode) => {
     if (!referralCode) return null;
     try {
@@ -148,8 +145,6 @@ export default function EventSubmissionsPage() {
     }
   };
 
-  // ✅ NEW — resolves target user IDs for the push notification, based on
-  // the audience picker. Mirrors AdminNotifications.jsx's getTargetUsers.
   const getPushTargetUserIds = async () => {
     try {
       const usersSnapshot = await getDocs(collection(db, 'users'));
@@ -178,10 +173,6 @@ export default function EventSubmissionsPage() {
     }
   };
 
-  // ✅ NEW — writes a per-user notification doc for each targeted user.
-  // Reuses the existing notifications collection + sendPushOnNotification
-  // Cloud Function, so this both shows in-app and fires a real push,
-  // exactly like a broadcast sent from AdminNotifications.jsx.
   const notifyUsers = async (eventTitle, eventId) => {
     if (!sendPush) return;
     try {
@@ -207,12 +198,8 @@ export default function EventSubmissionsPage() {
     }
   };
 
-  // ✅ NEW — helper: does this submission use free registration?
-  // SubmitEventPage.jsx writes ticketingOption: 'free_registration' directly,
-  // so this is the source of truth.
   const isFreeRegistrationSubmission = (sub) => sub.ticketingOption === 'free_registration';
 
-  // ✅ Build the event doc from submission
   const buildEventDoc = (submission, ticketingOverride = null) => {
     const isPlace = submission.listingType === 'place';
 
@@ -223,7 +210,6 @@ export default function EventSubmissionsPage() {
       eventType: submission.isUniversityEvent ? 'campus'
         : (submission.eventType === 'webinar' ? 'webinar' : 'regular'),
       subCategory: submission.subCategory || (isPlace ? 'places' : 'events'),
-      // ✅ Campus category fields — carried over from submission
       campusEventCategory: submission.isUniversityEvent && !isPlace
         ? (submission.campusEventCategory || '') : '',
       campusSubCategory: submission.isUniversityEvent && isPlace
@@ -255,11 +241,17 @@ export default function EventSubmissionsPage() {
       slug: generateSlug(submission.eventTitle || ''),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      // ✅ FIX: use the submitter's real account (ownerId, stamped by
-      // SubmitEventPage.jsx) if it exists, so their event actually shows up
-      // in their "Manage Events" dashboard. Falls back to the old placeholder
-      // string for submissions made before that fix, or by a logged-out user.
-      createdBy: submission.ownerId || 'admin_approved',
+      // ✅ FIXED — was reading submission.ownerId, but SubmitEventPage.jsx
+      // writes this field as submission.userId (ownerId is only ever set
+      // on vendor_submissions, never on event/place submissions). That
+      // mismatch meant createdBy silently fell back to the placeholder
+      // string 'admin_approved' for every single event/place approval,
+      // regardless of who submitted it or whether they were logged in —
+      // so "My Roles" could never find any newly-approved event by uid,
+      // no matter how correct the submission-side fix was. Falls back to
+      // the placeholder only for submissions made before userId existed
+      // at all, or by a genuinely logged-out submitter.
+      createdBy: submission.userId || 'admin_approved',
       submissionId: submission.id,
       ticketingEnabled: false,
       ticketingOption: 'none',
@@ -270,15 +262,10 @@ export default function EventSubmissionsPage() {
       externalTicketLink: submission.externalTicketLink || null,
       ticketTiers: submission.ticketTiers || [],
       hasTicketTiers: submission.hasTicketTiers || false,
-      // ✅ NEW — free registration defaults, filled in below when applicable
       maxGroupSize: null,
       customQuestions: [],
     };
 
-    // ✅ NEW — Free Registration branch. No money moves here, so this skips
-    // the service-fee/bank-remittance concerns entirely — it just needs a
-    // manageKey (for the organizer's check-in dashboard) and the capacity +
-    // custom question config the organizer already set at submission time.
     if (isFreeRegistrationSubmission(submission)) {
       eventDoc.ticketingEnabled = true;
       eventDoc.ticketingOption = 'free_registration';
@@ -288,10 +275,9 @@ export default function EventSubmissionsPage() {
       eventDoc.maxGroupSize = submission.maxGroupSize || 1;
       eventDoc.customQuestions = submission.customQuestions || [];
       eventDoc.manageKey = generateManageKey();
-      return eventDoc; // no date/schedule logic differs, fall through below still applies
+      return eventDoc;
     }
 
-    // ✅ If ticketing was configured by admin — generate manageKey for organizer
     if (ticketingOverride) {
       eventDoc.ticketingEnabled = true;
       eventDoc.ticketingOption = 'outingstation';
@@ -299,7 +285,6 @@ export default function EventSubmissionsPage() {
       eventDoc.serviceFeeType = ticketingOverride.serviceFeeType || 'fixed';
       eventDoc.serviceFeeAmount = parseFloat(ticketingOverride.serviceFeeAmount) || 100;
 
-      // ✅ Generate manage key so organizer can manage their event tickets
       eventDoc.manageKey = generateManageKey();
 
       if (ticketingOverride.useTiers && ticketingOverride.tiers?.length > 0) {
@@ -342,7 +327,6 @@ export default function EventSubmissionsPage() {
     return eventDoc;
   };
 
-  // ✅ Direct approve — for free events, free-registration events, or external ticketing
   const handleApprove = async (submissionId) => {
     const submission = submissions.find(s => s.id === submissionId);
     if (!submission) return;
@@ -351,9 +335,6 @@ export default function EventSubmissionsPage() {
     const wantsOSTicketing = submission.wantOutingstationTicketing === 'yes' || submission.wantOutingstationTicketing === true;
     const label = isPlace ? 'place' : 'event';
 
-    // ✅ Free registration events skip the ticketing-setup modal entirely —
-    // the organizer already configured spots/group size/questions when they
-    // submitted, so there's nothing left for admin to configure.
     if (isFreeRegistrationSubmission(submission)) {
       if (!confirm(`Approve and publish this free ${label} (with registration tracking) to the live app?`)) return;
 
@@ -382,7 +363,6 @@ export default function EventSubmissionsPage() {
         fetchSubmissions();
         setSelectedSubmission(null);
 
-        // Show manage link so admin can share the check-in dashboard with organizer
         setApprovedEventForManage({ id: docRef.id, ...eventDoc });
         setShowManageModal(true);
       } catch (err) {
@@ -428,7 +408,6 @@ export default function EventSubmissionsPage() {
         reviewedAt: new Date(),
       });
 
-      // ✅ Notify users (respects the toggle + audience picker)
       await notifyUsers(eventDoc.title, docRef.id);
 
       let creditMsg = '';
@@ -450,7 +429,6 @@ export default function EventSubmissionsPage() {
     }
   };
 
-  // ✅ Approve WITH ticketing — shows ManageLinkModal after so admin can share link with organizer
   const handleApproveWithTicketing = async () => {
     if (!ticketingSubmission) return;
 
@@ -478,20 +456,17 @@ export default function EventSubmissionsPage() {
         reviewedAt: new Date(),
       });
 
-      // ✅ Notify users (respects the toggle + audience picker)
       await notifyUsers(eventDoc.title, docRef.id);
 
       if (ticketingSubmission.referralCode) {
         await awardReferralCredit(ticketingSubmission.referralCode);
       }
 
-      // ✅ Close ticketing modal first
       setShowTicketingModal(false);
       setTicketingSubmission(null);
       fetchSubmissions();
       setSelectedSubmission(null);
 
-      // ✅ Show ManageLinkModal so admin can copy and send the link to organizer
       setApprovedEventForManage({ id: docRef.id, ...eventDoc });
       setShowManageModal(true);
 
@@ -519,7 +494,6 @@ export default function EventSubmissionsPage() {
         ticketingNote: 'Approved without ticketing — organizer requested OS ticketing',
       });
 
-      // ✅ Notify users (respects the toggle + audience picker)
       await notifyUsers(eventDoc.title, docRef.id);
 
       alert(`✅ Event published (no ticketing yet)\n\nRemember to:\n• Contact ${ticketingSubmission.organizerEmail}\n• Set up ticketing in the Events editor\n\nEvent ID: ${docRef.id}`);
@@ -607,8 +581,6 @@ export default function EventSubmissionsPage() {
     }));
   };
 
-  // ✅ NEW — shared push notification toggle + audience picker block,
-  // rendered inside both the Detail Modal and the Ticketing Modal footers.
   const renderPushSettings = () => (
     <div className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 mb-3">
       <div className="flex items-center justify-between">
@@ -730,7 +702,6 @@ export default function EventSubmissionsPage() {
 
         <div className="p-4 sm:p-6">
 
-          {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             {[
               { label: 'Total', value: submissions.length, style: 'bg-white border-gray-200 text-gray-900' },
@@ -745,7 +716,6 @@ export default function EventSubmissionsPage() {
             ))}
           </div>
 
-          {/* Filters */}
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 mb-6 flex flex-col sm:flex-row sm:items-center gap-4">
             <Filter size={20} className="text-gray-600 hidden sm:block" />
             <div className="flex flex-col sm:flex-row gap-4 flex-1">
@@ -770,7 +740,6 @@ export default function EventSubmissionsPage() {
             <span className="text-sm text-gray-600">{filteredSubmissions.length} results</span>
           </div>
 
-          {/* Table */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -880,7 +849,6 @@ export default function EventSubmissionsPage() {
         </div>
       </main>
 
-      {/* Detail Modal */}
       {selectedSubmission && (() => {
         const allImages = getAllImages(selectedSubmission);
         const needsTicketing = wantsTicketing(selectedSubmission);
@@ -929,7 +897,6 @@ export default function EventSubmissionsPage() {
 
               <div className="p-6 space-y-6">
 
-                {/* ✅ NEW — Free Registration summary panel */}
                 {isFreeReg && selectedSubmission.status !== 'approved' && (
                   <div className="bg-cyan-50 border-2 border-cyan-200 rounded-xl p-4 flex items-start gap-3">
                     <UserPlus size={22} className="text-cyan-600 flex-shrink-0 mt-0.5" />
@@ -1200,8 +1167,6 @@ export default function EventSubmissionsPage() {
               </div>
 
               <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6">
-                {/* ✅ NEW — push notification settings, only shown when there's
-                    still an approve action to take */}
                 {selectedSubmission.status !== 'approved' && renderPushSettings()}
 
                 <div className="flex gap-3 justify-end flex-wrap">
@@ -1249,7 +1214,6 @@ export default function EventSubmissionsPage() {
         );
       })()}
 
-      {/* Ticketing Setup Modal — unchanged, never shown for free-registration submissions */}
       {showTicketingModal && ticketingSubmission && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
@@ -1270,7 +1234,6 @@ export default function EventSubmissionsPage() {
                 </p>
               </div>
 
-              {/* ✅ Manage link notice */}
               <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm flex items-start gap-3">
                 <span className="text-xl">🔗</span>
                 <div>
@@ -1426,7 +1389,6 @@ export default function EventSubmissionsPage() {
                 </div>
               )}
 
-              {/* ✅ NEW — push notification settings for the ticketing flow */}
               {renderPushSettings()}
             </div>
 
@@ -1451,7 +1413,6 @@ export default function EventSubmissionsPage() {
         </div>
       )}
 
-      {/* ✅ Manage Link Modal — shown after ticketing approval so admin can share with organizer */}
       {showManageModal && approvedEventForManage?.manageKey && (
         <ManageLinkModal
           event={approvedEventForManage}
