@@ -131,6 +131,15 @@ async function fetchAllCatalog(userCity) {
         } else if (e.ticketingEnabled || e.hasOutingStationTicketing || (e.externalTicketLink || '').trim()) {
           price = 'low'; priceLabel = 'Ticketed';
         }
+
+        // ✅ NEW — makes the "Free" label distinguish walk-in-free from
+        // registration-required-free right in the card, ahead of what the
+        // AI says in its reply. Doesn't change price/priceNaira/budget
+        // logic at all — purely a display tweak layered on top.
+        if (e.ticketingOption === 'free_registration') {
+          priceLabel = 'Free — Registration Required';
+        }
+
         return {
           id: e.id, slug: e.slug || '', title: e.title || 'Untitled',
           desc: (e.description || '').substring(0, 100),
@@ -141,6 +150,12 @@ async function fetchAllCatalog(userCity) {
           university: e.university || '',
           imageUrl: e.imageUrl || (Array.isArray(e.images) && e.images[0]) || '',
           mapLocation: e.mapLocation || '',
+          // ✅ NEW — passed through so /api/ai-recommend can tell a walk-in
+          // free event apart from a free event that requires registration
+          // (and knows when a registration event is sold out).
+          ticketingOption: e.ticketingOption || 'none',
+          ticketsAvailable: typeof e.ticketsAvailable === 'number' ? e.ticketsAvailable : null,
+          ticketsSold: typeof e.ticketsSold === 'number' ? e.ticketsSold : 0,
         };
       });
 
@@ -425,10 +440,34 @@ export default function OutingStationAI() {
           setAiPromptsToday(promptsToday); setAiPromptsResetAt(resetAt);
         }
         try {
-          const tSnap = await getDocs(query(collection(db, 'tickets'),
-            where('userId', '==', currentUser.uid),
-            orderBy('purchasedAt', 'desc'), limit(10)));
-          setTickets(tSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+          // ✅ NEW — two lookups merged together:
+          // 1. Tickets already linked to this account (userId match) — the
+          //    normal case for anything bought/registered while logged in.
+          // 2. Tickets registered as a GUEST using this same email — these
+          //    have userId: null (no account existed to link to at the
+          //    time), so they'd never show up under a userId-only lookup
+          //    even after the person logs in later with that same email.
+          // Merged and de-duplicated by ticket id, most recent first.
+          const [byUserIdSnap, byEmailSnap] = await Promise.all([
+            getDocs(query(collection(db, 'tickets'),
+              where('userId', '==', currentUser.uid),
+              orderBy('purchasedAt', 'desc'), limit(10))),
+            currentUser.email
+              ? getDocs(query(collection(db, 'tickets'),
+                  where('buyerEmail', '==', currentUser.email.toLowerCase().trim()),
+                  orderBy('purchasedAt', 'desc'), limit(10)))
+              : Promise.resolve({ docs: [] }),
+          ]);
+
+          const merged = new Map();
+          [...byUserIdSnap.docs, ...byEmailSnap.docs].forEach(d => {
+            merged.set(d.id, { id: d.id, ...d.data() });
+          });
+          const mergedTickets = Array.from(merged.values())
+            .sort((a, b) => (b.purchasedAt?.seconds || 0) - (a.purchasedAt?.seconds || 0))
+            .slice(0, 10);
+
+          setTickets(mergedTickets);
         } catch (_) {}
       } catch (e) { console.error('AI user load error:', e); }
     }
@@ -918,6 +957,12 @@ function ResultCard({ r, reason }) {
   const hasContactAction = isVendor || isService || isMarketplace || isRide;
   const url = eventUrl(r);
 
+  // ✅ NEW — flags a free-registration event so the card can badge it
+  const isFreeRegistration = r.ticketingOption === 'free_registration';
+  const spotsLeft = (isFreeRegistration && typeof r.ticketsAvailable === 'number')
+    ? Math.max(0, r.ticketsAvailable - (r.ticketsSold || 0))
+    : null;
+
   const kindLabel = isEssential ? (r.group || 'Essential')
     : isMarketplace ? 'Marketplace'
     : isRide ? 'Rent a Ride'
@@ -981,6 +1026,15 @@ function ResultCard({ r, reason }) {
           {r.area && <span className="flex items-center gap-0.5"><MapPin size={11} />{r.area}</span>}
           <span>{isStandEvent ? r.standPriceRange : r.priceLabel}</span>
         </div>
+        {/* ✅ NEW — small badge calling out registration + remaining spots,
+            so it's visible on the card itself, not just in the AI's reply text */}
+        {isFreeRegistration && (
+          <div className="bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mb-2">
+            <p className="text-[11px] text-amber-700 font-semibold">
+              🎟️ Registration required{spotsLeft != null ? ` · ${spotsLeft} spot${spotsLeft !== 1 ? 's' : ''} left` : ''}
+            </p>
+          </div>
+        )}
         {reason && (
           <div className="bg-cyan-50 border border-cyan-100 rounded-lg px-2.5 py-1.5 mb-2">
             <p className="text-[11px] text-cyan-700"><span className="font-bold">Why:</span> {reason}</p>
@@ -992,7 +1046,11 @@ function ResultCard({ r, reason }) {
             : isStandEvent
             ? <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-cyan-500 rounded-lg py-1.5 text-center">View Event & Apply</a>
             : !hasContactAction
-            ? <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-cyan-500 rounded-lg py-1.5 text-center">View Details</a>
+            ? (
+              <a href={url} target="_blank" rel="noreferrer" className="flex-1 text-[11px] font-bold text-white bg-cyan-500 rounded-lg py-1.5 text-center">
+                {isFreeRegistration ? 'View & Register' : 'View Details'}
+              </a>
+            )
             : <span className="flex-1 text-[11px] font-bold text-slate-400 bg-slate-50 rounded-lg py-1.5 text-center">Contact for pricing</span>
           }
           {r.mapLocation && <a href={r.mapLocation} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-slate-600 bg-slate-100 rounded-lg py-1.5 px-2.5">Directions</a>}

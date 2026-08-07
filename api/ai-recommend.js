@@ -19,8 +19,23 @@ export default async function handler(req, res) {
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set in environment variables" });
 
   // ── Build context strings from Firestore data ──────────────────────────────
+
+  // ✅ NEW — surfaces free-registration status + capacity so the AI can tell
+  // "just show up" free events apart from "must register, limited spots"
+  // ones, and can avoid recommending a registration event that's sold out.
+  // Falls back gracefully to "none" if the event doesn't carry these fields
+  // (paid/external-ticketing/no-ticketing events, or older data shapes).
+  const registrationTag = (e) => {
+    if (e.ticketingOption !== "free_registration") return "none";
+    const available = e.ticketsAvailable ?? null;
+    const sold = e.ticketsSold ?? 0;
+    if (available == null) return "required:open";
+    const remaining = available - sold;
+    return remaining > 0 ? `required:open(${remaining} left)` : "required:soldout";
+  };
+
   const eventsContext = (events || []).slice(0, 120).map((e) =>
-    `[ID:${e.id}] ${e.title} | ${e.kind} | city:${e.city || "?"} | area:${e.area || "?"} | price:${e.priceLabel} | priceNaira:${e.priceNaira ?? 0} | mood:${(e.moods || []).join("/")} | campus:${e.eventType === "campus" ? "yes" : "no"} | university:${e.university || "-"} | desc:${(e.desc || "").slice(0, 80)}`
+    `[ID:${e.id}] ${e.title} | ${e.kind} | city:${e.city || "?"} | area:${e.area || "?"} | price:${e.priceLabel} | priceNaira:${e.priceNaira ?? 0} | registration:${registrationTag(e)} | mood:${(e.moods || []).join("/")} | campus:${e.eventType === "campus" ? "yes" : "no"} | university:${e.university || "-"} | desc:${(e.desc || "").slice(0, 80)}`
   ).join("\n");
 
   const vendorsContext = (vendors || []).slice(0, 60).map((v) =>
@@ -98,6 +113,16 @@ INTENT TYPES YOU MUST RECOGNIZE:
 5. "Buy a product" (wants to buy baked goods, clothes, shoes, jewelry, perfume, food stuffs, gifts, get furniture made, get their car fixed, etc.) — use MARKETPLACE SELLERS data. If they haven't said a city, ask for one before recommending. Listings include both city and area (neighborhood) when the seller provided one — if the user names a specific area (e.g. "Igbe Laara, Lagos"), prioritize matches whose area matches too, not just the city; if no exact area match exists, fall back to city-level matches and say so honestly in your reply (e.g. "no exact match in Igbe Laara, but here's what's available elsewhere in Lagos").
 6. "Emergency or need an official contact" (needs police, fire service, ambulance/hospital, or a federal office like immigration/passport) — use ESSENTIAL SERVICES data. This is urgent — do not delay with extra questions if a city is already known; if city is unknown, ask for it immediately in one short sentence, since a wrong-city emergency number is actively harmful. National-level entries (no city set) should always be included regardless of city. Keep your reply short and direct here — no casual tone, no emoji, this is not the moment for chit-chat.
 7. "Rent a vehicle" (wants to hire a car, bus, or other vehicle — with or without a driver — for personal use or an event) — use RENT A RIDE data. If they haven't said whether they need a driver or just the vehicle, or haven't given a city, ask before recommending.
+
+FREE REGISTRATION EVENTS (VERY IMPORTANT):
+- Every event in EVENTS & PLACES carries a "registration" tag:
+  - "registration:none" — no registration needed, either paid ticketing or genuinely walk-in free
+  - "registration:required:open(N left)" — free, but the organizer requires registration and only N spots remain
+  - "registration:required:open" — free, requires registration, capacity not limited
+  - "registration:required:soldout" — free, requires registration, but ALL spots are taken
+- NEVER include a "registration:required:soldout" event in your results — it cannot be attended even though it's free. If it's the only thing that matches what the user asked for, say so honestly in your reply and skip it rather than recommending it.
+- When you DO recommend a "registration:required" event, your "reason" for that result must mention that registration is required (not just "it's free") — e.g. "Free, but you'll need to register first — only 8 spots left" rather than just "Free event in your city."
+- Treat "registration:required" the same as any other free event for BUDGET RULES below (priceNaira: 0 always qualifies) — the registration requirement is about availability, not cost.
 
 BUDGET RULES (VERY IMPORTANT):
 - If the user mentions a budget (e.g. "I have 10k", "₦5000", "20 thousand"), parse it as naira: "10k" = 10000, "5k" = 5000, "20k" = 20000

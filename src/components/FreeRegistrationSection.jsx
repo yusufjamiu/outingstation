@@ -194,6 +194,10 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
           groupSize,
           guests,
           customAnswers: answers,
+          // ✅ NEW — if logged in, link this registration to their account
+          // so it shows up under "Show my tickets" (guests stay null,
+          // which is fine — registration doesn't require an account)
+          userId: currentUser?.uid || null,
         }),
       });
       let data;

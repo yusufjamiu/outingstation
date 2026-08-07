@@ -119,7 +119,7 @@ export default async function handler(req, res) {
   try {
     const {
       eventId, buyerName, buyerEmail, buyerPhone,
-      groupSize = 1, guests = [], customAnswers = {}
+      groupSize = 1, guests = [], customAnswers = {}, userId = null
     } = req.body;
 
     if (!eventId || !buyerName || !buyerEmail || !buyerPhone) {
@@ -205,7 +205,7 @@ export default async function handler(req, res) {
       eventTime: formatEventTime(eventData),
       status: 'valid',
       checkedIn: false,
-      userId: null,
+      userId: userId || null,
       purchasedAt: serverTimestamp(),
       tierId: null,
       tierName: null,
