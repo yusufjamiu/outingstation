@@ -128,7 +128,18 @@ export default function LandingPage() {
 
     const events = snapshot.docs
       .map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(e => e.status === 'published' && e.date)
+      .filter(e =>
+        e.status === 'published' &&
+        e.date &&
+        // ✅ NEW — this feeds BOTH the homepage ticker and the
+        // EventsCarousel shown to every single visitor, so this was the
+        // single most exposed gap in the whole private-events feature —
+        // a private event with no visibility check here could have
+        // literally scrolled across the public homepage. `|| 'public'`
+        // keeps pre-existing events (no visibility field) showing
+        // exactly as before.
+        (e.visibility || 'public') === 'public'
+      )
       .map(e => {
         const d = e.date?.toDate ? e.date.toDate() : new Date(e.date);
         return { ...e, _date: d };

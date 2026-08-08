@@ -77,7 +77,15 @@ export default function EventsPage() {
           e.status === 'published' &&
           e.subCategory !== 'places' &&
           e.eventType !== 'webinar' &&
-          e.eventType !== 'campus'
+          e.eventType !== 'campus' &&
+          // ✅ NEW — private events (unlisted/invite-only/code-gated) were
+          // never excluded here at all, meaning the main public browse
+          // grid could show a private wedding or invite-only gathering to
+          // literally anyone. `|| 'public'` treats older events with no
+          // visibility field at all (everything created before this
+          // feature existed) as public, so nothing that used to show up
+          // silently disappears.
+          (e.visibility || 'public') === 'public'
         )
         .map(e => ({
           ...e,

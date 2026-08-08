@@ -178,6 +178,17 @@ export default function VerifyTicket() {
   // ✅ Tier — null for old tickets, no UI impact whatsoever
   const tierName = ticket.tierName;
   const hasTier = tierName && tierName.trim().length > 0;
+  // ✅ NEW — free-registration flag, mirrors the treatment in
+  // my_tickets_screen.dart / the ticket emails: no payment breakdown to
+  // show, "people" instead of "tickets", guest names if any.
+  const isFreeRegistration = ticket.isFreeRegistration === true;
+  // ✅ NEW — "Invited by" applies to BOTH free and paid group-code
+  // tickets (register-free-event.js and paystack-webhook.js both set
+  // this field the same way), so it's checked independently of
+  // isFreeRegistration.
+  const invitedBy = ticket.invitedBy;
+  const hasInvitedBy = invitedBy && invitedBy.trim().length > 0;
+  const guests = ticket.guests || [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-blue-50">
@@ -287,33 +298,82 @@ export default function VerifyTicket() {
                   </div>
                 )}
 
+                {/* ✅ NEW — "Invited By" for code-gated group tickets
+                    (free or paid). Purple to match the group-code
+                    branding used everywhere else in this feature. */}
+                {hasInvitedBy && (
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-purple-50 rounded-full flex items-center justify-center flex-shrink-0">
+                      <User size={14} className="text-purple-500" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Invited By</p>
+                      <span className="inline-block bg-purple-100 text-purple-700 text-sm font-black px-3 py-0.5 rounded-full mt-0.5">
+                        {invitedBy}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* ✅ NEW — guest names for free-registration group
+                    registrations, so the person checking people in at
+                    the gate can see who's covered by this one ticket. */}
+                {isFreeRegistration && guests.length > 0 && (
+                  <HolderRow
+                    icon={<User size={14} className="text-gray-400" />}
+                    label={`Group (${guests.length + 1} people)`}
+                    value={guests.map(g => g.name).filter(Boolean).join(', ')}
+                  />
+                )}
+
                 <HolderRow
                   icon={<Hash size={14} className="text-gray-400" />}
-                  label="Quantity"
-                  value={`${ticket.quantity} ticket${ticket.quantity > 1 ? 's' : ''}`}
+                  label={isFreeRegistration ? 'Group Size' : 'Quantity'}
+                  value={`${ticket.quantity} ${isFreeRegistration ? 'people' : `ticket${ticket.quantity > 1 ? 's' : ''}`}`}
                 />
               </div>
             </div>
 
-            {/* Amount */}
-            <div className="bg-gray-50 rounded-2xl p-4 mb-6 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-1">Amount Paid</p>
-                <p className="text-3xl font-black text-gray-900">₦{ticket.totalPaid?.toLocaleString()}</p>
-              </div>
-              {ticket.creditsApplied > 0 && (
-                <div className="text-right">
-                  <p className="text-xs text-gray-400 mb-1">Credits Used</p>
-                  <p className="text-base font-bold text-purple-600">₦{ticket.creditsApplied?.toLocaleString()}</p>
+            {/* ✅ FIXED — free-registration tickets showed "Amount Paid
+                ₦0" here, which reads like a pricing glitch rather than
+                the intentional "nothing was ever charged" it actually
+                is. Now shows a plain FREE pill instead, matching the
+                treatment already used in my_tickets_screen.dart and the
+                ticket emails. Paid tickets (including paid group-code
+                ones) are completely unaffected — same card as before. */}
+            {isFreeRegistration ? (
+              <div className="bg-emerald-50 rounded-2xl p-4 mb-6 flex items-center justify-between border border-emerald-100">
+                <div>
+                  <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-1">Cost</p>
+                  <p className="text-2xl font-black text-emerald-600">FREE</p>
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="bg-gray-50 rounded-2xl p-4 mb-6 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-1">Amount Paid</p>
+                  <p className="text-3xl font-black text-gray-900">₦{ticket.totalPaid?.toLocaleString()}</p>
+                </div>
+                {ticket.creditsApplied > 0 && (
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400 mb-1">Credits Used</p>
+                    <p className="text-base font-bold text-purple-600">₦{ticket.creditsApplied?.toLocaleString()}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
-            {/* Payment ref */}
-            <div className="bg-gray-50 rounded-xl p-3 mb-5">
-              <p className="text-xs text-gray-400 mb-1 font-semibold uppercase tracking-wide">Payment Reference</p>
-              <p className="text-xs font-mono text-gray-600 break-all">{ticket.paymentReference || ticket.paymentRef}</p>
-            </div>
+            {/* ✅ FIXED — free-registration tickets have no payment
+                reference at all (paymentReference is null, no charge
+                ever happened), so this card used to render with an
+                empty/blank value under the label — now hidden entirely
+                for free-registration tickets instead. */}
+            {!isFreeRegistration && (
+              <div className="bg-gray-50 rounded-xl p-3 mb-5">
+                <p className="text-xs text-gray-400 mb-1 font-semibold uppercase tracking-wide">Payment Reference</p>
+                <p className="text-xs font-mono text-gray-600 break-all">{ticket.paymentReference || ticket.paymentRef}</p>
+              </div>
+            )}
 
             {/* Event ended notice */}
             {eventOver && (

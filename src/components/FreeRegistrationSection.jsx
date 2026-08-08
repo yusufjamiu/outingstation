@@ -118,8 +118,22 @@ function RegistrationConfirmedModal({ data, onClose }) {
 
 // ─── Main component ────────────────────────────────────────────────────────
 
-export default function FreeRegistrationSection({ event, currentUser, onRegistrationComplete }) {
-  const maxGroupSize = Math.min(event.maxGroupSize || 1, 6);
+export default function FreeRegistrationSection({ event, currentUser, onRegistrationComplete, invitedGroup }) {
+  // ✅ NEW — group-code invite mode. When set (unlocked via the code gate
+  // on EventDetails.jsx), this registration is capped by that specific
+  // group's remaining guest allowance instead of the event's generic
+  // maxGroupSize, and the required-fields set shrinks to just a name —
+  // per organizer's spec, email/phone become optional extras the
+  // organizer can add back in as custom questions if they actually need
+  // them, rather than being hardcoded requirements for every guest.
+  const isGroupInvite = !!invitedGroup;
+  const groupRemaining = isGroupInvite
+    ? Math.max(0, (invitedGroup.maxGuests || 0) - (invitedGroup.usedGuests || 0))
+    : null;
+  // Regular (non-group) events keep the existing 6-person platform ceiling.
+  const maxGroupSize = isGroupInvite
+    ? Math.max(1, groupRemaining)
+    : Math.min(event.maxGroupSize || 1, 6);
   const customQuestions = event.customQuestions || [];
 
   const [name, setName] = useState(currentUser?.displayName || '');
@@ -135,7 +149,13 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
   const spotsRemaining = event.ticketsAvailable != null
     ? (event.ticketsAvailable - (event.ticketsSold || 0))
     : null;
-  const soldOut = spotsRemaining != null && spotsRemaining <= 0;
+  // ✅ NEW — for a group invite, "sold out" means THIS group's own limit
+  // is exhausted, not the event's overall ticketsAvailable (private
+  // events set that to null anyway — see SubmitEventPage.jsx). The gate
+  // on EventDetails.jsx already prevents reaching this component with a
+  // depleted group, but this is a second line of defense in case
+  // usedGuests changed between unlocking the gate and finishing the form.
+  const soldOut = isGroupInvite ? groupRemaining <= 0 : (spotsRemaining != null && spotsRemaining <= 0);
 
   const updateGroupSize = (size) => {
     setGroupSize(size);
@@ -156,13 +176,27 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
   };
 
   const handleSubmit = async () => {
-    if (!name.trim() || !email.trim() || !phone.trim()) {
-      toast.error('Please fill in your name, email, and phone number');
-      return;
-    }
-    if (!/\S+@\S+\.\S+/.test(email)) {
-      toast.error('Please enter a valid email');
-      return;
+    // ✅ NEW — group invites only require a name. Email/phone stay
+    // optional (organizer can collect them via custom questions instead
+    // if actually needed) — matches the "name only by default" spec.
+    if (isGroupInvite) {
+      if (!name.trim()) {
+        toast.error('Please enter your name');
+        return;
+      }
+      if (email.trim() && !/\S+@\S+\.\S+/.test(email)) {
+        toast.error('Please enter a valid email, or leave it blank');
+        return;
+      }
+    } else {
+      if (!name.trim() || !email.trim() || !phone.trim()) {
+        toast.error('Please fill in your name, email, and phone number');
+        return;
+      }
+      if (!/\S+@\S+\.\S+/.test(email)) {
+        toast.error('Please enter a valid email');
+        return;
+      }
     }
     for (let i = 0; i < guests.length; i++) {
       if (!guests[i].name.trim()) {
@@ -198,6 +232,12 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
           // so it shows up under "Show my tickets" (guests stay null,
           // which is fine — registration doesn't require an account)
           userId: currentUser?.uid || null,
+          // ✅ NEW — group code this registration came through, if any.
+          // Backend uses this to validate remaining capacity server-side
+          // (never trust the client-side check alone), tag the resulting
+          // ticket with invitedBy, and increment that specific group's
+          // usedGuests.
+          groupCode: isGroupInvite ? invitedGroup.code : null,
         }),
       });
       let data;
@@ -239,7 +279,14 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
           <h3 className="text-xl font-bold text-gray-900">Free Registration</h3>
         </div>
 
-        {spotsRemaining != null && (
+        {isGroupInvite ? (
+          <div className="bg-purple-50 rounded-lg p-3 mb-4">
+            <p className="text-sm text-gray-700">
+              Registering as <span className="font-semibold">{invitedGroup.groupName}</span> —{' '}
+              <span className="font-semibold">{groupRemaining}</span> guest slot(s) remaining on this code
+            </p>
+          </div>
+        ) : spotsRemaining != null && (
           <div className="bg-cyan-50 rounded-lg p-3 mb-4">
             <p className="text-sm text-gray-700">
               <span className="font-semibold">{spotsRemaining}</span> spots remaining
@@ -267,34 +314,59 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
                   placeholder="John Doe"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="john@example.com"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
-                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+234 800 000 0000"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
-              </div>
+              {/* ✅ NEW — email/phone only shown as hardcoded required
+                  fields for the normal (non-group-invite) flow. Group
+                  invites default to name-only; if the organizer actually
+                  needs email/phone from guests, they add those as custom
+                  questions instead (rendered further down, same as any
+                  other custom question). */}
+              {!isGroupInvite && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                      placeholder="john@example.com"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+                    <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+234 800 000 0000"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
+                  </div>
+                </>
+              )}
 
               {maxGroupSize > 1 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
                     <Users size={15} /> How many people (including you)?
                   </label>
-                  <div className="flex gap-2">
-                    {Array.from({ length: maxGroupSize }, (_, i) => i + 1).map(n => (
-                      <button key={n} type="button" onClick={() => updateGroupSize(n)}
-                        className={`flex-1 py-2 rounded-lg border-2 text-sm font-bold transition ${
-                          groupSize === n ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600'
-                        }`}>
-                        {n}
-                      </button>
-                    ))}
-                  </div>
+                  {/* ✅ NEW — a group invite can allow a large count (e.g.
+                      a company allocating 20 seats to one code); a button
+                      per number stops making sense past a handful, so
+                      switch to a compact +/- stepper once it would. */}
+                  {maxGroupSize <= 8 ? (
+                    <div className="flex gap-2">
+                      {Array.from({ length: maxGroupSize }, (_, i) => i + 1).map(n => (
+                        <button key={n} type="button" onClick={() => updateGroupSize(n)}
+                          className={`flex-1 py-2 rounded-lg border-2 text-sm font-bold transition ${
+                            groupSize === n ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600'
+                          }`}>
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <button type="button" onClick={() => updateGroupSize(Math.max(1, groupSize - 1))}
+                        className="w-9 h-9 rounded-lg border-2 border-gray-200 text-gray-600 font-bold hover:border-cyan-400 transition">−</button>
+                      <span className="w-10 text-center text-base font-black text-gray-800">{groupSize}</span>
+                      <button type="button" onClick={() => updateGroupSize(Math.min(maxGroupSize, groupSize + 1))}
+                        className="w-9 h-9 rounded-lg border-2 border-gray-200 text-gray-600 font-bold hover:border-cyan-400 transition">+</button>
+                      <span className="text-xs text-gray-400">max {maxGroupSize}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

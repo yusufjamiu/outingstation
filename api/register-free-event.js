@@ -2,7 +2,8 @@ import nodemailer from 'nodemailer';
 import { initializeApp, getApps } from 'firebase/app';
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc,
-  increment, serverTimestamp, collection, query, where, getDocs
+  increment, serverTimestamp, collection, query, where, getDocs,
+  runTransaction
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -119,13 +120,25 @@ export default async function handler(req, res) {
   try {
     const {
       eventId, buyerName, buyerEmail, buyerPhone,
-      groupSize = 1, guests = [], customAnswers = {}, userId = null
+      groupSize = 1, guests = [], customAnswers = {}, userId = null,
+      // ✅ NEW — the group code this registration came through, if this
+      // is a code-gated private event. When present, buyerEmail/
+      // buyerPhone become optional (name-only is the default for group
+      // invites per spec) and capacity is checked against this specific
+      // group's own remaining allowance instead of the event's overall
+      // ticketsAvailable.
+      groupCode = null,
     } = req.body;
 
-    if (!eventId || !buyerName || !buyerEmail || !buyerPhone) {
+    if (!eventId || !buyerName) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    if (!/\S+@\S+\.\S+/.test(buyerEmail)) {
+    // ✅ NEW — email/phone are only mandatory for the normal (non-group)
+    // registration flow. Group invites default to name-only.
+    if (!groupCode && (!buyerEmail || !buyerPhone)) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    if (buyerEmail && !/\S+@\S+\.\S+/.test(buyerEmail)) {
       return res.status(400).json({ error: 'Invalid email address' });
     }
 
@@ -140,27 +153,77 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'This event does not use free registration' });
     }
 
-    // ✅ Enforce organizer's group size cap (hard platform ceiling of 6)
-    const maxGroupSize = Math.min(eventData.maxGroupSize || 1, 6);
-    const safeGroupSize = Math.max(1, Math.min(parseInt(groupSize) || 1, maxGroupSize));
+    // ✅ NEW — group-code branch. Validates + reserves capacity for this
+    // SPECIFIC group atomically via a transaction, so two people
+    // registering with the same code at the same moment can never both
+    // slip past the check and overshoot that group's limit — a plain
+    // read-then-write (like the normal flow below uses) can't guarantee
+    // that under concurrent requests.
+    let matchedGroup = null;
+    let safeGroupSize;
 
-    // ✅ Capacity check
-    const currentSold = eventData.ticketsSold || 0;
-    const capacity = eventData.ticketsAvailable || null;
-    if (capacity != null && currentSold + safeGroupSize > capacity) {
-      return res.status(400).json({ error: 'Not enough spots remaining for this group size' });
+    if (groupCode) {
+      const normalizedCode = groupCode.toUpperCase().trim();
+      try {
+        matchedGroup = await runTransaction(db, async (transaction) => {
+          const freshEventSnap = await transaction.get(eventRef);
+          if (!freshEventSnap.exists()) throw new Error('Event not found');
+          const freshEventData = freshEventSnap.data();
+
+          const groups = freshEventData.groupCodes || [];
+          const groupIndex = groups.findIndex(g => (g.code || '').toUpperCase() === normalizedCode);
+          if (groupIndex === -1) throw new Error('Invalid group code');
+
+          const group = groups[groupIndex];
+          const remaining = (group.maxGuests || 0) - (group.usedGuests || 0);
+          const requestedSize = Math.max(1, parseInt(groupSize) || 1);
+          if (requestedSize > remaining) {
+            throw new Error(remaining <= 0
+              ? `"${group.groupName}"'s guest limit has already been reached`
+              : `Only ${remaining} spot(s) left for "${group.groupName}"`);
+          }
+
+          const updatedGroups = groups.map((g, i) =>
+            i === groupIndex ? { ...g, usedGuests: (g.usedGuests || 0) + requestedSize } : g
+          );
+          transaction.update(eventRef, {
+            groupCodes: updatedGroups,
+            ticketsSold: increment(requestedSize),
+          });
+
+          safeGroupSize = requestedSize;
+          return group; // pre-update snapshot is fine — only groupName/code are used below
+        });
+      } catch (txErr) {
+        return res.status(400).json({ error: txErr.message || 'Could not validate group code' });
+      }
+    } else {
+      // ✅ Enforce organizer's group size cap (hard platform ceiling of 6)
+      // — unchanged normal-flow logic.
+      const maxGroupSize = Math.min(eventData.maxGroupSize || 1, 6);
+      safeGroupSize = Math.max(1, Math.min(parseInt(groupSize) || 1, maxGroupSize));
+
+      // ✅ Capacity check — event-wide, unchanged.
+      const currentSold = eventData.ticketsSold || 0;
+      const capacity = eventData.ticketsAvailable || null;
+      if (capacity != null && currentSold + safeGroupSize > capacity) {
+        return res.status(400).json({ error: 'Not enough spots remaining for this group size' });
+      }
     }
 
-    // ✅ Dedupe — one registration per email per event
-    const normalizedEmail = buyerEmail.toLowerCase().trim();
-    const existingQuery = query(
-      collection(db, 'tickets'),
-      where('eventId', '==', eventId),
-      where('buyerEmail', '==', normalizedEmail)
-    );
-    const existingSnap = await getDocs(existingQuery);
-    if (!existingSnap.empty) {
-      return res.status(400).json({ error: 'You have already registered for this event' });
+    // ✅ Dedupe — one registration per email per event. Only runs when an
+    // email was actually provided (group invites default to name-only).
+    const normalizedEmail = buyerEmail ? buyerEmail.toLowerCase().trim() : null;
+    if (normalizedEmail) {
+      const existingQuery = query(
+        collection(db, 'tickets'),
+        where('eventId', '==', eventId),
+        where('buyerEmail', '==', normalizedEmail)
+      );
+      const existingSnap = await getDocs(existingQuery);
+      if (!existingSnap.empty) {
+        return res.status(400).json({ error: 'You have already registered for this event' });
+      }
     }
 
     // ✅ Validate required custom questions
@@ -189,7 +252,7 @@ export default async function handler(req, res) {
       eventTitle: eventData.title,
       buyerName: buyerName.trim(),
       buyerEmail: normalizedEmail,
-      buyerPhone: buyerPhone.trim(),
+      buyerPhone: buyerPhone ? buyerPhone.trim() : null,
       quantity: safeGroupSize,
       groupSize: safeGroupSize,
       guests: cleanGuests,
@@ -210,32 +273,60 @@ export default async function handler(req, res) {
       tierId: null,
       tierName: null,
       isFreeRegistration: true,
+      // ✅ NEW — tags the ticket with which group unlocked it, so it
+      // shows up on the ticket itself ("Invited by: Sarah's Family")
+      // and in Manage Event's ticket list, exactly as requested.
+      invitedBy: matchedGroup ? matchedGroup.groupName : null,
+      groupCode: matchedGroup ? (groupCode || '').toUpperCase().trim() : null,
+      // ✅ NEW — no ticket field currently records whether the underlying
+      // event was private at all. invitedBy only exists for group-code
+      // tickets, and isInvited (on invite-guest.js's tickets) only exists
+      // for invite-only ones — an UNLISTED private event's ticket looked
+      // completely identical to a regular public one, with nothing to
+      // group/filter/badge it by. Stamping this directly at creation time
+      // means "My Tickets" can cleanly split Public vs Private without
+      // needing to separately fetch and check each ticket's event doc.
+      isPrivateEvent: eventData.visibility === 'private',
     };
 
     // NOTE: no payment happened here, so unlike the Paystack webhook this
     // write is not verifying a charge — it's the registration itself.
     await setDoc(doc(db, 'tickets', ticketId), ticketData);
 
-    await updateDoc(eventRef, {
-      ticketsSold: increment(safeGroupSize)
-    });
+    // ✅ NEW — group-code registrations already had ticketsSold
+    // incremented atomically inside the transaction above (alongside the
+    // group's own usedGuests update) — incrementing it again here would
+    // double-count. Only the normal (non-group) flow needs this separate
+    // update.
+    if (!matchedGroup) {
+      await updateDoc(eventRef, {
+        ticketsSold: increment(safeGroupSize)
+      });
+    }
 
-    try {
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
-      });
-      await transporter.sendMail({
-        from: `"OutingStation" <${process.env.GMAIL_USER}>`,
-        to: buyerEmail,
-        subject: `✅ You're Registered — ${eventData.title}`,
-        html: generateFreeRegistrationEmail(ticketData, eventData)
-      });
-      console.log(`📧 Free registration email sent to: ${buyerEmail}`);
-    } catch (emailErr) {
-      // Don't fail the whole registration if the email fails to send —
-      // the registration itself already succeeded and was saved above.
-      console.error('❌ Failed to send registration email:', emailErr);
+    // ✅ NEW — group invites default to name-only, so there may be no
+    // email to send a confirmation to at all. That's fine — the
+    // RegistrationConfirmedModal on the page already shows the QR code
+    // immediately after submit, so a guest with no email still walks
+    // away with something to scan at the gate.
+    if (buyerEmail) {
+      try {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+        });
+        await transporter.sendMail({
+          from: `"OutingStation" <${process.env.GMAIL_USER}>`,
+          to: buyerEmail,
+          subject: `✅ You're Registered — ${eventData.title}`,
+          html: generateFreeRegistrationEmail(ticketData, eventData)
+        });
+        console.log(`📧 Free registration email sent to: ${buyerEmail}`);
+      } catch (emailErr) {
+        // Don't fail the whole registration if the email fails to send —
+        // the registration itself already succeeded and was saved above.
+        console.error('❌ Failed to send registration email:', emailErr);
+      }
     }
 
     console.log(`✅ Free registration saved: ${ticketId} (${safeGroupSize} people) for event ${eventId}`);

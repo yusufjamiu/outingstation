@@ -546,7 +546,7 @@ function TicketTierSelector({ tiers, selectedTier, onSelect }) {
 // ─── Ticket Purchase Section ──────────────────────────────────────────────────
 
 // ✅ CHANGE 1: Added onPurchaseComplete prop
-const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplete }) => {
+const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplete, invitedGroup }) => {
   const [buyerName, setBuyerName] = useState(currentUser?.displayName || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
   const [buyerPhone, setBuyerPhone] = useState('');
@@ -623,9 +623,21 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
   const finalTotal = totalBeforeCredits - actualCreditsApplied;
 
   // ✅ Tickets remaining — tier-aware
-  const ticketsRemaining = hasTiers && selectedTier
+  const eventTicketsRemaining = hasTiers && selectedTier
     ? (selectedTier.quantity != null ? selectedTier.quantity - (selectedTier.sold ?? 0) : 9999)
     : (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
+  // ✅ NEW — for a code-gated group purchase, the REAL cap is whichever
+  // is smaller: the event's own remaining tickets, or this specific
+  // group's remaining guest allowance. This is the actual enforcement
+  // point for paid group tickets — it stops checkout from ever opening
+  // on an exhausted group, unlike the webhook's necessarily best-effort
+  // (post-payment) check.
+  const groupRemaining = invitedGroup
+    ? Math.max(0, (invitedGroup.maxGuests || 0) - (invitedGroup.usedGuests || 0))
+    : null;
+  const ticketsRemaining = invitedGroup
+    ? Math.min(eventTicketsRemaining, groupRemaining)
+    : eventTicketsRemaining;
 
   // ✅ Reset credits if quantity > 1
   useEffect(() => {
@@ -728,11 +740,20 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
         { display_name: 'Sub', variable_name: 'subtotal', value: String(totalBeforeCredits) },
         { display_name: 'Cr', variable_name: 'credits_applied', value: String(actualCreditsApplied) },
         { display_name: 'Tot', variable_name: 'total_amount', value: String(finalTotal) },
+        // ✅ NEW — group code, only present for a code-gated group
+        // purchase. The webhook reads this to tag the ticket with
+        // invitedBy and update that group's usedGuests.
+        ...(invitedGroup ? [{ display_name: 'Group', variable_name: 'group_code', value: invitedGroup.code }] : []),
       ],
       event_id: event.id,
       ticket_id: ticketId.current,
       tier_id: selectedTier?.id || null,
       total_amount: finalTotal,
+      // ✅ NEW — also present in the flat metadata object, matching how
+      // event_id/ticket_id/tier_id are duplicated here too (the webhook's
+      // extractMetadata checks both the custom_fields array and this flat
+      // object depending on how Paystack serializes the payload)
+      group_code: invitedGroup ? invitedGroup.code : null,
     },
   };
 
@@ -754,6 +775,17 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
           <Ticket className="text-cyan-500" size={24} />
           <h3 className="text-xl font-bold text-gray-900">Purchase Tickets</h3>
         </div>
+
+        {/* ✅ NEW — shows which group this purchase is going through,
+            matching the treatment on the free-registration side */}
+        {invitedGroup && (
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
+            <p className="text-sm text-purple-700">
+              Purchasing as <span className="font-semibold">{invitedGroup.groupName}</span> —{' '}
+              <span className="font-semibold">{groupRemaining}</span> spot(s) left on this code
+            </p>
+          </div>
+        )}
 
         <div className="bg-cyan-50 rounded-lg p-3 mb-4">
           <p className="text-sm text-gray-700">
@@ -1089,6 +1121,15 @@ export default function EventDetails() {
   const { currentUser } = useAuth();
 
   const [event, setEvent] = useState(null);
+  // ✅ NEW — code-gated private event access. `unlockedGroup` holds the
+  // matched group's { code, groupName, maxGuests, usedGuests } once a
+  // valid code with remaining capacity is entered — null means still
+  // locked. Passed down to whichever registration/ticket flow renders
+  // below so the resulting ticket can be tagged with invitedBy.
+  const [gateCodeInput, setGateCodeInput] = useState('');
+  const [gateError, setGateError] = useState('');
+  const [gateChecking, setGateChecking] = useState(false);
+  const [unlockedGroup, setUnlockedGroup] = useState(null);
   const [similarEvents, setSimilarEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -1127,6 +1168,44 @@ export default function EventDetails() {
       ...prev,
       ticketsSold: (prev.ticketsSold || 0) + groupSize
     }));
+  };
+
+  // ✅ NEW — validates the entered code against event.groupCodes.
+  // Case-insensitive, trims whitespace. Checks remaining capacity
+  // (maxGuests - usedGuests) so an exhausted group's code stops working
+  // the moment it hits its limit, even though every OTHER group's code
+  // keeps working independently. Reads directly from `event` state
+  // rather than a fresh fetch — groupCodes only change server-side when
+  // someone actually registers (which updates usedGuests via the
+  // registration/ticket flow, not here), so this is safe against the
+  // data the page already has loaded.
+  const handleCheckGateCode = () => {
+    const input = gateCodeInput.trim().toUpperCase();
+    if (!input) {
+      setGateError('Enter your group code');
+      return;
+    }
+    setGateChecking(true);
+    setGateError('');
+
+    const groups = event.groupCodes || [];
+    const match = groups.find(g => (g.code || '').toUpperCase() === input);
+
+    if (!match) {
+      setGateError('That code was not recognized. Double-check it with whoever invited you.');
+      setGateChecking(false);
+      return;
+    }
+
+    const remaining = (match.maxGuests || 0) - (match.usedGuests || 0);
+    if (remaining <= 0) {
+      setGateError(`"${match.groupName}"'s guest limit has already been reached. Contact the organizer if you think this is a mistake.`);
+      setGateChecking(false);
+      return;
+    }
+
+    setUnlockedGroup(match);
+    setGateChecking(false);
   };
 
   const loadEventDetails = async () => {
@@ -1285,6 +1364,9 @@ export default function EventDetails() {
   const hasFreeRegistration = event.ticketingOption === 'free_registration' && event.ticketingEnabled;
   // ✅ Tier flag for sidebar
   const hasTiers = event.hasTicketTiers && event.ticketTiers?.length > 0;
+  // ✅ NEW — code-gated private event. Registration/ticket UI below stays
+  // hidden behind the gate until unlockedGroup is set.
+  const isCodeGated = event.visibility === 'private' && event.privacyMode === 'code_gated';
   const canonicalUrl = event.slug
     ? `https://www.outingstation.com/e/${event.slug}`
     : `https://www.outingstation.com/event/${event.id}`;
@@ -1375,17 +1457,79 @@ export default function EventDetails() {
                 </p>
               </div>
 
-              {hasOutingStationTicketing && (
+              {/* ✅ NEW — code-gated access. Shown instead of the normal
+                  registration/ticket section until a valid group code is
+                  entered. Once unlocked, the exact same
+                  TicketPurchaseSection / FreeRegistrationSection renders
+                  below as it always did — the gate only decides whether
+                  guests can reach it, not what happens once they do. */}
+              {isCodeGated && !unlockedGroup && (
+                <div id="ticket-purchase-section" className="bg-white rounded-2xl p-6 mb-6 shadow-sm border-2 border-purple-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-2xl">🔑</span>
+                    <h2 className="text-lg font-bold text-gray-900">This event needs a group code</h2>
+                  </div>
+                  <p className="text-sm text-gray-500 mb-4">Enter the code shared with you by the organizer or the person who invited you.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={gateCodeInput}
+                      onChange={(e) => { setGateCodeInput(e.target.value); if (gateError) setGateError(''); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCheckGateCode()}
+                      placeholder="e.g. SARAHSFAMILY7X2"
+                      className={`flex-1 px-4 py-3 border-2 rounded-xl text-sm font-mono tracking-wider uppercase focus:outline-none transition ${gateError ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-purple-500'}`}
+                    />
+                    <button
+                      onClick={handleCheckGateCode}
+                      disabled={gateChecking}
+                      className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl text-sm font-bold hover:from-purple-700 hover:to-pink-700 transition disabled:opacity-50 flex-shrink-0"
+                    >
+                      {gateChecking ? '...' : 'Unlock'}
+                    </button>
+                  </div>
+                  {gateError && <p className="text-xs text-red-500 mt-2 font-semibold">{gateError}</p>}
+                </div>
+              )}
+
+              {isCodeGated && unlockedGroup && (
+                <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 mb-4 flex items-center gap-2">
+                  <span className="text-lg">✅</span>
+                  <p className="text-sm text-purple-700">
+                    Unlocked as <strong>{unlockedGroup.groupName}</strong> — up to {(unlockedGroup.maxGuests || 0) - (unlockedGroup.usedGuests || 0)} more guest(s) can register with this code.
+                  </p>
+                </div>
+              )}
+
+              {/* ✅ NEW — invite-only events never show a self-service
+                  registration/purchase section at all, paid or free.
+                  Invited guests already have a comped ticket sitting in
+                  their inbox (issued automatically at approval, or later
+                  from Manage Event's Invite Guests panel) — there's
+                  nothing for them to do here. */}
+              {event.visibility === 'private' && event.privacyMode === 'invite_only' && (
+                <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-6 mb-6 text-center">
+                  <p className="text-2xl mb-2">💌</p>
+                  <p className="font-bold text-gray-900">This is an invite-only event</p>
+                  <p className="text-sm text-gray-500 mt-1">If you were invited, check your email for your ticket and QR code. No registration needed here.</p>
+                </div>
+              )}
+
+              {hasOutingStationTicketing && !(event.visibility === 'private' && event.privacyMode === 'invite_only') && (!isCodeGated || unlockedGroup) && (
                 <div id="ticket-purchase-section" className="mb-6">
                   {/* ✅ CHANGE 3: Pass onPurchaseComplete so tier counts refresh after purchase */}
-                  <TicketPurchaseSection event={event} currentUser={currentUser} navigate={navigate} onPurchaseComplete={handlePurchaseComplete} />
+                  {/* ✅ NEW — invitedGroup passed through so a code-gated
+                      paid ticket gets tagged with which group unlocked it */}
+                  <TicketPurchaseSection event={event} currentUser={currentUser} navigate={navigate} onPurchaseComplete={handlePurchaseComplete} invitedGroup={isCodeGated ? unlockedGroup : null} />
                 </div>
               )}
 
               {/* ✅ NEW — Free Registration section, mutually exclusive with TicketPurchaseSection */}
-              {hasFreeRegistration && (
+              {hasFreeRegistration && !(event.visibility === 'private' && event.privacyMode === 'invite_only') && (!isCodeGated || unlockedGroup) && (
                 <div id="ticket-purchase-section" className="mb-6">
-                  <FreeRegistrationSection event={event} currentUser={currentUser} onRegistrationComplete={handleRegistrationComplete} />
+                  {/* ✅ NEW — invitedGroup passed through so a code-gated
+                      free-registration ticket gets tagged with which
+                      group unlocked it */}
+                  <FreeRegistrationSection event={event} currentUser={currentUser} onRegistrationComplete={handleRegistrationComplete} invitedGroup={isCodeGated ? unlockedGroup : null} />
                 </div>
               )}
 

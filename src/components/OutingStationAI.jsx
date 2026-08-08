@@ -104,6 +104,16 @@ async function fetchAllCatalog(userCity) {
 
     catalogCache.events = allDocs
       .filter(e => e.status === 'published')
+      // ✅ NEW — private events (unlisted/invite-only/code-gated) were
+      // never excluded from the AI's catalog at all. That means the AI
+      // could recommend a private wedding or invite-only gathering to
+      // literally any stranger who asked it a relevant question —
+      // arguably the most severe version of this gap, since it's an
+      // active recommendation rather than a passive listing someone
+      // might stumble across browsing. `|| 'public'` keeps every event
+      // that predates this feature (no visibility field) showing
+      // exactly as it always did.
+      .filter(e => (e.visibility || 'public') === 'public')
       .filter(e => {
         const isPlace = e.subCategory === 'places', isCampus = e.eventType === 'campus';
         if (isPlace || isCampus) return true;
@@ -160,7 +170,7 @@ async function fetchAllCatalog(userCity) {
       });
 
     catalogCache.standEvents = allDocs
-      .filter(e => e.status === 'published' && e.vendorStandsEnabled && Array.isArray(e.vendorStands))
+      .filter(e => e.status === 'published' && (e.visibility || 'public') === 'public' && e.vendorStandsEnabled && Array.isArray(e.vendorStands))
       .map(e => {
         const openStands = (e.vendorStands || []).filter(s => (s.filled || 0) < s.quantityAvailable);
         if (openStands.length === 0) return null;

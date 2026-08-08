@@ -3,7 +3,8 @@ import nodemailer from 'nodemailer';
 import { initializeApp, getApps } from 'firebase/app';
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, addDoc,
-  increment, serverTimestamp, collection, query, where, getDocs
+  increment, serverTimestamp, collection, query, where, getDocs,
+  runTransaction
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -319,6 +320,9 @@ function extractMetadata(paymentData) {
       const businessType = extract('business_type');
       const whatsappNumber = extract('whatsapp_number');
       const applicationId = extract('application_id');
+      // ✅ NEW — group code for code-gated private events, if this
+      // paid ticket was purchased through an unlocked group code
+      const groupCode = extract('group_code');
 
       return {
         ticketId,
@@ -344,6 +348,7 @@ function extractMetadata(paymentData) {
         businessType: businessType || null,
         whatsappNumber: whatsappNumber || null,
         applicationId: applicationId || null,
+        groupCode: groupCode || null,
       };
     }
   }
@@ -368,6 +373,8 @@ function extractMetadata(paymentData) {
     const businessType = fields.business_type || null;
     const whatsappNumber = fields.whatsapp_number || null;
     const applicationId = fields.application_id || rawMetadata.application_id || null;
+    // ✅ NEW — group code, same reasoning as the fallback path above
+    const groupCode = fields.group_code || rawMetadata.group_code || null;
 
     return {
       ticketId,
@@ -391,6 +398,7 @@ function extractMetadata(paymentData) {
       businessType,
       whatsappNumber,
       applicationId,
+      groupCode,
     };
   }
 
@@ -416,6 +424,8 @@ function extractMetadata(paymentData) {
     businessName: rawMetadata.business_name || null,
     businessType: rawMetadata.business_type || null,
     whatsappNumber: rawMetadata.whatsapp_number || null,
+    // ✅ NEW — group code, same reasoning as the other two paths
+    groupCode: rawMetadata.group_code || rawMetadata.groupCode || null,
   };
 }
 
@@ -493,6 +503,11 @@ function generateTicketEmail(ticketData, eventData) {
                       <tr><td style="padding-bottom: 10px;">
                         <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Ticket Type</p>
                         <p style="margin: 0; font-size: 14px; color: #0891b2; font-weight: 800;">${ticketData.tierName}</p>
+                      </td></tr>` : ''}
+                      ${ticketData.invitedBy ? `
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Invited By</p>
+                        <p style="margin: 0; font-size: 14px; color: #9333ea; font-weight: 800;">${ticketData.invitedBy}</p>
                       </td></tr>` : ''}
                       <tr><td style="padding-bottom: 10px;">
                         <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Quantity</p>
@@ -769,6 +784,53 @@ export default async function handler(req, res) {
 
     const paystackFee = Math.round((paymentData.amount / 100) * 0.015 + 100);
 
+    // ✅ NEW — code-gated group tagging for paid events. IMPORTANT: this
+    // runs AFTER Paystack has already confirmed payment, so it can never
+    // reject/block ticket creation the way register-free-event.js's
+    // transaction does for free registrations — the customer already
+    // paid, and refusing to issue a ticket at this point would mean
+    // taking their money and giving them nothing. So this is
+    // deliberately best-effort: it still increments the group's
+    // usedGuests atomically (to keep Manage Event's counts accurate),
+    // but if that would exceed the group's maxGuests it logs a warning
+    // and proceeds anyway rather than blocking. The REAL enforcement —
+    // stopping someone from starting checkout on an exhausted group in
+    // the first place — has to happen client-side, before Paystack is
+    // even opened, in the ticket purchase flow itself.
+    let invitedByGroupName = null;
+    if (metadata.groupCode) {
+      const normalizedCode = metadata.groupCode.toUpperCase().trim();
+      try {
+        invitedByGroupName = await runTransaction(db, async (transaction) => {
+          const freshEventSnap = await transaction.get(doc(db, 'events', metadata.eventId));
+          if (!freshEventSnap.exists()) return null;
+          const freshEventData = freshEventSnap.data();
+
+          const groups = freshEventData.groupCodes || [];
+          const groupIndex = groups.findIndex(g => (g.code || '').toUpperCase() === normalizedCode);
+          if (groupIndex === -1) {
+            console.warn(`⚠️ Paid ticket referenced unknown group code "${normalizedCode}" — proceeding without group tag`);
+            return null;
+          }
+
+          const group = groups[groupIndex];
+          const newUsedGuests = (group.usedGuests || 0) + (metadata.quantity || 1);
+          if (newUsedGuests > (group.maxGuests || 0)) {
+            console.warn(`⚠️ Group "${group.groupName}" now exceeds its guest limit (${newUsedGuests}/${group.maxGuests}) — payment already succeeded, issuing ticket anyway`);
+          }
+
+          const updatedGroups = groups.map((g, i) =>
+            i === groupIndex ? { ...g, usedGuests: newUsedGuests } : g
+          );
+          transaction.update(doc(db, 'events', metadata.eventId), { groupCodes: updatedGroups });
+
+          return group.groupName;
+        });
+      } catch (txErr) {
+        console.error('❌ Group code transaction failed (ticket still issued):', txErr);
+      }
+    }
+
     const ticketData = {
       ticketId,
       eventId: metadata.eventId,
@@ -792,6 +854,17 @@ export default async function handler(req, res) {
       purchasedAt: serverTimestamp(),
       tierId: metadata.tierId || null,
       tierName: metadata.tierName || null,
+      // ✅ NEW — same invitedBy/groupCode tagging as free-registration
+      // group tickets, so it shows up consistently on the ticket itself
+      // and in Manage Event regardless of whether the event was free or paid.
+      invitedBy: invitedByGroupName,
+      groupCode: metadata.groupCode ? metadata.groupCode.toUpperCase().trim() : null,
+      // ✅ NEW — same reasoning as register-free-event.js's identical
+      // field: nothing currently records whether the underlying event
+      // was private for an UNLISTED paid event's ticket (invitedBy is
+      // only set for group-code purchases). Stamped here so "My Tickets"
+      // can split Public vs Private cleanly without a second lookup.
+      isPrivateEvent: eventData.visibility === 'private',
     };
 
     await setDoc(doc(db, 'tickets', ticketId), ticketData);

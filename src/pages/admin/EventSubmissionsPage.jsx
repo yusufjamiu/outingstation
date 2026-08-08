@@ -173,7 +173,20 @@ export default function EventSubmissionsPage() {
     }
   };
 
-  const notifyUsers = async (eventTitle, eventId) => {
+  // ✅ FIXED — private events were never checked before broadcasting.
+  // notifyUsers() only respected the `sendPush` toggle, which defaults
+  // to ON and has nothing to do with an event's visibility — approving
+  // someone's private wedding with the toggle left at its default would
+  // have pushed "New on OutingStation 🎉 <event title>" out to the
+  // entire selected audience, completely defeating the point of making
+  // it private. This is now a hard gate: isPrivate is checked FIRST and
+  // unconditionally, before sendPush is even looked at, so there's no
+  // toggle state that can accidentally broadcast a private event.
+  const notifyUsers = async (eventTitle, eventId, isPrivate = false) => {
+    if (isPrivate) {
+      console.log('🔒 Skipping push notification — event is private');
+      return;
+    }
     if (!sendPush) return;
     try {
       const userIds = await getPushTargetUserIds();
@@ -199,6 +212,39 @@ export default function EventSubmissionsPage() {
   };
 
   const isFreeRegistrationSubmission = (sub) => sub.ticketingOption === 'free_registration';
+  // ✅ NEW — private event helper, mirrors the free-registration helper
+  const isPrivateSubmission = (sub) => sub.visibility === 'private';
+
+  // ✅ NEW — calls the invite-guest endpoint for a just-approved invite-only
+  // private event's original invite list. Called from every approval path
+  // that can create an event (handleApprove's two branches,
+  // handleApproveWithTicketing, handleApproveWithoutTicketing) — a private
+  // event can be free, free-registration, or paid, so invites need to fire
+  // regardless of which approval branch actually ran. Returns a short
+  // human-readable summary string for the approval success alert, or ''
+  // if there was nothing to invite.
+  const issueInvitesIfNeeded = async (submission, eventId) => {
+    if (submission.visibility !== 'private') return '';
+    if (submission.privacyMode !== 'invite_only') return '';
+    if (!Array.isArray(submission.inviteEmails) || submission.inviteEmails.length === 0) return '';
+
+    try {
+      const res = await fetch('/api/invite-guest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId, emails: submission.inviteEmails }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        console.error('Invite issuance failed:', data);
+        return '\n⚠️ Could not send invites automatically — add them manually from Manage Event.';
+      }
+      return `\n💌 ${data.issuedCount} invite ticket(s) sent${data.skippedCount ? ` (${data.skippedCount} skipped)` : ''}`;
+    } catch (err) {
+      console.error('Invite issuance error:', err);
+      return '\n⚠️ Could not send invites automatically — add them manually from Manage Event.';
+    }
+  };
 
   const buildEventDoc = (submission, ticketingOverride = null) => {
     const isPlace = submission.listingType === 'place';
@@ -253,6 +299,19 @@ export default function EventSubmissionsPage() {
       // at all, or by a genuinely logged-out submitter.
       createdBy: submission.userId || 'admin_approved',
       submissionId: submission.id,
+      // ✅ NEW — visibility & private access. Every non-event listing type
+      // and every event that never went through the private picker on
+      // SubmitEventPage.jsx has submission.visibility === 'public' (its
+      // default), so this is a no-op for the existing public flow —
+      // browse/search/AI just need to filter events where visibility !==
+      // 'public' (that piece lives in the discovery files, not here).
+      visibility: submission.visibility || 'public',
+      privacyMode: submission.privacyMode || null,
+      accessCode: submission.accessCode || null,
+      // Kept for admin reference (who was originally invited) — the
+      // tickets collection is the actual source of truth for who has
+      // access, not this array; it's never re-read to grant access.
+      inviteEmails: submission.inviteEmails || [],
       ticketingEnabled: false,
       ticketingOption: 'none',
       hasOutingStationTicketing: false,
@@ -349,7 +408,7 @@ export default function EventSubmissionsPage() {
           reviewedAt: new Date(),
         });
 
-        await notifyUsers(eventDoc.title, docRef.id);
+        await notifyUsers(eventDoc.title, docRef.id, eventDoc.visibility === 'private');
 
         let creditMsg = '';
         if (submission.referralCode) {
@@ -359,7 +418,8 @@ export default function EventSubmissionsPage() {
             : `\n⚠️ Referral code "${submission.referralCode}" not found`;
         }
 
-        alert(`✅ ${label.charAt(0).toUpperCase() + label.slice(1)} is now LIVE with free registration!\n\nEvent ID: ${docRef.id}${creditMsg}`);
+        const inviteMsg = await issueInvitesIfNeeded(submission, docRef.id);
+        alert(`✅ ${label.charAt(0).toUpperCase() + label.slice(1)} is now LIVE with free registration!\n\nEvent ID: ${docRef.id}${creditMsg}${inviteMsg}`);
         fetchSubmissions();
         setSelectedSubmission(null);
 
@@ -408,7 +468,7 @@ export default function EventSubmissionsPage() {
         reviewedAt: new Date(),
       });
 
-      await notifyUsers(eventDoc.title, docRef.id);
+      await notifyUsers(eventDoc.title, docRef.id, eventDoc.visibility === 'private');
 
       let creditMsg = '';
       if (submission.referralCode) {
@@ -418,7 +478,8 @@ export default function EventSubmissionsPage() {
           : `\n⚠️ Referral code "${submission.referralCode}" not found`;
       }
 
-      alert(`✅ ${label.charAt(0).toUpperCase() + label.slice(1)} is now LIVE!\n\nEvent ID: ${docRef.id}${creditMsg}`);
+      const inviteMsg = await issueInvitesIfNeeded(submission, docRef.id);
+      alert(`✅ ${label.charAt(0).toUpperCase() + label.slice(1)} is now LIVE!\n\nEvent ID: ${docRef.id}${creditMsg}${inviteMsg}`);
       fetchSubmissions();
       setSelectedSubmission(null);
     } catch (err) {
@@ -456,16 +517,19 @@ export default function EventSubmissionsPage() {
         reviewedAt: new Date(),
       });
 
-      await notifyUsers(eventDoc.title, docRef.id);
+      await notifyUsers(eventDoc.title, docRef.id, eventDoc.visibility === 'private');
 
       if (ticketingSubmission.referralCode) {
         await awardReferralCredit(ticketingSubmission.referralCode);
       }
 
+      const inviteMsg = await issueInvitesIfNeeded(ticketingSubmission, docRef.id);
+
       setShowTicketingModal(false);
       setTicketingSubmission(null);
       fetchSubmissions();
       setSelectedSubmission(null);
+      if (inviteMsg) alert(`✅ Published!${inviteMsg}`);
 
       setApprovedEventForManage({ id: docRef.id, ...eventDoc });
       setShowManageModal(true);
@@ -494,9 +558,10 @@ export default function EventSubmissionsPage() {
         ticketingNote: 'Approved without ticketing — organizer requested OS ticketing',
       });
 
-      await notifyUsers(eventDoc.title, docRef.id);
+      await notifyUsers(eventDoc.title, docRef.id, eventDoc.visibility === 'private');
 
-      alert(`✅ Event published (no ticketing yet)\n\nRemember to:\n• Contact ${ticketingSubmission.organizerEmail}\n• Set up ticketing in the Events editor\n\nEvent ID: ${docRef.id}`);
+      const inviteMsg = await issueInvitesIfNeeded(ticketingSubmission, docRef.id);
+      alert(`✅ Event published (no ticketing yet)\n\nRemember to:\n• Contact ${ticketingSubmission.organizerEmail}\n• Set up ticketing in the Events editor\n\nEvent ID: ${docRef.id}${inviteMsg}`);
 
       setShowTicketingModal(false);
       setTicketingSubmission(null);
@@ -757,6 +822,7 @@ export default function EventSubmissionsPage() {
                     const allImages = getAllImages(sub);
                     const hasTiers = sub.hasTicketTiers && sub.ticketTiers?.length > 0;
                     const isFreeReg = isFreeRegistrationSubmission(sub);
+                    const isPrivate = isPrivateSubmission(sub); // ✅ NEW
                     return (
                       <tr key={sub.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4">
@@ -774,8 +840,16 @@ export default function EventSubmissionsPage() {
                               </div>
                             )}
                             <div>
-                              <div className="font-semibold text-gray-900">{sub.eventTitle}</div>
-                              <div className="text-sm text-gray-600">{sub.eventCategory}</div>
+                              <div className="font-semibold text-gray-900 flex items-center gap-1.5">
+                                {sub.eventTitle}
+                                {/* ✅ NEW — private submission badge */}
+                                {isPrivate && (
+                                  <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded font-bold">
+                                    🔒 {sub.privacyMode === 'invite_only' ? 'Invite-only' : sub.privacyMode === 'code_gated' ? 'Code-gated' : 'Unlisted'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-sm text-gray-600">{isPrivate ? 'Private Event' : sub.eventCategory}</div>
                               <div className="text-sm text-gray-500 flex items-center gap-1 mt-1"><MapPin size={14} />{sub.city}</div>
                               {sub.referralCode && (
                                 <div className="text-xs text-purple-600 font-semibold mt-1 flex items-center gap-1 bg-purple-50 px-2 py-0.5 rounded">
@@ -853,6 +927,7 @@ export default function EventSubmissionsPage() {
         const allImages = getAllImages(selectedSubmission);
         const needsTicketing = wantsTicketing(selectedSubmission);
         const isFreeReg = isFreeRegistrationSubmission(selectedSubmission);
+        const isPrivate = isPrivateSubmission(selectedSubmission); // ✅ NEW
         const hasTiers = selectedSubmission.hasTicketTiers && selectedSubmission.ticketTiers?.length > 0;
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -862,6 +937,11 @@ export default function EventSubmissionsPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-2xl font-bold text-gray-900">{selectedSubmission.eventTitle}</h2>
                     {getStatusBadge(selectedSubmission.status)}
+                    {isPrivate && (
+                      <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-semibold">
+                        🔒 Private · {selectedSubmission.privacyMode === 'invite_only' ? 'Invite-only' : selectedSubmission.privacyMode === 'code_gated' ? 'Code-gated' : 'Unlisted'}
+                      </span>
+                    )}
                     {isFreeReg && (
                       <span className="inline-flex items-center gap-1 bg-cyan-100 text-cyan-700 px-3 py-1 rounded-full text-sm font-semibold">
                         <UserPlus size={14} />Free Registration
@@ -896,6 +976,41 @@ export default function EventSubmissionsPage() {
               </div>
 
               <div className="p-6 space-y-6">
+
+                {/* ✅ NEW — Private event access panel */}
+                {isPrivate && (
+                  <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl flex-shrink-0">🔒</span>
+                      <div className="flex-1">
+                        <p className="font-bold text-purple-800 text-sm">
+                          {selectedSubmission.privacyMode === 'invite_only' ? 'Invite-only event' : selectedSubmission.privacyMode === 'code_gated' ? 'Code-gated event' : 'Unlisted event'}
+                        </p>
+                        <p className="text-purple-700 text-sm mt-1">
+                          Hidden from search, browse, and AI recommendations.
+                          {selectedSubmission.privacyMode === 'invite_only' && ' Invited guests receive their ticket automatically on approval.'}
+                          {selectedSubmission.privacyMode === 'unlisted' && ' Anyone with the direct link can view and register.'}
+                        </p>
+                        {selectedSubmission.privacyMode === 'code_gated' && selectedSubmission.accessCode && (
+                          <p className="text-sm mt-2">
+                            <span className="text-purple-600">Access code:</span>{' '}
+                            <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-purple-200">{selectedSubmission.accessCode}</span>
+                          </p>
+                        )}
+                        {selectedSubmission.privacyMode === 'invite_only' && selectedSubmission.inviteEmails?.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-purple-600 text-xs font-semibold mb-1">{selectedSubmission.inviteEmails.length} guest(s) will be invited:</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {selectedSubmission.inviteEmails.map((email, i) => (
+                                <span key={i} className="text-xs bg-white text-purple-700 px-2 py-0.5 rounded border border-purple-100">{email}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {isFreeReg && selectedSubmission.status !== 'approved' && (
                   <div className="bg-cyan-50 border-2 border-cyan-200 rounded-xl p-4 flex items-start gap-3">

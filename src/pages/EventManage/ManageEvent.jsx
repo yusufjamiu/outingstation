@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { 
   Calendar, Clock, MapPin, Users, Download, CheckCircle, XCircle,
-  Ticket, Mail, Search, Filter, AlertCircle, Layers, UserPlus, FileSpreadsheet, FileText
+  Ticket, Mail, Search, Filter, AlertCircle, Layers, UserPlus, FileSpreadsheet, FileText,
+  Lock, Plus, Trash2
 } from 'lucide-react';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -31,6 +32,23 @@ export default function ManageEvent() {
     totalRevenue: 0,
     tierBreakdown: [], // ✅ Per-tier stats
   });
+  // ✅ NEW — Invite Guests panel state. Lets the organizer add more
+  // invited guests after the event is already live, reusing the exact
+  // same /api/invite-guest endpoint the approval flow calls for the
+  // original invite list — same ticket generation, same dedupe, same
+  // email template, just triggered from here instead.
+  const [inviteEmailsText, setInviteEmailsText] = useState('');
+  const [sendingInvites, setSendingInvites] = useState(false);
+  const [inviteResult, setInviteResult] = useState(null);
+  // ✅ NEW — Group Codes editor state (code-gated private events only).
+  // `editingMax` tracks in-progress edits to an existing group's limit
+  // (keyed by group id/code) so typing doesn't save on every keystroke —
+  // only on explicit Save. `newGroupName`/`newGroupMax` are for adding a
+  // brand new group.
+  const [editingMax, setEditingMax] = useState({});
+  const [savingGroups, setSavingGroups] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupMax, setNewGroupMax] = useState(5);
 
   useEffect(() => {
     loadEventAndTickets();
@@ -92,6 +110,128 @@ export default function ManageEvent() {
       toast.error('Failed to load event data');
     }
     setLoading(false);
+  };
+
+  // ✅ NEW — parses the pasted email list (newline or comma-separated,
+  // same tolerant parsing as SubmitEventPage.jsx's invite step) and
+  // sends them to /api/invite-guest. Reloads tickets afterward so newly
+  // invited guests show up in the ticket list immediately, same as any
+  // other ticket.
+  const handleSendInvites = async () => {
+    const candidates = inviteEmailsText.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emails = [...new Set(candidates.filter(e => emailRegex.test(e)).map(e => e.toLowerCase()))];
+
+    if (emails.length === 0) {
+      toast.error('Enter at least one valid email');
+      return;
+    }
+
+    setSendingInvites(true);
+    setInviteResult(null);
+    try {
+      const res = await fetch('/api/invite-guest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: event.id, emails }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send invites');
+
+      setInviteResult(data);
+      if (data.issuedCount > 0) {
+        toast.success(`💌 ${data.issuedCount} invite${data.issuedCount !== 1 ? 's' : ''} sent`);
+        setInviteEmailsText('');
+        loadEventAndTickets(); // refresh ticket list to show the new invites
+      } else {
+        toast.error('No new invites sent — everyone on that list already has a ticket');
+      }
+    } catch (err) {
+      console.error('Error sending invites:', err);
+      toast.error('Failed to send invites: ' + err.message);
+    } finally {
+      setSendingInvites(false);
+    }
+  };
+
+  // ✅ NEW — same code-generation logic as SubmitEventPage.jsx's
+  // GroupCodeBuilder, duplicated here rather than shared since this is a
+  // separate file with no shared utils module for it yet. Keeping the
+  // exact same shape (name + random suffix) so codes look consistent
+  // regardless of whether a group was created at submission or added
+  // later from here.
+  const generateGroupCode = (groupName) => {
+    const base = (groupName || 'GROUP').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'GROUP';
+    const suffix = Math.random().toString(36).slice(2, 5).toUpperCase();
+    return `${base}${suffix}`;
+  };
+
+  // ✅ NEW — raises (or lowers, but never below usedGuests) an existing
+  // group's maxGuests. Writes the whole groupCodes array back — Firestore
+  // has no way to update a single array element in place, so this reads
+  // the array, patches the one group, and rewrites it whole.
+  const handleUpdateGroupMax = async (groupId) => {
+    const newMaxRaw = editingMax[groupId];
+    const newMax = parseInt(newMaxRaw, 10);
+    if (!newMax || newMax < 1) {
+      toast.error('Enter a valid number');
+      return;
+    }
+    const currentGroups = event.groupCodes || [];
+    const target = currentGroups.find(g => g.id === groupId);
+    if (target && newMax < (target.usedGuests || 0)) {
+      toast.error(`Can't set limit below ${target.usedGuests} — that many guests already used this code`);
+      return;
+    }
+
+    setSavingGroups(true);
+    try {
+      const updatedGroups = currentGroups.map(g => g.id === groupId ? { ...g, maxGuests: newMax } : g);
+      await updateDoc(doc(db, 'events', event.id), { groupCodes: updatedGroups });
+      setEvent(prev => ({ ...prev, groupCodes: updatedGroups }));
+      setEditingMax(prev => { const next = { ...prev }; delete next[groupId]; return next; });
+      toast.success('Group limit updated');
+    } catch (err) {
+      console.error('Error updating group limit:', err);
+      toast.error('Failed to update limit');
+    } finally {
+      setSavingGroups(false);
+    }
+  };
+
+  // ✅ NEW — adds a brand new group/code to the event, mid-event. Same
+  // shape as the groups created at submission time.
+  const handleAddGroup = async () => {
+    if (!newGroupName.trim()) {
+      toast.error('Enter a group name');
+      return;
+    }
+    if (!newGroupMax || newGroupMax < 1) {
+      toast.error('Enter a valid guest limit');
+      return;
+    }
+
+    setSavingGroups(true);
+    try {
+      const newGroup = {
+        id: `group_${Date.now()}`,
+        code: generateGroupCode(newGroupName),
+        groupName: newGroupName.trim(),
+        maxGuests: newGroupMax,
+        usedGuests: 0,
+      };
+      const updatedGroups = [...(event.groupCodes || []), newGroup];
+      await updateDoc(doc(db, 'events', event.id), { groupCodes: updatedGroups });
+      setEvent(prev => ({ ...prev, groupCodes: updatedGroups }));
+      setNewGroupName('');
+      setNewGroupMax(5);
+      toast.success(`Group added — code: ${newGroup.code}`);
+    } catch (err) {
+      console.error('Error adding group:', err);
+      toast.error('Failed to add group');
+    } finally {
+      setSavingGroups(false);
+    }
   };
 
   const handleCheckIn = async (ticketId, currentStatus) => {
@@ -275,6 +415,12 @@ export default function ManageEvent() {
             <div>
               <div className="flex items-center gap-2 flex-wrap mb-2">
                 <h1 className="text-3xl font-bold text-gray-900">{event.title}</h1>
+                {/* ✅ NEW — private event badge */}
+                {event.visibility === 'private' && (
+                  <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-semibold">
+                    🔒 {event.privacyMode === 'invite_only' ? 'Invite-only' : event.privacyMode === 'code_gated' ? 'Code-gated' : 'Unlisted'}
+                  </span>
+                )}
                 {isFreeRegistration && (
                   <span className="inline-flex items-center gap-1 bg-cyan-100 text-cyan-700 px-3 py-1 rounded-full text-sm font-semibold">
                     <UserPlus size={14} />Free Registration
@@ -374,6 +520,174 @@ export default function ManageEvent() {
             </div>
           )}
         </div>
+
+        {/* ✅ NEW — Invite Guests panel, only for invite-only private events.
+            Lets the organizer add more guests any time after launch, not
+            just the original list from submission — reuses the exact same
+            endpoint (and therefore the exact same ticket/email behavior)
+            as the automatic invite issued on approval. */}
+        {event.visibility === 'private' && event.privacyMode === 'invite_only' && (
+          <div className="bg-white rounded-xl p-6 shadow-sm mb-6 border-2 border-purple-100">
+            <div className="flex items-center gap-2 mb-1">
+              <UserPlus size={20} className="text-purple-600" />
+              <h2 className="text-lg font-bold text-gray-900">Invite More Guests</h2>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Each guest gets a comped ticket and QR code by email instantly — no payment, no registration form.
+            </p>
+            <textarea
+              value={inviteEmailsText}
+              onChange={(e) => setInviteEmailsText(e.target.value)}
+              rows={4}
+              placeholder={'guest1@gmail.com\nguest2@gmail.com\nguest3@gmail.com'}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400 transition resize-none"
+            />
+            <div className="flex items-center justify-between mt-3">
+              <p className="text-xs text-gray-400">One per line or comma-separated. Already-invited guests are skipped automatically.</p>
+              <button
+                onClick={handleSendInvites}
+                disabled={sendingInvites || !inviteEmailsText.trim()}
+                className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-bold hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+              >
+                {sendingInvites ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                    Sending...
+                  </>
+                ) : (
+                  <>💌 Send Invites</>
+                )}
+              </button>
+            </div>
+
+            {inviteResult && (
+              <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
+                {inviteResult.issued.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-green-500 mt-0.5">✅</span>
+                    <p className="text-sm text-gray-700">
+                      Sent to: {inviteResult.issued.map(i => i.email).join(', ')}
+                    </p>
+                  </div>
+                )}
+                {inviteResult.skipped.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-amber-500 mt-0.5">⚠️</span>
+                    <p className="text-sm text-gray-500">
+                      Skipped (already invited): {inviteResult.skipped.map(s => s.email).join(', ')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ✅ NEW — Group Codes editor, only for code-gated private events.
+            Lets the organizer raise an existing group's guest limit and
+            add entirely new groups any time after launch. */}
+        {event.visibility === 'private' && event.privacyMode === 'code_gated' && (
+          <div className="bg-white rounded-xl p-6 shadow-sm mb-6 border-2 border-purple-100">
+            <div className="flex items-center gap-2 mb-1">
+              <Lock size={20} className="text-purple-600" />
+              <h2 className="text-lg font-bold text-gray-900">Group Codes</h2>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Each group has its own code and guest limit. Raise a limit or add a new group any time.
+            </p>
+
+            <div className="space-y-3 mb-5">
+              {(event.groupCodes || []).map((group) => {
+                const remaining = (group.maxGuests || 0) - (group.usedGuests || 0);
+                const isEditing = editingMax[group.id] !== undefined;
+                return (
+                  <div key={group.id} className="border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <p className="font-bold text-gray-900 text-sm">{group.groupName}</p>
+                        <p className="text-xs text-gray-400 font-mono mt-0.5">{group.code}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-gray-800">{group.usedGuests || 0} / {group.maxGuests || 0}</p>
+                          <p className="text-xs text-gray-400">{remaining} left</p>
+                        </div>
+                        {isEditing ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min={group.usedGuests || 0}
+                              value={editingMax[group.id]}
+                              onChange={(e) => setEditingMax(prev => ({ ...prev, [group.id]: e.target.value }))}
+                              className="w-16 px-2 py-1.5 border-2 border-purple-200 rounded-lg text-sm text-center focus:outline-none focus:border-purple-400"
+                            />
+                            <button
+                              onClick={() => handleUpdateGroupMax(group.id)}
+                              disabled={savingGroups}
+                              className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 transition disabled:opacity-50"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingMax(prev => { const n = { ...prev }; delete n[group.id]; return n; })}
+                              className="px-2 py-1.5 text-gray-400 hover:text-gray-600 text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setEditingMax(prev => ({ ...prev, [group.id]: group.maxGuests || 0 }))}
+                            className="px-3 py-1.5 border-2 border-purple-200 text-purple-600 rounded-lg text-xs font-bold hover:bg-purple-50 transition"
+                          >
+                            Raise limit
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {/* progress bar */}
+                    <div className="mt-3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-purple-500 transition-all"
+                        style={{ width: `${group.maxGuests ? Math.min(100, ((group.usedGuests || 0) / group.maxGuests) * 100) : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {(!event.groupCodes || event.groupCodes.length === 0) && (
+                <p className="text-sm text-gray-400 text-center py-4">No groups yet — add one below.</p>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-xs font-bold text-gray-600 mb-2">Add a new group</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="e.g. Marketing Team"
+                  className="flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400 transition"
+                />
+                <div className="flex items-center gap-1.5 border-2 border-gray-200 rounded-xl px-2">
+                  <button type="button" onClick={() => setNewGroupMax(Math.max(1, newGroupMax - 1))}
+                    className="w-7 h-7 text-gray-500 font-bold hover:text-purple-600 transition">−</button>
+                  <span className="w-6 text-center text-sm font-black text-gray-800">{newGroupMax}</span>
+                  <button type="button" onClick={() => setNewGroupMax(Math.min(100, newGroupMax + 1))}
+                    className="w-7 h-7 text-gray-500 font-bold hover:text-purple-600 transition">+</button>
+                </div>
+                <button
+                  onClick={handleAddGroup}
+                  disabled={savingGroups || !newGroupName.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl text-sm font-bold hover:from-purple-700 hover:to-pink-700 transition disabled:opacity-50 flex-shrink-0"
+                >
+                  <Plus size={16} /> Add
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ✅ Tier Breakdown — shown when event has tiers (never for free registration) */}
         {hasTierData && stats.tierBreakdown.length > 0 && (

@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { Gift, X, Upload, Plus, ChevronRight, ChevronLeft, Check, Ticket, Trash2, Building2, UserPlus } from 'lucide-react';
+import { Gift, X, Upload, Plus, ChevronRight, ChevronLeft, Check, Ticket, Trash2, Building2, UserPlus, Lock, Globe } from 'lucide-react';
 import CustomQuestionBuilder from '../components/CustomQuestionBuilder';
 
 const makeSlug = (title, id) =>
@@ -92,6 +92,29 @@ const TIER_PRESETS = [
   { name: 'Student', emoji: '🎓' },
   { name: 'Couple', emoji: '💑' },
 ];
+
+// ✅ NEW — parses a freeform pasted list of emails (newline or
+// comma-separated, extra whitespace tolerated) into a clean, deduped,
+// lowercased array. Silently drops anything that doesn't look like an
+// email rather than blocking the whole paste on one typo.
+const parseEmailList = (text) => {
+  if (!text) return [];
+  const candidates = text.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const valid = candidates.filter(e => emailRegex.test(e)).map(e => e.toLowerCase());
+  return [...new Set(valid)];
+};
+
+// ✅ NEW — turns a group/family name into a shareable code, e.g.
+// "Sarah's Family" → "SARAHSFAMILY7X2". Sanitizes to letters/numbers
+// only, caps the name portion so codes stay reasonably short, and adds
+// a short random suffix so two groups with similar names (e.g. two
+// "Smith Family" entries at different events) never collide.
+const generateGroupCode = (groupName) => {
+  const base = (groupName || 'GROUP').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'GROUP';
+  const suffix = Math.random().toString(36).slice(2, 5).toUpperCase();
+  return `${base}${suffix}`;
+};
 
 // ─── Cloudinary helpers ───────────────────────────────────────────────────────
 
@@ -325,6 +348,65 @@ function TicketTierBuilder({ tiers, onChange, errors }) {
   );
 }
 
+// ✅ NEW — Group/Family Code Builder. Each row is one group with its own
+// guest limit and its own shareable code. Mirrors TicketTierBuilder's UX
+// pattern (add row, remove row, inline fields) since organizers are
+// already familiar with that shape from the ticketing step.
+function GroupCodeBuilder({ groups, onChange, errors }) {
+  const addGroup = () => {
+    if (groups.length >= 50) return;
+    onChange([...groups, { id: `group_${Date.now()}`, groupName: '', maxGuests: 5 }]);
+  };
+  const removeGroup = (index) => onChange(groups.filter((_, i) => i !== index));
+  const updateGroup = (index, field, value) => onChange(groups.map((g, i) => i === index ? { ...g, [field]: value } : g));
+
+  return (
+    <div className="space-y-3">
+      {groups.length === 0 && (
+        <div className="text-center py-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+          <div className="text-4xl mb-3">👨‍👩‍👧‍👦</div>
+          <p className="text-sm font-bold text-gray-700 mb-1">No groups yet</p>
+          <p className="text-xs text-gray-400 mb-4">Add a family, company, or department — each gets its own code and guest limit</p>
+          <button type="button" onClick={addGroup}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl text-sm font-bold hover:from-purple-700 hover:to-pink-700 transition shadow-md">
+            <Plus size={16} /> Add First Group
+          </button>
+        </div>
+      )}
+      {groups.map((group, index) => (
+        <div key={group.id} className="border-2 border-gray-100 rounded-2xl p-4 bg-white shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-black flex-shrink-0">{index + 1}</div>
+            <input type="text" value={group.groupName} onChange={(e) => updateGroup(index, 'groupName', e.target.value)}
+              placeholder="e.g. Sarah's Family, Marketing Team"
+              className={`flex-1 px-3 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition ${errors?.[`group_${index}_name`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-purple-500'}`} />
+            <button type="button" onClick={() => removeGroup(index)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition flex-shrink-0">
+              <Trash2 size={15} />
+            </button>
+          </div>
+          <div className="flex items-center gap-3 mt-3 pl-11">
+            <label className="text-xs font-bold text-gray-600 flex-shrink-0">Max guests</label>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => updateGroup(index, 'maxGuests', Math.max(1, (group.maxGuests || 1) - 1))}
+                className="w-7 h-7 rounded-lg border-2 border-gray-200 text-gray-600 font-bold hover:border-purple-400 transition">−</button>
+              <span className="w-8 text-center text-sm font-black text-gray-800">{group.maxGuests || 1}</span>
+              <button type="button" onClick={() => updateGroup(index, 'maxGuests', Math.min(100, (group.maxGuests || 1) + 1))}
+                className="w-7 h-7 rounded-lg border-2 border-gray-200 text-gray-600 font-bold hover:border-purple-400 transition">+</button>
+            </div>
+          </div>
+          {errors?.[`group_${index}_name`] && <p className="text-xs text-red-500 mt-1.5 pl-11">{errors[`group_${index}_name`]}</p>}
+        </div>
+      ))}
+      {groups.length > 0 && groups.length < 50 && (
+        <button type="button" onClick={addGroup}
+          className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-purple-300 rounded-2xl text-sm font-bold text-purple-600 hover:bg-purple-50 hover:border-purple-500 transition">
+          <Plus size={16} /> Add Another Group ({groups.length})
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
 function ProgressBar({ current, total }) {
@@ -427,9 +509,11 @@ function NavButtons({ onBack, onNext, nextLabel = 'Continue', isSubmitting = fal
 const SubmitEventPage = () => {
   const topRef = useRef(null);
   const location = useLocation();
-  // ✅ FIX: useAuth() must be called inside the component, not at module top level
   const { currentUser } = useAuth();
   const [listingType, setListingType] = useState('');
+  // ✅ NEW — step uses -1 as a special "visibility picker" phase for
+  // events only, shown right after picking "Event" and before "Your
+  // Info". Places/vendors go straight to step 1 as before, untouched.
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -439,15 +523,19 @@ const SubmitEventPage = () => {
   const [eventImages, setEventImages] = useState([]);
   const [vendorImages, setVendorImages] = useState([]);
   const [schoolIdImage, setSchoolIdImage] = useState([]);
-  // ✅ Ticket tiers state
   const [ticketTiers, setTicketTiers] = useState([]);
-  // ✅ NEW — free registration state
   const [maxGroupSize, setMaxGroupSize] = useState(1);
   const [customQuestions, setCustomQuestions] = useState([]);
+  // ✅ NEW — group/family codes for code-gated private events. Each row:
+  // { id, groupName, maxGuests }. The actual shareable code string is
+  // generated at submit time (see generateGroupCode below) so editing a
+  // group's name mid-form doesn't need to regenerate anything live.
+  const [groupCodes, setGroupCodes] = useState([]);
+  // ✅ NEW — the actual generated codes (with real code strings), captured
+  // right before submit so the confirmation screen can show them. groupCodes
+  // itself only holds name/limit until submit time.
+  const [submittedGroupCodes, setSubmittedGroupCodes] = useState([]);
 
-  // ✅ NEW — /create-event, /create-place, /list-vendor pre-select the
-  // listing type and skip straight past the step-0 picker. /create itself
-  // still shows the picker exactly as before, untouched.
   useEffect(() => {
     const path = location.pathname;
     let preselected = '';
@@ -459,8 +547,10 @@ const SubmitEventPage = () => {
       setListingType(preselected);
       setEventImages([]); setVendorImages([]);
       setSchoolIdImage([]); setTicketTiers([]);
-      setMaxGroupSize(1); setCustomQuestions([]);
-      setStep(1);
+      setMaxGroupSize(1); setCustomQuestions([]); setGroupCodes([]); setSubmittedGroupCodes([]);
+      // ✅ NEW — direct-link entry to /create-event still gets the
+      // visibility picker first, same as picking Event from step 0.
+      setStep(preselected === 'event' ? -1 : 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -479,13 +569,18 @@ const SubmitEventPage = () => {
     isFree: 'yes', ticketPrice: '',
     wantOutingstationTicketing: 'no', externalTicketLink: '',
     useTicketTiers: false,
-    // ✅ NEW — free registration toggle + capacity, only meaningful when isFree === 'yes'
     useFreeRegistration: false, ticketsAvailable: '',
     accountName: '', accountNumber: '', bankName: '',
     additionalInfo: '', agreedToTerms: false,
     shopName: '', vendorCategory: '',
     vendorUniversity: '', vendorUniversityOther: '',
     vendorDescription: '', whatsappNumber: '',
+    // ✅ NEW — visibility & private-access fields. `visibility` defaults
+    // to 'public' so nothing changes for the normal flow unless someone
+    // explicitly picks Private on the new picker screen.
+    visibility: 'public', // 'public' | 'private'
+    privacyMode: 'invite_only', // 'unlisted' | 'invite_only' | 'code_gated'
+    inviteEmailsText: '',
   });
 
   useEffect(() => {
@@ -516,12 +611,20 @@ const SubmitEventPage = () => {
   const isHybrid      = isEvent && form.eventType === 'hybrid';
   const isVirtual     = isPureVirtual || isHybrid;
   const isPhysical    = isPlace || (isEvent && (form.eventType === 'physical' || isHybrid));
+  // ✅ NEW — private events are scoped to standard physical events only
+  // for now (not webinar/hybrid) — see conversation note on scope.
+  const isPrivateEvent = isEvent && form.visibility === 'private' && !isVirtual;
 
   const S = (() => {
     if (isVendor) return { info:1, shop:2, uniId:3, photos:4, review:5, total:5 };
     if (isPlace)  return { info:1, details:2, hours:3, location:4, ticket:5, photos:6, review:7, total:7 };
     if (isPureVirtual) return { info:1, details:2, datetime:3, virtual:4, ticket:5, photos:6, review:7, total:7 };
     if (isHybrid) return { info:1, details:2, datetime:3, location:4, virtual:5, ticket:6, photos:7, review:8, total:8 };
+    // ✅ NEW — private physical events insert a "privacy" step after
+    // location, before ticketing. Same total step positions otherwise —
+    // photos and category/description just become non-blocking inside
+    // their existing steps rather than being removed as steps.
+    if (isPrivateEvent) return { info:1, details:2, datetime:3, location:4, privacy:5, ticket:6, photos:7, review:8, total:8 };
     return { info:1, details:2, datetime:3, location:4, ticket:5, photos:6, review:7, total:7 };
   })();
 
@@ -532,6 +635,7 @@ const SubmitEventPage = () => {
     if (isPlace)  return { 1:'Your Info', 2:'Place Details', 3:'Operating Hours', 4:'Location', 5:'Entry Fee', 6:'Photos', 7:'Review & Submit' };
     if (isPureVirtual) return { 1:'Your Info', 2:'Event Details', 3:'Date & Time', 4:'Virtual Details', 5:'Ticketing', 6:'Photos', 7:'Review & Submit' };
     if (isHybrid) return { 1:'Your Info', 2:'Event Details', 3:'Date & Time', 4:'Location', 5:'Virtual Details', 6:'Ticketing', 7:'Photos', 8:'Review & Submit' };
+    if (isPrivateEvent) return { 1:'Your Info', 2:'Event Details', 3:'Date & Time', 4:'Location', 5:'Privacy & Access', 6:'Ticketing', 7:'Photos', 8:'Review & Submit' };
     return { 1:'Your Info', 2:'Event Details', 3:'Date & Time', 4:'Location', 5:'Ticketing', 6:'Photos', 7:'Review & Submit' };
   })();
 
@@ -560,10 +664,16 @@ const SubmitEventPage = () => {
     }
     if (!isVendor && s === S.details) {
       if (!form.eventTitle.trim()) e.eventTitle = isPlace ? 'Place name is required' : 'Event title is required';
-      if (!form.eventCategory) e.eventCategory = 'Select a category';
-      if (form.eventCategory === 'Other' && !form.customCategory.trim()) e.customCategory = 'Please specify your category';
-      if (form.eventDescription.length < 100) e.eventDescription = 'At least 100 characters required';
-      // ✅ Campus checkbox now applies to both events and places
+      // ✅ NEW — private events skip category entirely (auto-set on
+      // submit, see handleSubmit) and skip the 100-char description
+      // minimum. Everything else validates exactly as before.
+      if (!isPrivateEvent) {
+        if (!form.eventCategory) e.eventCategory = 'Select a category';
+        if (form.eventCategory === 'Other' && !form.customCategory.trim()) e.customCategory = 'Please specify your category';
+        if (form.eventDescription.length < 100) e.eventDescription = 'At least 100 characters required';
+      } else {
+        if (!form.eventDescription.trim()) e.eventDescription = 'A short description is required';
+      }
       if ((isEvent || isPlace) && form.isUniversityEvent && !form.universityName.trim()) e.universityName = 'Enter the university name';
     }
     if (isEvent && s === S.datetime) {
@@ -588,9 +698,24 @@ const SubmitEventPage = () => {
       if (!form.platform) e.platform = 'Select a platform';
       if (!form.webinarLink.trim()) e.webinarLink = 'Registration link is required';
     }
+    // ✅ NEW — Privacy & Access step validation
+    if (isPrivateEvent && S.privacy && s === S.privacy) {
+      if (!form.privacyMode) e.privacyMode = 'Select how guests will access this event';
+      if (form.privacyMode === 'invite_only') {
+        const emails = parseEmailList(form.inviteEmailsText);
+        if (emails.length === 0) e.inviteEmailsText = 'Add at least one guest email';
+      }
+      if (form.privacyMode === 'code_gated') {
+        if (groupCodes.length === 0) {
+          e.groupCodes = 'Add at least one group';
+        } else {
+          groupCodes.forEach((g, i) => {
+            if (!g.groupName?.trim()) e[`group_${i}_name`] = 'Group name is required';
+          });
+        }
+      }
+    }
     if (!isVendor && s === S.ticket) {
-      // ✅ NEW — Free Registration branch: skip the normal free/paid checks,
-      // validate spots + custom questions instead
       if (isEvent && form.isFree === 'yes' && form.useFreeRegistration) {
         if (!form.ticketsAvailable || parseInt(form.ticketsAvailable) <= 0) {
           e.ticketsAvailable = 'Enter number of spots available';
@@ -623,10 +748,20 @@ const SubmitEventPage = () => {
           if (isPlace && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
         }
       }
-      // note: form.isFree === 'yes' && !useFreeRegistration ("just show up") needs no validation
+      // ✅ NEW — private events with custom questions (available
+      // regardless of free/paid, unlike free-registration's gated set)
+      // validate the same way.
+      if (isPrivateEvent) {
+        customQuestions.forEach((q, i) => {
+          if (!q.label?.trim()) e[`question_${i}_label`] = 'Question text is required';
+          if (q.type === 'select' && (!q.options || q.options.filter(o => o.trim()).length === 0)) e[`question_${i}_options`] = 'Add at least one option';
+        });
+      }
     }
     if (!isVendor && s === S.photos) {
-      if (eventImages.length === 0) e.eventImage = 'At least 1 image is required';
+      // ✅ NEW — private events don't require photos at all; nothing to
+      // attract browsers to since it's never publicly discoverable.
+      if (!isPrivateEvent && eventImages.length === 0) e.eventImage = 'At least 1 image is required';
     }
     if (s === S.review) {
       if (!form.agreedToTerms) e.agreedToTerms = 'Please agree to the terms to submit';
@@ -643,7 +778,11 @@ const SubmitEventPage = () => {
 
   const back = () => {
     setErrors({});
-    if (step === 1) { setStep(0); setListingType(''); }
+    // ✅ NEW — stepping back from step 1 of an event returns to the
+    // visibility picker (-1) instead of the type picker, since that's
+    // now the immediately preceding screen for events.
+    if (step === 1 && isEvent) { setStep(-1); }
+    else if (step === -1 || step === 1) { setStep(0); setListingType(''); }
     else setStep(s => s - 1);
     scrollTop();
   };
@@ -662,14 +801,15 @@ const SubmitEventPage = () => {
           description: form.vendorDescription, whatsappNumber: form.whatsappNumber,
           imageUrl, images: additionalImages, schoolIdImageUrl: schoolIdImage[0] || '',
           referralCode: form.referralCode.trim().toUpperCase() || null,
-          // ✅ FIX: link this submission to the logged-in account, if any, so
-          // CampusVendorPage.jsx can reliably find "my shop" later.
           ownerId: currentUser?.uid || null,
           status: 'pending', submittedAt: serverTimestamp(),
         });
       } else {
         const [imageUrl = '', ...additionalImages] = eventImages;
-        const finalCategory = form.eventCategory === 'Other' && form.customCategory.trim() ? form.customCategory.trim() : form.eventCategory;
+        // ✅ NEW — private events auto-fill category since that step is skipped
+        const finalCategory = isPrivateEvent
+          ? 'Private Event'
+          : (form.eventCategory === 'Other' && form.customCategory.trim() ? form.customCategory.trim() : form.eventCategory);
         const finalCity = form.city === 'Others' && form.customCity.trim() ? form.customCity.trim() : form.city;
         const hasTiers = isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers && ticketTiers.length > 0;
         const tiersData = hasTiers ? ticketTiers.map((t, i) => ({
@@ -678,19 +818,25 @@ const SubmitEventPage = () => {
           sold: 0, saleEndDate: t.saleEndDate || null,
         })) : [];
 
-        // ✅ NEW — free registration flag + normalized custom questions
         const isFreeRegistration = isEvent && form.isFree === 'yes' && form.useFreeRegistration;
-        const questionsData = isFreeRegistration ? customQuestions.map((q, i) => ({
+        // ✅ NEW — custom questions now apply to free-registration OR
+        // private events (previously gated to free-registration only)
+        const questionsApply = isFreeRegistration || isPrivateEvent;
+        const questionsData = questionsApply ? customQuestions.map((q, i) => ({
           id: q.id || `q_${i + 1}`, label: q.label.trim(), type: q.type,
           options: (q.options || []).map(o => o.trim()).filter(Boolean), required: !!q.required,
         })) : [];
 
-        // ✅ NEW — resolved ticketing option for this submission
         const resolvedTicketingOption = isFreeRegistration
           ? 'free_registration'
           : (isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes'
               ? 'outingstation'
               : (isEvent && form.isFree === 'no' ? 'external' : 'none'));
+
+        // ✅ NEW — invite list, parsed and deduped, only for invite_only
+        const inviteEmails = isPrivateEvent && form.privacyMode === 'invite_only'
+          ? parseEmailList(form.inviteEmailsText)
+          : [];
 
         await addDoc(collection(db, 'event_submissions'), {
           organizerName: form.organizerName, organizerEmail: form.organizerEmail,
@@ -713,7 +859,6 @@ const SubmitEventPage = () => {
           wantOutingstationTicketing: form.wantOutingstationTicketing === 'yes',
           externalTicketLink: form.externalTicketLink || null,
           ticketTiers: tiersData, hasTicketTiers: hasTiers,
-          // ✅ NEW — free registration fields
           ticketsAvailable: isFreeRegistration ? (parseInt(form.ticketsAvailable) || 0) : null,
           maxGroupSize: isFreeRegistration ? maxGroupSize : null,
           customQuestions: questionsData,
@@ -725,21 +870,35 @@ const SubmitEventPage = () => {
           imageUrl, images: additionalImages,
           additionalInfo: form.additionalInfo || null,
           isUniversityEvent: form.isUniversityEvent || false, universityName: form.universityName || null,
-          // ✅ Campus category fields — event category vs place type
           campusEventCategory: isEvent && form.isUniversityEvent ? (form.campusEventCategory || '') : null,
           campusSubCategory: isPlace && form.isUniversityEvent ? (form.campusSubCategory || '') : null,
           status: 'pending', submittedAt: serverTimestamp(),
           slug: form.eventTitle ? form.eventTitle.toLowerCase().trim()
             .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') : null,
-          // ✅ NEW — links this submission to the logged-in account, matching
-          // the mobile app's osb_create_event_screen.dart. Without this, an
-          // approved event/place has no way to be traced back to who
-          // created it — it can never show up in "My Roles" on either
-          // platform, and therefore can never be opened in Manage Event.
-          // This was previously only written for vendor_submissions
-          // (as ownerId) — events and places never got an equivalent field
-          // at all.
           userId: currentUser?.uid || null,
+          // ✅ NEW — visibility & private access fields. `visibility` is
+          // 'public' for every non-event listing type and every event
+          // that didn't go through the private picker, so existing
+          // behavior (discoverable everywhere) is completely unchanged.
+          visibility: isEvent ? form.visibility : 'public',
+          privacyMode: isPrivateEvent ? form.privacyMode : null,
+          inviteEmails,
+          // ✅ NEW — group codes, generated once at submit time so the
+          // shareable code string is stable from here on (editing a
+          // group's name later, from Manage Event, never changes its
+          // existing code — only new groups get new codes).
+          groupCodes: (() => {
+            if (!(isPrivateEvent && form.privacyMode === 'code_gated')) return [];
+            const generated = groupCodes.map(g => ({
+              id: g.id,
+              code: generateGroupCode(g.groupName),
+              groupName: g.groupName.trim(),
+              maxGuests: g.maxGuests || 1,
+              usedGuests: 0,
+            }));
+            setSubmittedGroupCodes(generated);
+            return generated;
+          })(),
         });
       }
       setSubmitSuccess(true);
@@ -773,6 +932,16 @@ const SubmitEventPage = () => {
               "📧 You'll get an email update on approval",
               form.referralCode ? '💰 Earn ₦100 credits when approved!' : null,
               '🚀 Once approved, you go live immediately',
+              // ✅ NEW — private-event-specific confirmation copy
+              isPrivateEvent
+                ? '🔒 This event is private — it won\'t appear in search, browse, or AI recommendations. Only people you invite (or with the link/code) can access it.'
+                : null,
+              isPrivateEvent && form.privacyMode === 'invite_only'
+                ? `📩 Your ${parseEmailList(form.inviteEmailsText).length} invited guest(s) will get their ticket by email as soon as this is approved`
+                : null,
+              isPrivateEvent && form.privacyMode === 'code_gated'
+                ? `🔑 ${submittedGroupCodes.length} group code(s) generated — share each one with the right group once approved`
+                : null,
               isFreeRegistration ? '🎟️ Attendees will register and check in on OutingStation — no payment involved' : null,
               form.wantOutingstationTicketing === 'yes' && form.isFree === 'no'
                 ? `💳 Ticket sales remitted to ${form.bankName} (${form.accountNumber}) within 48hrs after event` : null,
@@ -780,6 +949,28 @@ const SubmitEventPage = () => {
               <p key={i} className="text-sm text-gray-700">{item}</p>
             ))}
           </div>
+
+          {/* ✅ NEW — generated group codes, shown once so the organizer can
+              copy them down before navigating away (they're also visible
+              later from Manage Event, but not editable-looking there in
+              the same "here's your fresh code" way) */}
+          {isPrivateEvent && form.privacyMode === 'code_gated' && submittedGroupCodes.length > 0 && (
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-5 mb-8 text-left">
+              <p className="text-sm font-black text-purple-800 mb-3">🔑 Your Group Codes</p>
+              <div className="space-y-2">
+                {submittedGroupCodes.map((g, i) => (
+                  <div key={i} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 border border-purple-100">
+                    <div>
+                      <p className="text-sm font-bold text-gray-800">{g.groupName}</p>
+                      <p className="text-xs text-gray-400">up to {g.maxGuests} guests</p>
+                    </div>
+                    <span className="font-mono font-black text-purple-600 text-sm tracking-wider">{g.code}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-purple-600 mt-3">Share each code only with that specific group. You can add more groups or raise limits anytime from Manage Event.</p>
+            </div>
+          )}
           <div className="space-y-3">
             <a href="/" className="block w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-4 rounded-2xl font-black text-base hover:from-cyan-700 hover:to-blue-700 transition shadow-lg">
               Back to Home
@@ -787,8 +978,8 @@ const SubmitEventPage = () => {
             <button onClick={() => {
               setSubmitSuccess(false); setStep(0); setListingType('');
               setEventImages([]); setVendorImages([]); setSchoolIdImage([]); setTicketTiers([]);
-              setMaxGroupSize(1); setCustomQuestions([]);
-              setForm(f => ({ ...f, agreedToTerms: false, useTicketTiers: false, useFreeRegistration: false, ticketsAvailable: '', accountName: '', accountNumber: '', bankName: '' }));
+              setMaxGroupSize(1); setCustomQuestions([]); setGroupCodes([]); setSubmittedGroupCodes([]);
+              setForm(f => ({ ...f, agreedToTerms: false, useTicketTiers: false, useFreeRegistration: false, ticketsAvailable: '', accountName: '', accountNumber: '', bankName: '', visibility: 'public', privacyMode: 'invite_only', inviteEmailsText: '' }));
             }} className="w-full border-2 border-gray-200 text-gray-700 py-4 rounded-2xl font-bold hover:bg-gray-50 transition">
               Submit Another {type}
             </button>
@@ -821,8 +1012,10 @@ const SubmitEventPage = () => {
               <button key={item.value} type="button" onClick={() => {
                 setListingType(item.value); setEventImages([]); setVendorImages([]);
                 setSchoolIdImage([]); setTicketTiers([]);
-                setMaxGroupSize(1); setCustomQuestions([]);
-                setStep(1); scrollTop();
+                setMaxGroupSize(1); setCustomQuestions([]); setGroupCodes([]); setSubmittedGroupCodes([]);
+                // ✅ NEW — events go to the visibility picker (-1) first;
+                // places/vendors go straight to step 1 as before.
+                setStep(item.value === 'event' ? -1 : 1); scrollTop();
               }} className="w-full flex items-center gap-5 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-cyan-400 hover:shadow-lg transition-all text-left group">
                 <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${item.color} flex items-center justify-center text-2xl flex-shrink-0 shadow-md`}>{item.icon}</div>
                 <div className="flex-1">
@@ -851,10 +1044,56 @@ const SubmitEventPage = () => {
     );
   }
 
+  // ─── Step -1: Public / Private picker (events only) ───────────────────────
+
+  if (step === -1) {
+    return (
+      <div ref={topRef} className="min-h-screen bg-gradient-to-br from-gray-50 to-cyan-50 py-12 px-4">
+        <div className="max-w-lg mx-auto">
+          <button onClick={() => { setStep(0); setListingType(''); }}
+            className="w-10 h-10 rounded-xl bg-white border-2 border-gray-200 flex items-center justify-center hover:border-cyan-400 transition mb-8 shadow-sm">
+            <ChevronLeft size={18} className="text-gray-600" />
+          </button>
+          <div className="text-center mb-10">
+            <h1 className="text-3xl md:text-4xl font-black text-gray-900 mb-3 leading-tight">
+              Is this a<br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 to-blue-600">public or private</span> event?
+            </h1>
+            <p className="text-gray-500 text-base">This decides who can find and register for it</p>
+          </div>
+          <div className="space-y-4">
+            <button type="button" onClick={() => { set('visibility', 'public'); setStep(1); scrollTop(); }}
+              className="w-full flex items-center gap-5 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-cyan-400 hover:shadow-lg transition-all text-left group">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                <Globe size={26} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="font-black text-gray-900 text-base">Public</p>
+                <p className="text-sm text-gray-500 mt-0.5">Discoverable in search, browse, and AI recommendations</p>
+              </div>
+              <ChevronRight size={20} className="text-gray-300 group-hover:text-cyan-500 transition" />
+            </button>
+            <button type="button" onClick={() => { set('visibility', 'private'); setStep(1); scrollTop(); }}
+              className="w-full flex items-center gap-5 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-cyan-400 hover:shadow-lg transition-all text-left group">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-md">
+                <Lock size={24} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="font-black text-gray-900 text-base">Private</p>
+                <p className="text-sm text-gray-500 mt-0.5">Invite-only, unlisted, or code-gated — hidden from public listings. Perfect for weddings, birthdays, or any invite-only gathering.</p>
+              </div>
+              <ChevronRight size={20} className="text-gray-300 group-hover:text-cyan-500 transition" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ─── Form wizard ──────────────────────────────────────────────────────────
 
   const isLastStep = step === totalSteps;
-  const typeLabel = isVendor ? '🛒 Campus Vendor' : isEvent ? '🎉 Event' : '🏛️ Place/Venue';
+  const typeLabel = isVendor ? '🛒 Campus Vendor' : isEvent ? (isPrivateEvent ? '🔒 Private Event' : '🎉 Event') : '🏛️ Place/Venue';
   const currentStepName = stepNames[step] || '';
 
   return (
@@ -985,23 +1224,28 @@ const SubmitEventPage = () => {
             <div className="space-y-5">
               <div className="mb-2">
                 <h2 className="text-xl font-black text-gray-900">{isPlace ? 'Place Details' : 'Event Details'}</h2>
-                <p className="text-sm text-gray-400 mt-1">Tell people what this {isPlace ? 'place' : 'event'} is about</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  {isPrivateEvent ? 'Keep it short — this won\'t be shown publicly' : `Tell people what this ${isPlace ? 'place' : 'event'} is about`}
+                </p>
               </div>
               <FormField label={isPlace ? 'Place Name' : 'Event Title'} required error={errors.eventTitle}>
-                <StyledInput name="eventTitle" value={form.eventTitle} onChange={handle} error={errors.eventTitle} placeholder={isPlace ? 'National Museum Lagos' : 'Lagos Music Festival 2026'} />
+                <StyledInput name="eventTitle" value={form.eventTitle} onChange={handle} error={errors.eventTitle} placeholder={isPlace ? 'National Museum Lagos' : (isPrivateEvent ? "Sarah & John's Wedding" : 'Lagos Music Festival 2026')} />
               </FormField>
-              <FormField label="Category" required error={errors.eventCategory}>
-                <StyledSelect name="eventCategory" value={form.eventCategory} onChange={handle} error={errors.eventCategory}>
-                  <option value="">Select a category</option>
-                  {(isPlace ? PLACE_CATEGORIES : EVENT_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
-                </StyledSelect>
-              </FormField>
-              {form.eventCategory === 'Other' && (
+              {/* ✅ NEW — category step skipped entirely for private events */}
+              {!isPrivateEvent && (
+                <FormField label="Category" required error={errors.eventCategory}>
+                  <StyledSelect name="eventCategory" value={form.eventCategory} onChange={handle} error={errors.eventCategory}>
+                    <option value="">Select a category</option>
+                    {(isPlace ? PLACE_CATEGORIES : EVENT_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
+                  </StyledSelect>
+                </FormField>
+              )}
+              {!isPrivateEvent && form.eventCategory === 'Other' && (
                 <FormField label="Specify Category" required error={errors.customCategory}>
                   <StyledInput name="customCategory" value={form.customCategory} onChange={handle} error={errors.customCategory} placeholder="e.g. Wellness & Yoga" />
                 </FormField>
               )}
-              {isEvent && (
+              {isEvent && !isPrivateEvent && (
                 <FormField label="Event Type" required>
                   <div className="grid grid-cols-3 gap-2">
                     {[{ value: 'physical', label: '📍 Physical' }, { value: 'webinar', label: '💻 Virtual' }, { value: 'hybrid', label: '🔀 Hybrid' }].map(t => (
@@ -1011,8 +1255,8 @@ const SubmitEventPage = () => {
                   {isPureVirtual && <p className="text-xs text-blue-500 mt-2 font-medium">💡 Virtual events skip the location step</p>}
                 </FormField>
               )}
-              {/* ✅ Campus toggle — now applies to both events and places */}
-              {(isEvent || isPlace) && (
+              {/* ✅ Campus toggle — skipped for private events */}
+              {(isEvent || isPlace) && !isPrivateEvent && (
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-4">
                   <label className="flex items-start gap-3 cursor-pointer">
                     <input type="checkbox" name="isUniversityEvent" checked={form.isUniversityEvent} onChange={handle} className="mt-0.5 h-4 w-4 rounded text-blue-600" />
@@ -1046,8 +1290,8 @@ const SubmitEventPage = () => {
                   )}
                 </div>
               )}
-              <FormField label="Description" required error={errors.eventDescription} hint={`${form.eventDescription.length} / 100 characters minimum`}>
-                <StyledTextarea name="eventDescription" value={form.eventDescription} onChange={handle} error={errors.eventDescription} rows={5} placeholder={isPlace ? 'Describe what visitors can expect...' : 'Describe your event — what happens, who should attend, what to expect...'} />
+              <FormField label="Description" required error={errors.eventDescription} hint={isPrivateEvent ? 'A line or two is fine' : `${form.eventDescription.length} / 100 characters minimum`}>
+                <StyledTextarea name="eventDescription" value={form.eventDescription} onChange={handle} error={errors.eventDescription} rows={isPrivateEvent ? 2 : 5} placeholder={isPlace ? 'Describe what visitors can expect...' : (isPrivateEvent ? 'e.g. Join us to celebrate our wedding reception' : 'Describe your event — what happens, who should attend, what to expect...')} />
               </FormField>
             </div>
           )}
@@ -1147,6 +1391,55 @@ const SubmitEventPage = () => {
             </div>
           )}
 
+          {/* ══ NEW — Privacy & Access (private events only) ══ */}
+          {isPrivateEvent && S.privacy && step === S.privacy && (
+            <div className="space-y-5">
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Privacy & Access</h2>
+                <p className="text-sm text-gray-400 mt-1">How will guests get in?</p>
+              </div>
+              <FormField label="Access Method" required error={errors.privacyMode}>
+                <div className="grid grid-cols-1 gap-3">
+                  <ToggleButton selected={form.privacyMode === 'invite_only'} onClick={() => set('privacyMode', 'invite_only')}>
+                    📩 Invite-only — I'll add guest emails, they get a ticket automatically
+                  </ToggleButton>
+                  <ToggleButton selected={form.privacyMode === 'code_gated'} onClick={() => set('privacyMode', 'code_gated')}>
+                    🔑 Group codes — each family/group gets a code with a guest limit
+                  </ToggleButton>
+                  <ToggleButton selected={form.privacyMode === 'unlisted'} onClick={() => set('privacyMode', 'unlisted')}>
+                    🔗 Unlisted — hidden from search, but the link works for anyone
+                  </ToggleButton>
+                </div>
+              </FormField>
+
+              {form.privacyMode === 'invite_only' && (
+                <FormField label="Guest Emails" required error={errors.inviteEmailsText}
+                  hint="One per line or comma-separated. Each guest gets a scannable ticket by email as soon as this is approved. You can add more later from your event dashboard.">
+                  <StyledTextarea name="inviteEmailsText" value={form.inviteEmailsText} onChange={handle} error={errors.inviteEmailsText}
+                    rows={6} placeholder={'guest1@gmail.com\nguest2@gmail.com\nguest3@gmail.com'} />
+                  {form.inviteEmailsText.trim() && (
+                    <p className="text-xs text-cyan-600 font-semibold mt-1.5">
+                      {parseEmailList(form.inviteEmailsText).length} valid email(s) detected
+                    </p>
+                  )}
+                </FormField>
+              )}
+
+              {form.privacyMode === 'code_gated' && (
+                <FormField label="Groups" required error={errors.groupCodes}
+                  hint="Each group gets its own code and guest limit. Codes are generated automatically — you'll see and can share them after submitting. You can add more groups or raise limits later from your event dashboard.">
+                  <GroupCodeBuilder groups={groupCodes} onChange={setGroupCodes} errors={errors} />
+                </FormField>
+              )}
+
+              {form.privacyMode === 'unlisted' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <p className="text-sm text-blue-700">Anyone with the direct link to this event can view and register — it just won't show up in search, browse, or AI recommendations.</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ══ Ticketing ══ */}
           {!isVendor && step === S.ticket && (
             <div className="space-y-5">
@@ -1161,8 +1454,10 @@ const SubmitEventPage = () => {
                 </div>
               </FormField>
 
-              {/* ✅ NEW — Free Registration option, only for free events */}
-              {form.isFree === 'yes' && isEvent && (
+              {/* ✅ Free Registration option — only for public free events.
+                  Private events have their own access model (invite/code/
+                  unlisted) and don't also need the free-registration flow. */}
+              {form.isFree === 'yes' && isEvent && !isPrivateEvent && (
                 <FormField label="Want to track attendees?" hint="Optional — lets you cap spots, require registration, and check people in">
                   <div className="grid grid-cols-2 gap-3">
                     <ToggleButton selected={!form.useFreeRegistration} onClick={() => set('useFreeRegistration', false)}>
@@ -1175,7 +1470,7 @@ const SubmitEventPage = () => {
                 </FormField>
               )}
 
-              {form.isFree === 'yes' && isEvent && form.useFreeRegistration && (
+              {form.isFree === 'yes' && isEvent && !isPrivateEvent && form.useFreeRegistration && (
                 <div className="border-2 border-cyan-100 rounded-2xl p-5 bg-gradient-to-br from-cyan-50/50 to-blue-50/50 space-y-4">
                   <div className="flex items-center gap-2 mb-1">
                     <UserPlus size={18} className="text-cyan-600" />
@@ -1203,6 +1498,22 @@ const SubmitEventPage = () => {
                   <FormField label="Custom Questions" hint="Optional — ask attendees anything extra you need to know">
                     <CustomQuestionBuilder questions={customQuestions} onChange={setCustomQuestions} />
                   </FormField>
+                </div>
+              )}
+
+              {/* ✅ NEW — private events get Custom Questions here regardless
+                  of free/paid, since their access model is independent of
+                  the free-registration path above. */}
+              {isPrivateEvent && (
+                <div className="border-2 border-purple-100 rounded-2xl p-5 bg-gradient-to-br from-purple-50/50 to-pink-50/50 space-y-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Lock size={18} className="text-purple-600" />
+                    <div>
+                      <p className="text-sm font-black text-gray-900">Guest Questions</p>
+                      <p className="text-xs text-gray-500">Optional — dietary restrictions, plus-one name, dress code confirmation, anything you need to know</p>
+                    </div>
+                  </div>
+                  <CustomQuestionBuilder questions={customQuestions} onChange={setCustomQuestions} />
                 </div>
               )}
 
@@ -1310,7 +1621,9 @@ const SubmitEventPage = () => {
             <div className="space-y-5">
               <div className="mb-2">
                 <h2 className="text-xl font-black text-gray-900">{isPlace ? 'Place' : 'Event'} Photos</h2>
-                <p className="text-sm text-gray-400 mt-1">Add up to 10 photos. Users can swipe through all of them.</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  {isPrivateEvent ? 'Optional — add a photo if you\'d like, but not required for a private event' : 'Add up to 10 photos. Users can swipe through all of them.'}
+                </p>
               </div>
               <MultiImageUploader images={eventImages} onAdd={(urls) => setEventImages(p => [...p, ...urls].slice(0, 10))} onRemove={(i) => setEventImages(p => p.filter((_, idx) => idx !== i))} maxImages={10} folder={isPlace ? 'places' : 'events'} label={isPlace ? 'Place photos' : 'Event photos'} />
               {errors.eventImage && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.eventImage}</p>}
@@ -1333,7 +1646,7 @@ const SubmitEventPage = () => {
                   { label: '📧 Email', value: form.organizerEmail },
                   { label: '📞 Phone', value: form.organizerPhone },
                   isVendor ? { label: '🛒 Shop', value: form.shopName } : { label: isPlace ? '🏛️ Place' : '🎉 Event', value: form.eventTitle },
-                  { label: '📂 Category', value: isVendor ? form.vendorCategory : form.eventCategory },
+                  !isPrivateEvent ? { label: '📂 Category', value: isVendor ? form.vendorCategory : form.eventCategory } : null,
                   isVendor ? { label: '🎓 University', value: form.vendorUniversity === 'Other' ? form.vendorUniversityOther : form.vendorUniversity }
                     : { label: '🏙️ City', value: form.city === 'Others' ? form.customCity : form.city },
                   { label: '📸 Photos', value: isVendor ? `${vendorImages.length} shop photo${vendorImages.length !== 1 ? 's' : ''}` : `${eventImages.length} photo${eventImages.length !== 1 ? 's' : ''}` },
@@ -1341,6 +1654,9 @@ const SubmitEventPage = () => {
                     ? { label: '🎓 Campus Category', value: form.campusEventCategory } : null,
                   !isVendor && form.isUniversityEvent && isPlace && form.campusSubCategory
                     ? { label: '🎓 Place Type', value: form.campusSubCategory } : null,
+                  isPrivateEvent
+                    ? { label: '🔒 Privacy', value: form.privacyMode === 'invite_only' ? `Invite-only · ${parseEmailList(form.inviteEmailsText).length} guest(s)` : form.privacyMode === 'code_gated' ? `Group codes · ${groupCodes.length} group(s), ${groupCodes.reduce((sum, g) => sum + (g.maxGuests || 0), 0)} total guests` : 'Unlisted' }
+                    : null,
                   isEvent && form.isFree === 'yes' && form.useFreeRegistration
                     ? { label: '🎟️ Free Registration', value: `${form.ticketsAvailable || 0} spots · max ${maxGroupSize}/registration` } : null,
                   isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers && ticketTiers.length > 0
@@ -1359,10 +1675,44 @@ const SubmitEventPage = () => {
                 ))}
               </div>
 
-              {isEvent && form.isFree === 'yes' && form.useFreeRegistration && customQuestions.length > 0 && (
+              {isPrivateEvent && form.privacyMode === 'invite_only' && parseEmailList(form.inviteEmailsText).length > 0 && (
+                <div className="border-2 border-purple-100 rounded-2xl p-4">
+                  <p className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                    <Lock size={16} className="text-purple-600" /> Invited Guests ({parseEmailList(form.inviteEmailsText).length})
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {parseEmailList(form.inviteEmailsText).map((email, i) => (
+                      <span key={i} className="text-xs bg-gray-50 text-gray-700 px-2.5 py-1 rounded-lg">{email}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ✅ NEW — group codes review panel, shows the actual codes
+                  once submitted (not before — codes don't exist until
+                  handleSubmit generates them, so this reads groupCodes
+                  input state, not the final generated codes) */}
+              {isPrivateEvent && form.privacyMode === 'code_gated' && groupCodes.length > 0 && (
+                <div className="border-2 border-purple-100 rounded-2xl p-4">
+                  <p className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                    <Lock size={16} className="text-purple-600" /> Groups ({groupCodes.length})
+                  </p>
+                  <div className="space-y-2">
+                    {groupCodes.map((g, i) => (
+                      <div key={i} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-xl">
+                        <span className="text-sm font-bold text-gray-800">{g.groupName || `Group ${i + 1}`}</span>
+                        <span className="text-xs text-purple-600 font-semibold">up to {g.maxGuests || 1} guests</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">Shareable codes are generated once you submit — you'll see them on the confirmation screen.</p>
+                </div>
+              )}
+
+              {(isPrivateEvent || (isEvent && form.isFree === 'yes' && form.useFreeRegistration)) && customQuestions.length > 0 && (
                 <div className="border-2 border-cyan-100 rounded-2xl p-4">
                   <p className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
-                    <UserPlus size={16} className="text-cyan-600" /> Custom Questions
+                    <UserPlus size={16} className="text-cyan-600" /> {isPrivateEvent ? 'Guest Questions' : 'Custom Questions'}
                   </p>
                   <div className="space-y-2">
                     {customQuestions.map((q, i) => (
