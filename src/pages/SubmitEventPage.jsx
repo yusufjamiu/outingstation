@@ -47,7 +47,7 @@ const PLACE_CATEGORIES = [
   'Halls & Venues', 'Restaurant', 'Resort', 'Business & Tech',
   'Art & Culture', 'Food & Dining', 'Sport & Fitness',
   'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
-  'Malls', 'Spas', 'Other',
+  'Malls', 'Spas', 'Others',
 ];
 
 // ✅ Campus category lists — mirrors AdminEventForm
