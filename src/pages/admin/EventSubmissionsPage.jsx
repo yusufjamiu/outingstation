@@ -325,6 +325,30 @@ export default function EventSubmissionsPage() {
       customQuestions: [],
     };
 
+    // ✅ FIXED — this block used to sit AFTER the free-registration
+    // early-return below, meaning it never ran at all for any
+    // free-registration event: the function returned before reaching
+    // it, so the published event doc got no date, startDate, endDate,
+    // time, or eventDuration whatsoever. This bug predates private
+    // events entirely (it affected any PUBLIC organizer who explicitly
+    // checked "Free Registration" too) — it just went from rare to
+    // extremely common once private events made isFreeRegistration true
+    // for almost every private free event (unlisted + code-gated), which
+    // is why it suddenly showed up everywhere at once. Moved to run
+    // unconditionally, before any ticketing-path branching or early
+    // return, so every approval path gets date/time set correctly.
+    if (!isPlace) {
+      if (submission.startDate) {
+        try { eventDoc.date = Timestamp.fromDate(new Date(submission.startDate)); } catch {}
+        try { eventDoc.startDate = Timestamp.fromDate(new Date(submission.startDate)); } catch {}
+      }
+      if (submission.endDate) {
+        try { eventDoc.endDate = Timestamp.fromDate(new Date(submission.endDate)); } catch {}
+      }
+      eventDoc.time = submission.startTime || '';
+      eventDoc.eventDuration = submission.endDate && submission.endDate !== submission.startDate ? 'multi' : 'single';
+    }
+
     if (isFreeRegistrationSubmission(submission)) {
       eventDoc.ticketingEnabled = true;
       eventDoc.ticketingOption = 'free_registration';
@@ -369,18 +393,6 @@ export default function EventSubmissionsPage() {
       eventDoc.serviceFee = ticketingOverride.serviceFeeType === 'fixed'
         ? parseFloat(ticketingOverride.serviceFeeAmount) || 100
         : Math.round(eventDoc.ticketPrice * (parseFloat(ticketingOverride.serviceFeeAmount) / 100));
-    }
-
-    if (!isPlace) {
-      if (submission.startDate) {
-        try { eventDoc.date = Timestamp.fromDate(new Date(submission.startDate)); } catch {}
-        try { eventDoc.startDate = Timestamp.fromDate(new Date(submission.startDate)); } catch {}
-      }
-      if (submission.endDate) {
-        try { eventDoc.endDate = Timestamp.fromDate(new Date(submission.endDate)); } catch {}
-      }
-      eventDoc.time = submission.startTime || '';
-      eventDoc.eventDuration = submission.endDate && submission.endDate !== submission.startDate ? 'multi' : 'single';
     }
 
     return eventDoc;
