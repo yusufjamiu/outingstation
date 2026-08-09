@@ -86,7 +86,15 @@ function RegistrationConfirmedModal({ data, onClose }) {
             <CheckCircle className="text-emerald-500" size={20} />
             <div>
               <p className="text-sm font-bold text-gray-900">You're Registered!</p>
-              <p className="text-xs text-gray-400">Check your email for confirmation</p>
+              {/* ✅ FIXED — was unconditionally "Check your email for
+                  confirmation", even for guests who never provided one
+                  (a not-logged-in guest with no email had nowhere for
+                  that confirmation to go). Now only claims that when an
+                  email actually exists on this registration; otherwise
+                  points at the QR code shown right below instead. */}
+              <p className="text-xs text-gray-400">
+                {data.email ? 'Check your email for confirmation' : 'Save or screenshot your ticket below'}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-full transition">
@@ -176,17 +184,34 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
   };
 
   const handleSubmit = async () => {
-    // ✅ NEW — group invites only require a name. Email/phone stay
-    // optional (organizer can collect them via custom questions instead
-    // if actually needed) — matches the "name only by default" spec.
+    // ✅ FIXED — group invites default to name-only, but that only makes
+    // sense for a LOGGED-IN person: their ticket is tied to their
+    // account and shows up in My Tickets regardless of whether an email
+    // was captured. A guest with no account has no other way to ever
+    // get their ticket back if email is skipped — the confirmation
+    // screen was claiming "check your email" even when no email existed
+    // to send to. Email is now required specifically for the
+    // not-logged-in + group-invite combination; logged-in group invites
+    // and the normal (non-group) flow are unchanged.
     if (isGroupInvite) {
-      if (!name.trim()) {
-        toast.error('Please enter your name');
-        return;
-      }
-      if (email.trim() && !/\S+@\S+\.\S+/.test(email)) {
-        toast.error('Please enter a valid email, or leave it blank');
-        return;
+      if (!currentUser) {
+        if (!name.trim() || !email.trim()) {
+          toast.error('Please enter your name and email — we need an email to send your ticket since you\'re not logged in');
+          return;
+        }
+        if (!/\S+@\S+\.\S+/.test(email)) {
+          toast.error('Please enter a valid email');
+          return;
+        }
+      } else {
+        if (!name.trim()) {
+          toast.error('Please enter your name');
+          return;
+        }
+        if (email.trim() && !/\S+@\S+\.\S+/.test(email)) {
+          toast.error('Please enter a valid email, or leave it blank');
+          return;
+        }
       }
     } else {
       if (!name.trim() || !email.trim() || !phone.trim()) {
@@ -259,9 +284,17 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
         ticketId: data.ticketId,
         eventTitle: event.title,
         groupSize: data.groupSize || groupSize,
+        email: email.trim() || null, // ✅ NEW — lets the modal know whether to mention email at all
       });
       setShowConfirm(true);
-      toast.success("🎉 You're registered! Check your email.", { duration: 5000 });
+      // ✅ FIXED — was unconditionally "Check your email", even when no
+      // email was ever captured (a logged-in group-invite guest can
+      // legitimately submit with no email at all). Now only mentions
+      // email when one was actually provided.
+      toast.success(
+        email.trim() ? "🎉 You're registered! Check your email." : "🎉 You're registered!",
+        { duration: 5000 }
+      );
       if (onRegistrationComplete) onRegistrationComplete(data.groupSize || groupSize);
     } catch (err) {
       console.error('Registration error:', err);
@@ -314,12 +347,8 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
                   placeholder="John Doe"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
               </div>
-              {/* ✅ NEW — email/phone only shown as hardcoded required
-                  fields for the normal (non-group-invite) flow. Group
-                  invites default to name-only; if the organizer actually
-                  needs email/phone from guests, they add those as custom
-                  questions instead (rendered further down, same as any
-                  other custom question). */}
+              {/* ✅ Email/phone hardcoded fields for the normal
+                  (non-group-invite) flow — unchanged. */}
               {!isGroupInvite && (
                 <>
                   <div>
@@ -337,9 +366,29 @@ export default function FreeRegistrationSection({ event, currentUser, onRegistra
                 </>
               )}
 
+              {/* ✅ FIXED — group invites default to name-only, but that
+                  silently broke for guests with no account: there was no
+                  way to ever get their ticket back, yet the confirmation
+                  still claimed "check your email". Email is now shown
+                  and required specifically when a group-invite guest
+                  ISN'T logged in. Logged-in group invites stay name-only
+                  (their ticket lives in their account either way) — this
+                  block simply doesn't render for them. Phone still
+                  isn't asked here in either case; it was never needed to
+                  deliver the ticket, only email is. */}
+              {isGroupInvite && !currentUser && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    placeholder="john@example.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" />
+                  <p className="text-xs text-gray-400 mt-1">We'll email your ticket here since you're not logged in</p>
+                </div>
+              )}
+
               {maxGroupSize > 1 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                  <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
                     <Users size={15} /> How many people (including you)?
                   </label>
                   {/* ✅ NEW — a group invite can allow a large count (e.g.

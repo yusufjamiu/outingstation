@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { 
   Calendar, Clock, MapPin, Users, Download, CheckCircle, XCircle,
   Ticket, Mail, Search, Filter, AlertCircle, Layers, UserPlus, FileSpreadsheet, FileText,
-  Lock, Plus, Trash2
+  Lock, Plus, Trash2, Copy, Link as LinkIcon
 } from 'lucide-react';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -40,15 +40,17 @@ export default function ManageEvent() {
   const [inviteEmailsText, setInviteEmailsText] = useState('');
   const [sendingInvites, setSendingInvites] = useState(false);
   const [inviteResult, setInviteResult] = useState(null);
-  // ✅ NEW — Group Codes editor state (code-gated private events only).
-  // `editingMax` tracks in-progress edits to an existing group's limit
-  // (keyed by group id/code) so typing doesn't save on every keystroke —
-  // only on explicit Save. `newGroupName`/`newGroupMax` are for adding a
-  // brand new group.
-  const [editingMax, setEditingMax] = useState({});
+  // ✅ CHANGED — was `editingMax`, only tracking a group's max-guests
+  // edit. Now `editingGroup` tracks a full in-progress edit (name, code,
+  // AND max together) keyed by group id, so organizers can rename a
+  // group or change its code, not just raise the limit.
+  const [editingGroup, setEditingGroup] = useState({}); // { [groupId]: { groupName, code, maxGuests } }
   const [savingGroups, setSavingGroups] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupMax, setNewGroupMax] = useState(5);
+  // ✅ NEW — optional custom code when adding a new group, mirrors the
+  // same field added to SubmitEventPage.jsx's GroupCodeBuilder
+  const [newGroupCode, setNewGroupCode] = useState('');
 
   useEffect(() => {
     loadEventAndTickets();
@@ -168,39 +170,68 @@ export default function ManageEvent() {
 
   // ✅ NEW — raises (or lowers, but never below usedGuests) an existing
   // group's maxGuests. Writes the whole groupCodes array back — Firestore
-  // has no way to update a single array element in place, so this reads
-  // the array, patches the one group, and rewrites it whole.
-  const handleUpdateGroupMax = async (groupId) => {
-    const newMaxRaw = editingMax[groupId];
-    const newMax = parseInt(newMaxRaw, 10);
+  // ✅ CHANGED — was handleUpdateGroupMax, only ever touching maxGuests.
+  // Now saves groupName, code, AND maxGuests together from one edit
+  // session, so an organizer can rename a group or change its code, not
+  // just raise the limit. Validates: code isn't blank, code doesn't
+  // collide with another group's code on this same event (case/format-
+  // insensitive — normalizes both sides the same way generation does),
+  // and the new max never drops below guests already checked in under
+  // that code.
+  const handleSaveGroupEdit = async (groupId) => {
+    const draft = editingGroup[groupId];
+    if (!draft) return;
+
+    const newMax = parseInt(draft.maxGuests, 10);
     if (!newMax || newMax < 1) {
-      toast.error('Enter a valid number');
+      toast.error('Enter a valid number for max guests');
       return;
     }
+    const normalizedCode = (draft.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!normalizedCode) {
+      toast.error('Code cannot be blank');
+      return;
+    }
+    if (!draft.groupName?.trim()) {
+      toast.error('Group name cannot be blank');
+      return;
+    }
+
     const currentGroups = event.groupCodes || [];
     const target = currentGroups.find(g => g.id === groupId);
     if (target && newMax < (target.usedGuests || 0)) {
       toast.error(`Can't set limit below ${target.usedGuests} — that many guests already used this code`);
       return;
     }
+    // ✅ NEW — duplicate-code check against sibling groups on this event
+    const collision = currentGroups.find(g => g.id !== groupId &&
+      (g.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === normalizedCode);
+    if (collision) {
+      toast.error(`"${collision.groupName}" already uses this code — pick a different one`);
+      return;
+    }
 
     setSavingGroups(true);
     try {
-      const updatedGroups = currentGroups.map(g => g.id === groupId ? { ...g, maxGuests: newMax } : g);
+      const updatedGroups = currentGroups.map(g => g.id === groupId
+        ? { ...g, groupName: draft.groupName.trim(), code: normalizedCode, maxGuests: newMax }
+        : g);
       await updateDoc(doc(db, 'events', event.id), { groupCodes: updatedGroups });
       setEvent(prev => ({ ...prev, groupCodes: updatedGroups }));
-      setEditingMax(prev => { const next = { ...prev }; delete next[groupId]; return next; });
-      toast.success('Group limit updated');
+      setEditingGroup(prev => { const next = { ...prev }; delete next[groupId]; return next; });
+      toast.success('Group updated');
     } catch (err) {
-      console.error('Error updating group limit:', err);
-      toast.error('Failed to update limit');
+      console.error('Error updating group:', err);
+      toast.error('Failed to update group');
     } finally {
       setSavingGroups(false);
     }
   };
 
-  // ✅ NEW — adds a brand new group/code to the event, mid-event. Same
-  // shape as the groups created at submission time.
+  // ✅ CHANGED — now accepts an optional custom code (newGroupCode),
+  // matching SubmitEventPage.jsx's GroupCodeBuilder. Falls back to
+  // auto-generation when left blank, and checks for a collision against
+  // every existing group on this event before saving.
   const handleAddGroup = async () => {
     if (!newGroupName.trim()) {
       toast.error('Enter a group name');
@@ -211,20 +242,31 @@ export default function ManageEvent() {
       return;
     }
 
+    const currentGroups = event.groupCodes || [];
+    const customNormalized = newGroupCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (customNormalized) {
+      const collision = currentGroups.find(g => (g.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === customNormalized);
+      if (collision) {
+        toast.error(`"${collision.groupName}" already uses this code — pick a different one`);
+        return;
+      }
+    }
+
     setSavingGroups(true);
     try {
       const newGroup = {
         id: `group_${Date.now()}`,
-        code: generateGroupCode(newGroupName),
+        code: customNormalized || generateGroupCode(newGroupName),
         groupName: newGroupName.trim(),
         maxGuests: newGroupMax,
         usedGuests: 0,
       };
-      const updatedGroups = [...(event.groupCodes || []), newGroup];
+      const updatedGroups = [...currentGroups, newGroup];
       await updateDoc(doc(db, 'events', event.id), { groupCodes: updatedGroups });
       setEvent(prev => ({ ...prev, groupCodes: updatedGroups }));
       setNewGroupName('');
       setNewGroupMax(5);
+      setNewGroupCode('');
       toast.success(`Group added — code: ${newGroup.code}`);
     } catch (err) {
       console.error('Error adding group:', err);
@@ -261,6 +303,41 @@ export default function ManageEvent() {
 
   // ✅ NEW — free registration flag, drives several display tweaks below
   const isFreeRegistration = event?.ticketingOption === 'free_registration';
+  // ✅ NEW — for code-gated events, the REAL total capacity is the sum of
+  // every group's own maxGuests, not event.ticketsAvailable. That field
+  // is either null (private free events, per the earlier fix) or an
+  // admin-set default from the paid-ticketing setup modal (defaults to
+  // 100) that has nothing to do with the organizer's actual groups —
+  // raising a group's limit or adding a new group never touched it,
+  // which is exactly why the "out of 100" stat never moved. This
+  // recomputes live from event.groupCodes on every render, so it
+  // updates the moment a group is edited.
+  const isCodeGated = event?.privacyMode === 'code_gated';
+  const groupTotalCapacity = isCodeGated
+    ? (event.groupCodes || []).reduce((sum, g) => sum + (g.maxGuests || 0), 0)
+    : null;
+  const groupTotalUsed = isCodeGated
+    ? (event.groupCodes || []).reduce((sum, g) => sum + (g.usedGuests || 0), 0)
+    : null;
+  const displayCapacity = isCodeGated ? groupTotalCapacity : event?.ticketsAvailable;
+
+  // ✅ NEW — the actual gap: organizers of unlisted/code-gated private
+  // events had no way to grab their event's shareable link from Manage
+  // Event at all. Invite-only doesn't need this (guests get emailed
+  // directly), but unlisted and code-gated both genuinely require the
+  // organizer to copy and share this URL — that's the only way anyone
+  // reaches the event page in the first place. Mirrors EventDetails.jsx's
+  // canonicalUrl logic exactly (slug when available, id otherwise).
+  const eventShareUrl = event
+    ? (event.slug
+        ? `https://www.outingstation.com/e/${event.slug}`
+        : `https://www.outingstation.com/event/${event.id}`)
+    : '';
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(eventShareUrl);
+    toast.success('Link copied!');
+  };
 
   // ✅ NEW — shared row-building logic, used by both exportToCSV and
   // exportToExcel so the two formats never drift out of sync with each other
@@ -462,6 +539,35 @@ export default function ManageEvent() {
           </div>
         </div>
 
+        {/* ✅ NEW — Share Link section. Only for unlisted and code-gated
+            private events — invite-only guests already get their ticket
+            emailed directly, so there's nothing for the organizer to
+            share here. This is the piece that was genuinely missing:
+            without this, an organizer had no way to actually get their
+            event's URL to hand out. */}
+        {event.visibility === 'private' && (event.privacyMode === 'unlisted' || event.privacyMode === 'code_gated') && (
+          <div className="bg-white rounded-xl p-6 shadow-sm mb-6 border-2 border-purple-100">
+            <div className="flex items-center gap-2 mb-1">
+              <LinkIcon size={20} className="text-purple-600" />
+              <h2 className="text-lg font-bold text-gray-900">Your Event Link</h2>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              {event.privacyMode === 'code_gated'
+                ? 'Share this link along with each group\'s code — guests need both to register.'
+                : 'This is the only way anyone finds this event — it\'s hidden from search, browse, and AI recommendations.'}
+            </p>
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+              <span className="flex-1 text-sm text-gray-700 truncate font-mono">{eventShareUrl}</span>
+              <button
+                onClick={handleCopyLink}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 transition flex-shrink-0"
+              >
+                <Copy size={14} /> Copy
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
           <div className="bg-white rounded-xl p-6 shadow-sm">
@@ -472,7 +578,10 @@ export default function ManageEvent() {
             </div>
             <p className="text-3xl font-bold text-gray-900">{stats.totalSold}</p>
             <p className="text-xs text-gray-500 mt-1">
-              out of {event.ticketsAvailable} available
+              {/* ✅ FIXED — was always event.ticketsAvailable, which for
+                  code-gated events is either null or a disconnected
+                  admin-set default (see comment above) */}
+              {displayCapacity != null ? `out of ${displayCapacity} available` : ''}
             </p>
           </div>
 
@@ -505,9 +614,17 @@ export default function ManageEvent() {
                 <p className="text-sm text-gray-600">Spots Remaining</p>
               </div>
               <p className="text-3xl font-bold text-gray-900">
-                {Math.max(0, (event.ticketsAvailable || 0) - stats.totalSold)}
+                {/* ✅ FIXED — for code-gated events, remaining is now
+                    computed from the sum of every group's own
+                    (maxGuests - usedGuests), not the disconnected
+                    event.ticketsAvailable field */}
+                {isCodeGated
+                  ? Math.max(0, groupTotalCapacity - groupTotalUsed)
+                  : Math.max(0, (event.ticketsAvailable || 0) - stats.totalSold)}
               </p>
-              <p className="text-xs text-gray-500 mt-1">out of {event.ticketsAvailable}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {displayCapacity != null ? `out of ${displayCapacity}` : ''}
+              </p>
             </div>
           ) : (
             <div className="bg-white rounded-xl p-6 shadow-sm">
@@ -599,52 +716,86 @@ export default function ManageEvent() {
             <div className="space-y-3 mb-5">
               {(event.groupCodes || []).map((group) => {
                 const remaining = (group.maxGuests || 0) - (group.usedGuests || 0);
-                const isEditing = editingMax[group.id] !== undefined;
+                const draft = editingGroup[group.id];
+                const isEditing = draft !== undefined;
                 return (
                   <div key={group.id} className="border border-gray-200 rounded-xl p-4">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div>
-                        <p className="font-bold text-gray-900 text-sm">{group.groupName}</p>
-                        <p className="text-xs text-gray-400 font-mono mt-0.5">{group.code}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-gray-800">{group.usedGuests || 0} / {group.maxGuests || 0}</p>
-                          <p className="text-xs text-gray-400">{remaining} left</p>
+                    {isEditing ? (
+                      // ✅ CHANGED — full edit mode: name, code, and max
+                      // all editable together, not just max. Renaming
+                      // the group or changing its code takes effect the
+                      // moment Save is pressed — existing guests who
+                      // already used the OLD code are unaffected
+                      // (usedGuests travels with the group regardless of
+                      // what its code/name currently are).
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs font-bold text-gray-500 mb-1 block">Group name</label>
+                          <input
+                            type="text"
+                            value={draft.groupName}
+                            onChange={(e) => setEditingGroup(prev => ({ ...prev, [group.id]: { ...prev[group.id], groupName: e.target.value } }))}
+                            className="w-full px-3 py-2 border-2 border-purple-200 rounded-lg text-sm focus:outline-none focus:border-purple-400"
+                          />
                         </div>
-                        {isEditing ? (
-                          <div className="flex items-center gap-1.5">
+                        <div>
+                          <label className="text-xs font-bold text-gray-500 mb-1 block">Code</label>
+                          <input
+                            type="text"
+                            value={draft.code}
+                            onChange={(e) => setEditingGroup(prev => ({ ...prev, [group.id]: { ...prev[group.id], code: e.target.value } }))}
+                            className="w-full px-3 py-2 border-2 border-purple-200 rounded-lg text-sm font-mono tracking-wide focus:outline-none focus:border-purple-400"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <label className="text-xs font-bold text-gray-500 mb-1 block">Max guests</label>
                             <input
                               type="number"
                               min={group.usedGuests || 0}
-                              value={editingMax[group.id]}
-                              onChange={(e) => setEditingMax(prev => ({ ...prev, [group.id]: e.target.value }))}
-                              className="w-16 px-2 py-1.5 border-2 border-purple-200 rounded-lg text-sm text-center focus:outline-none focus:border-purple-400"
+                              value={draft.maxGuests}
+                              onChange={(e) => setEditingGroup(prev => ({ ...prev, [group.id]: { ...prev[group.id], maxGuests: e.target.value } }))}
+                              className="w-full px-3 py-2 border-2 border-purple-200 rounded-lg text-sm text-center focus:outline-none focus:border-purple-400"
                             />
-                            <button
-                              onClick={() => handleUpdateGroupMax(group.id)}
-                              disabled={savingGroups}
-                              className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 transition disabled:opacity-50"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setEditingMax(prev => { const n = { ...prev }; delete n[group.id]; return n; })}
-                              className="px-2 py-1.5 text-gray-400 hover:text-gray-600 text-xs"
-                            >
-                              Cancel
-                            </button>
                           </div>
-                        ) : (
                           <button
-                            onClick={() => setEditingMax(prev => ({ ...prev, [group.id]: group.maxGuests || 0 }))}
+                            onClick={() => handleSaveGroupEdit(group.id)}
+                            disabled={savingGroups}
+                            className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-bold hover:bg-purple-700 transition disabled:opacity-50 self-end"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingGroup(prev => { const n = { ...prev }; delete n[group.id]; return n; })}
+                            className="px-2 py-2 text-gray-400 hover:text-gray-600 text-xs self-end"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <p className="font-bold text-gray-900 text-sm">{group.groupName}</p>
+                          <p className="text-xs text-gray-400 font-mono mt-0.5">{group.code}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-gray-800">{group.usedGuests || 0} / {group.maxGuests || 0}</p>
+                            <p className="text-xs text-gray-400">{remaining} left</p>
+                          </div>
+                          {/* ✅ CHANGED — "Raise limit" → "Edit", opens
+                              the full name/code/max edit above instead
+                              of a max-only inline field */}
+                          <button
+                            onClick={() => setEditingGroup(prev => ({ ...prev, [group.id]: { groupName: group.groupName, code: group.code, maxGuests: group.maxGuests || 0 } }))}
                             className="px-3 py-1.5 border-2 border-purple-200 text-purple-600 rounded-lg text-xs font-bold hover:bg-purple-50 transition"
                           >
-                            Raise limit
+                            Edit
                           </button>
-                        )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                     {/* progress bar */}
                     <div className="mt-3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                       <div
@@ -662,7 +813,7 @@ export default function ManageEvent() {
 
             <div className="border-t border-gray-100 pt-4">
               <p className="text-xs font-bold text-gray-600 mb-2">Add a new group</p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 mb-2">
                 <input
                   type="text"
                   value={newGroupName}
@@ -670,11 +821,39 @@ export default function ManageEvent() {
                   placeholder="e.g. Marketing Team"
                   className="flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-purple-400 transition"
                 />
-                <div className="flex items-center gap-1.5 border-2 border-gray-200 rounded-xl px-2">
+                {/* ✅ NEW — optional custom code when adding a new group,
+                    same as SubmitEventPage.jsx. Blank = auto-generated. */}
+                <input
+                  type="text"
+                  value={newGroupCode}
+                  onChange={(e) => setNewGroupCode(e.target.value)}
+                  placeholder="Custom code (optional)"
+                  maxLength={20}
+                  className="flex-1 px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm font-mono focus:outline-none focus:border-purple-400 transition"
+                />
+              </div>
+              <div className="flex gap-2">
+                {/* ✅ FIXED — max guests was stepper-only (click + up to
+                    100), meaning setting a group to e.g. 250 people meant
+                    clicking + 250 times. Now directly typeable, with the
+                    stepper still available for quick small adjustments.
+                    Cap raised from 100 to 5000 — a company/school
+                    allocation genuinely can be that large. */}
+                <div className="flex items-center gap-1 border-2 border-gray-200 rounded-xl px-2">
                   <button type="button" onClick={() => setNewGroupMax(Math.max(1, newGroupMax - 1))}
                     className="w-7 h-7 text-gray-500 font-bold hover:text-purple-600 transition">−</button>
-                  <span className="w-6 text-center text-sm font-black text-gray-800">{newGroupMax}</span>
-                  <button type="button" onClick={() => setNewGroupMax(Math.min(100, newGroupMax + 1))}
+                  <input
+                    type="number"
+                    min={1}
+                    max={5000}
+                    value={newGroupMax}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      setNewGroupMax(Number.isFinite(v) ? Math.max(1, Math.min(5000, v)) : 1);
+                    }}
+                    className="w-14 text-center text-sm font-black text-gray-800 border-0 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <button type="button" onClick={() => setNewGroupMax(Math.min(5000, newGroupMax + 1))}
                     className="w-7 h-7 text-gray-500 font-bold hover:text-purple-600 transition">+</button>
                 </div>
                 <button
