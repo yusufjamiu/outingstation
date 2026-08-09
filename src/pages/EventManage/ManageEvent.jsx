@@ -279,11 +279,22 @@ export default function ManageEvent() {
   const handleCheckIn = async (ticketId, currentStatus) => {
     try {
       const ticketRef = doc(db, 'tickets', ticketId);
-      await updateDoc(ticketRef, { checkedIn: !currentStatus });
+      // ✅ FIXED — was only ever toggling `checkedIn`. VerifyTicket.jsx
+      // (the public gate-scan page) has a complete, already-built
+      // "⚠️ Already Used" state — but it's driven by `status === 'used'`,
+      // a field this handler never touched. That meant a ticket could be
+      // checked in here and still scan as fully "valid" every time,
+      // including a screenshot-shared copy after the real holder already
+      // entered. `checkedIn` is kept too (unchanged) since stats/filtering
+      // elsewhere already depend on that boolean.
+      await updateDoc(ticketRef, {
+        checkedIn: !currentStatus,
+        status: !currentStatus ? 'used' : 'valid',
+      });
 
       setTickets(prev => prev.map(ticket => 
         ticket.id === ticketId 
-          ? { ...ticket, checkedIn: !currentStatus }
+          ? { ...ticket, checkedIn: !currentStatus, status: !currentStatus ? 'used' : 'valid' }
           : ticket
       ));
 
