@@ -1,0 +1,16 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "5VB9HAZJRQ",
+        "paths": [
+          "/event/*",
+          "/place/*",
+          "/vendor/*",
+          "/campus/*"
+        ]
+      }
+    ]
+  }
+}

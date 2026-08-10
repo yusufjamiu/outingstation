@@ -1,0 +1,11 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.outingstation",
+      "sha256_cert_fingerprints": [ "66:7b:3e:56:7c:d7:25:d4:67:77:bd:1b:c5:21:18:4c:ef:ff:53:20:f3:e3:1e:35:0f:99:fb:ea:21:b7:7e:7c"
+      ]
+    }
+  }
+]
