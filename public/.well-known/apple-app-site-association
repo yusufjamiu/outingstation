@@ -3,8 +3,9 @@
     "apps": [],
     "details": [
       {
-        "appID": "5VB9HAZJRQ",
+        "appID": "5VB9HAZJRQ.com.outingstation",
         "paths": [
+          "/e/*",
           "/event/*",
           "/place/*",
           "/vendor/*",
