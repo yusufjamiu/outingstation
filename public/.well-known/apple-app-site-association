@@ -8,7 +8,8 @@
           "/event/*",
           "/place/*",
           "/vendor/*",
-          "/campus/*"
+          "/campus/*",
+          "/signup*"
         ]
       }
     ]
