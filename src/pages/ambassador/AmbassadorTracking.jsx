@@ -25,7 +25,7 @@ function getCycleDayInfo(cycleStartAt) {
   return { daysElapsed, daysRemaining, cycleComplete: daysElapsed >= CYCLE_DAYS };
 }
 
-export default function AmbassadorEarnings() {
+export default function AmbassadorTracking() {
   const { currentUser } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);

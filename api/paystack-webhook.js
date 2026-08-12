@@ -192,7 +192,14 @@ async function updateStandFilledCount(eventId, standId) {
   }
 }
 
+// ⛔ DISABLED — ambassador 50% commission distribution turned off.
+// Function body commented out below and left in place (unused) in case
+// this needs to be re-enabled later. See call site further down (also
+// commented out) for where this was invoked.
 async function distributeAmbassadorCommission(eventData, eventId, serviceFee, quantity) {
+  return;
+
+  /*
   if (!serviceFee || serviceFee <= 0) return;
 
   try {
@@ -284,6 +291,7 @@ async function distributeAmbassadorCommission(eventData, eventId, serviceFee, qu
   } catch (err) {
     console.error('❌ Commission distribution error:', err);
   }
+  */
 }
 
 // ✅ Extract metadata — now also extracts purchase_type + vendor stand fields
@@ -901,11 +909,12 @@ export default async function handler(req, res) {
     console.log(`✅ Ticket created: ${ticketId}`);
     console.log(`📧 Email sent to: ${paymentData.customer.email}`);
 
-    distributeAmbassadorCommission(
-      { ...eventData, id: metadata.eventId },
-      metadata.serviceFee,
-      metadata.quantity
-    ).catch(err => console.error('Commission distribution failed silently:', err));
+    // ⛔ DISABLED — ambassador 50% commission distribution turned off.
+    // distributeAmbassadorCommission(
+    //   { ...eventData, id: metadata.eventId },
+    //   metadata.serviceFee,
+    //   metadata.quantity
+    // ).catch(err => console.error('Commission distribution failed silently:', err));
 
     return res.status(200).json({
       success: true,

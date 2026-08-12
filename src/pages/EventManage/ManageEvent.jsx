@@ -187,8 +187,15 @@ export default function ManageEvent() {
       toast.error('Enter a valid number for max guests');
       return;
     }
-    const normalizedCode = (draft.code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!normalizedCode) {
+    // ✅ FIXED — was forcibly uppercasing AND stripping non-alphanumeric
+    // characters from whatever the organizer typed here, e.g.
+    // "sarah-vip" silently became "SARAHVIP". Gate matching already
+    // compares both sides case-insensitively at comparison time, so the
+    // STORED code never needed to already be uppercase — and it never
+    // strips special characters either. Now saves exactly what was
+    // typed (trimmed of leading/trailing whitespace only).
+    const savedCode = (draft.code || '').trim();
+    if (!savedCode) {
       toast.error('Code cannot be blank');
       return;
     }
@@ -203,9 +210,12 @@ export default function ManageEvent() {
       toast.error(`Can't set limit below ${target.usedGuests} — that many guests already used this code`);
       return;
     }
-    // ✅ NEW — duplicate-code check against sibling groups on this event
+    // ✅ FIXED — collision check now mirrors gate-matching exactly:
+    // case-insensitive only, no character stripping. "sarah-vip" and
+    // "sarahvip" are genuinely different codes and shouldn't be flagged
+    // as a collision with each other.
     const collision = currentGroups.find(g => g.id !== groupId &&
-      (g.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === normalizedCode);
+      (g.code || '').toUpperCase() === savedCode.toUpperCase());
     if (collision) {
       toast.error(`"${collision.groupName}" already uses this code — pick a different one`);
       return;
@@ -214,7 +224,7 @@ export default function ManageEvent() {
     setSavingGroups(true);
     try {
       const updatedGroups = currentGroups.map(g => g.id === groupId
-        ? { ...g, groupName: draft.groupName.trim(), code: normalizedCode, maxGuests: newMax }
+        ? { ...g, groupName: draft.groupName.trim(), code: savedCode, maxGuests: newMax }
         : g);
       await updateDoc(doc(db, 'events', event.id), { groupCodes: updatedGroups });
       setEvent(prev => ({ ...prev, groupCodes: updatedGroups }));
@@ -243,9 +253,13 @@ export default function ManageEvent() {
     }
 
     const currentGroups = event.groupCodes || [];
-    const customNormalized = newGroupCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (customNormalized) {
-      const collision = currentGroups.find(g => (g.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === customNormalized);
+    // ✅ FIXED — was forcibly uppercasing AND stripping non-alphanumeric
+    // characters. Now preserves exactly what was typed (trimmed only);
+    // collision check still compares case-insensitively (matching
+    // gate-logic exactly) without stripping any characters.
+    const customTrimmed = newGroupCode.trim();
+    if (customTrimmed) {
+      const collision = currentGroups.find(g => (g.code || '').toUpperCase() === customTrimmed.toUpperCase());
       if (collision) {
         toast.error(`"${collision.groupName}" already uses this code — pick a different one`);
         return;
@@ -256,7 +270,7 @@ export default function ManageEvent() {
     try {
       const newGroup = {
         id: `group_${Date.now()}`,
-        code: customNormalized || generateGroupCode(newGroupName),
+        code: customTrimmed || generateGroupCode(newGroupName),
         groupName: newGroupName.trim(),
         maxGuests: newGroupMax,
         usedGuests: 0,

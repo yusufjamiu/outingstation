@@ -27,7 +27,7 @@ export function AmbassadorSidebar({ isOpen, onClose }) {
     ? [
         { icon: Home, label: 'Dashboard', path: '/ambassador' },
         { icon: Plus, label: 'Create', path: '/ambassador/create' },
-        { icon: Wallet, label: 'Earnings', path: '/ambassador/earnings' },
+        { icon: Wallet, label: 'Tracking', path: '/ambassador/tracking' },
         { icon: Bell, label: 'Notifications', path: '/ambassador/notifications' },
       ]
     : [
@@ -35,7 +35,7 @@ export function AmbassadorSidebar({ isOpen, onClose }) {
         { icon: Calendar, label: 'Events', path: '/ambassador/events' },
         { icon: MapPin, label: 'Places', path: '/ambassador/places' },
         { icon: ShoppingBag, label: 'Vendors', path: '/ambassador/vendors' },
-        { icon: Wallet, label: 'Earnings', path: '/ambassador/earnings' },
+        { icon: Wallet, label: 'Tracking', path: '/ambassador/tracking' },
         { icon: Bell, label: 'Notifications', path: '/ambassador/notifications' },
         { icon: FileText, label: 'Submitted Events', path: '/ambassador/submitted-events' },
       ];

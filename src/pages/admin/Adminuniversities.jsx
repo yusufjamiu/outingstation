@@ -11,8 +11,12 @@ export default function AdminUniversities() {
   const [universities, setUniversities] = useState([]);
   const [uploadingUniImage, setUploadingUniImage] = useState(null);
 
+  // ✅ NEW — acronym added (e.g. "UNILAG", "UI", "OAU"). Required so it's
+  // always available for Home's student nav chip and the signup/settings
+  // university pickers, which display the acronym rather than the full name.
   const [formData, setFormData] = useState({
     name: '',
+    acronym: '',
     location: '',
     slug: '',
     imageUrl: ''
@@ -49,13 +53,14 @@ export default function AdminUniversities() {
       setEditingUniversity(university);
       setFormData({
         name: university.name,
+        acronym: university.acronym || '',
         location: university.location,
         slug: university.slug,
         imageUrl: university.imageUrl || ''
       });
     } else {
       setEditingUniversity(null);
-      setFormData({ name: '', location: '', slug: '', imageUrl: '' });
+      setFormData({ name: '', acronym: '', location: '', slug: '', imageUrl: '' });
     }
     setShowModal(true);
   };
@@ -63,7 +68,7 @@ export default function AdminUniversities() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingUniversity(null);
-    setFormData({ name: '', location: '', slug: '', imageUrl: '' });
+    setFormData({ name: '', acronym: '', location: '', slug: '', imageUrl: '' });
   };
 
   const handleNameChange = (e) => {
@@ -149,12 +154,20 @@ export default function AdminUniversities() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // ✅ NEW — acronym is required, same as name/location/slug.
+    if (!formData.acronym.trim()) {
+      alert('Please enter an acronym (e.g. UNILAG, OAU, UI).');
+      return;
+    }
+
     try {
+      const payload = { ...formData, acronym: formData.acronym.trim().toUpperCase() };
+
       if (editingUniversity) {
-        await updateDoc(doc(db, 'universities', editingUniversity.id), formData);
+        await updateDoc(doc(db, 'universities', editingUniversity.id), payload);
       } else {
         await addDoc(collection(db, 'universities'), {
-          ...formData,
+          ...payload,
           eventCount: 0,
           createdAt: new Date()
         });
@@ -207,6 +220,14 @@ export default function AdminUniversities() {
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <GraduationCap size={48} className="text-gray-400" />
+                    </div>
+                  )}
+
+                  {/* ✅ NEW — acronym badge, top-left, so it's visible at a
+                      glance in the grid without opening the edit modal */}
+                  {uni.acronym && (
+                    <div className="absolute top-2 left-2 px-3 py-1 bg-cyan-500 text-white text-xs font-bold rounded-full shadow">
+                      {uni.acronym}
                     </div>
                   )}
 
@@ -302,6 +323,24 @@ export default function AdminUniversities() {
                   onChange={handleNameChange}
                   required
                   className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
+                />
+              </div>
+
+              {/* ✅ NEW — Acronym field, required. Uppercased on save so
+                  it's consistent everywhere it's displayed (Home chip,
+                  signup/settings dropdowns). */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Acronym * <span className="text-xs text-gray-500">(shown on the app's nav chip)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., UNILAG"
+                  value={formData.acronym}
+                  onChange={(e) => setFormData({ ...formData, acronym: e.target.value })}
+                  required
+                  maxLength={12}
+                  className="w-full border border-gray-300 px-4 py-2 rounded-lg font-mono uppercase focus:ring-2 focus:ring-cyan-400 focus:border-transparent outline-none"
                 />
               </div>
 

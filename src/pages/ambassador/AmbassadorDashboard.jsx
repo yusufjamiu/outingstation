@@ -19,7 +19,13 @@ export default function AmbassadorDashboard() {
   const assigned = userProfile?.assignedCampuses || [];
   const name = userProfile?.name || 'Ambassador';
   const totalReferrals = userProfile?.totalReferrals || 0;
-  const commissionUnlocked = totalReferrals >= 100;
+  const cycleReferrals = userProfile?.cycleReferrals || 0;
+  // ✅ REMOVED — commissionUnlocked (totalReferrals >= 100) was left over
+  // from the old single-tier commission-unlock design, which predates
+  // even the ambassador tier system that later got replaced by pure
+  // referral tracking. There's no unlock concept anymore — see
+  // AmbassadorTracking.jsx for what this dashboard should reflect.
+  const cyclesCompleted = (earnings?.cycleHistory || []).length;
 
   useEffect(() => {
     if (!isCityAmbassador) {
@@ -45,13 +51,13 @@ export default function AmbassadorDashboard() {
     { icon: ShoppingBag, label: 'Vendors', desc: 'Review and accept vendors for your campus', to: '/ambassador/vendors', color: 'from-teal-500 to-emerald-500' },
     { icon: Bell, label: 'Notifications', desc: 'Message people who follow your campus', to: '/ambassador/notifications', color: 'from-amber-500 to-orange-500' },
     { icon: FileText, label: 'Submitted Events', desc: 'Review and approve submitted events', to: '/ambassador/submitted-events', color: 'from-rose-500 to-pink-500' },
-    { icon: Wallet, label: 'Earnings', desc: 'Track your referrals and commissions', to: '/ambassador/earnings', color: 'from-green-500 to-emerald-500' },
+    { icon: Wallet, label: 'Tracking', desc: 'Track your referral progress', to: '/ambassador/tracking', color: 'from-green-500 to-emerald-500' },
   ];
 
   // ── City ambassador cards
   const cityCards = [
     { icon: Plus, label: 'Create', desc: 'Submit an event or place in your city', to: '/ambassador/create', color: 'from-cyan-500 to-blue-500' },
-    { icon: Wallet, label: 'Earnings', desc: 'Track your referrals and commissions', to: '/ambassador/earnings', color: 'from-green-500 to-emerald-500' },
+    { icon: Wallet, label: 'Tracking', desc: 'Track your referral progress', to: '/ambassador/tracking', color: 'from-green-500 to-emerald-500' },
     { icon: Bell, label: 'Notifications', desc: 'Receive updates from OutingStation', to: '/ambassador/notifications', color: 'from-amber-500 to-orange-500' },
   ];
 
@@ -103,11 +109,6 @@ export default function AmbassadorDashboard() {
                 <span className="inline-flex items-center gap-1 bg-white/20 rounded-full px-3 py-1 text-sm font-medium">
                   <Users size={13} /> {totalReferrals} referrals
                 </span>
-                {commissionUnlocked && (
-                  <span className="inline-flex items-center gap-1 bg-green-400/30 rounded-full px-3 py-1 text-sm font-medium">
-                    💰 Commission unlocked
-                  </span>
-                )}
               </div>
             ) : (
               // Campus ambassador — show assigned campuses
@@ -139,20 +140,20 @@ export default function AmbassadorDashboard() {
             <div className="grid grid-cols-3 gap-4 mb-6">
               {[
                 {
-                  label: 'Referrals',
+                  label: 'Total Referrals',
                   value: totalReferrals,
                   icon: <Users size={18} className="text-cyan-500" />,
                   bg: 'bg-cyan-50',
                 },
                 {
-                  label: 'Cash Earned',
-                  value: `₦${(earnings?.totalEarned || 0).toLocaleString()}`,
+                  label: 'This Cycle',
+                  value: cycleReferrals,
                   icon: <TrendingUp size={18} className="text-green-500" />,
                   bg: 'bg-green-50',
                 },
                 {
-                  label: 'Available',
-                  value: `₦${(earnings?.availableBalance || 0).toLocaleString()}`,
+                  label: 'Cycles Done',
+                  value: cyclesCompleted,
                   icon: <Wallet size={18} className="text-purple-500" />,
                   bg: 'bg-purple-50',
                 },
@@ -163,25 +164,6 @@ export default function AmbassadorDashboard() {
                   <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* Commission unlock progress — city ambassadors */}
-          {isCityAmbassador && !commissionUnlocked && (
-            <div className="bg-white rounded-2xl border border-gray-200 p-5 mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-bold text-gray-800">🔒 Commission unlocks at 100 referrals</p>
-                <span className="text-xs text-gray-500">{totalReferrals}/100</span>
-              </div>
-              <div className="w-full bg-gray-100 rounded-full h-2.5">
-                <div
-                  className="bg-gradient-to-r from-cyan-400 to-cyan-500 h-2.5 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min((totalReferrals / 100) * 100, 100)}%` }}
-                />
-              </div>
-              <p className="text-xs text-gray-400 mt-2">
-                Refer {100 - totalReferrals} more people to unlock 50% commission from all events in {userProfile?.city || 'your city'}.
-              </p>
             </div>
           )}
 

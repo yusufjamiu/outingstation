@@ -25,5 +25,11 @@
         { "key": "Content-Type", "value": "application/json" }
       ]
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/rollover-ambassador-cycles",
+      "schedule": "0 1 * * *"
+    }
   ]
 }

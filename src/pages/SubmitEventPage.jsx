@@ -726,15 +726,15 @@ const SubmitEventPage = () => {
           groupCodes.forEach((g, i) => {
             if (!g.groupName?.trim()) e[`group_${i}_name`] = 'Group name is required';
           });
-          // ✅ NEW — duplicate custom-code check, scoped to this event's
-          // own group list (codes only ever need to be unique within a
-          // single event, not globally — the gate check only ever
-          // searches one event's groupCodes array). Normalizes the same
-          // way the final code gets normalized at submit time
-          // (uppercase, letters/numbers only) so "sarah123" and
-          // "SARAH-123" are correctly caught as the same code.
+          // ✅ FIXED — this used to also strip non-alphanumeric
+          // characters (.replace(/[^A-Z0-9]/g, '')), which meant a
+          // custom code like "sarah-vip" would incorrectly get flagged
+          // as a duplicate of "sarahvip" even though they're genuinely
+          // different codes — the gate-matching logic never strips
+          // characters either, only compares case-insensitively, so
+          // this now mirrors that exactly instead of over-normalizing.
           const normalizedCodes = groupCodes.map(g =>
-            (g.customCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+            (g.customCode || '').trim().toUpperCase()
           );
           normalizedCodes.forEach((code, i) => {
             if (!code) return; // blank = auto-generated, never collides
@@ -921,18 +921,22 @@ const SubmitEventPage = () => {
           groupCodes: (() => {
             if (!(isPrivateEvent && form.privacyMode === 'code_gated')) return [];
             const generated = groupCodes.map(g => {
-              // ✅ NEW — use the organizer's own custom code when they
-              // provided one, instead of always auto-generating. Any
-              // case/mix they typed is accepted — normalized to
-              // uppercase alphanumeric here purely for consistent
-              // matching later (guests can type their code in any case
-              // too, the gate check already uppercases before
-              // comparing — this doesn't reject anything, just
-              // standardizes storage).
-              const customNormalized = (g.customCode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+              // ✅ FIXED — was forcibly uppercasing AND stripping every
+              // non-alphanumeric character from the organizer's own
+              // typed code (e.g. "sarah-vip" silently became "SARAHVIP").
+              // Gate matching already compares both sides
+              // case-insensitively at comparison time — it never needed
+              // the STORED code to already be uppercase, and it never
+              // strips special characters either. So there's no reason
+              // to mutate what the organizer actually typed — a custom
+              // code is now saved byte-for-byte as entered (trimmed of
+              // leading/trailing whitespace only). Auto-generated codes
+              // (blank input) are unaffected — generateGroupCode() still
+              // produces its own clean uppercase-alphanumeric codes.
+              const customTrimmed = (g.customCode || '').trim();
               return {
                 id: g.id,
-                code: customNormalized || generateGroupCode(g.groupName),
+                code: customTrimmed || generateGroupCode(g.groupName),
                 groupName: g.groupName.trim(),
                 maxGuests: g.maxGuests || 1,
                 usedGuests: 0,

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, updateDoc, doc, increment } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, getDoc, increment } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { Menu, Search, Check, Clock, XCircle, Wallet } from 'lucide-react';
@@ -13,6 +13,17 @@ const STATUS_COLORS = {
 
 function formatNaira(amount) {
   return `₦${Number(amount || 0).toLocaleString()}`;
+}
+
+// A payout request is for a specific 30-day cycle (request.cycleStartAt).
+// By the time an admin processes it, that cycle may still be the
+// ambassador's LIVE cycle (ambassadorEarnings.cyclePaymentStatus reflects
+// it directly), or the rollover cron may have already closed it into
+// ambassadorEarnings.cycleHistory. This finds out which, so we patch the
+// right place instead of silently no-op'ing on a field nobody reads
+// anymore.
+function getRequestCycleStartMs(request) {
+  return request.cycleStartAt?.toDate?.().getTime() ?? null;
 }
 
 export default function AdminAmbassadorPayouts() {
@@ -40,20 +51,56 @@ export default function AdminAmbassadorPayouts() {
     }
   };
 
+  // Applies a status ('paid' or 'rejected') to whichever cycle the
+  // request belongs to — the live one or an already-archived one in
+  // cycleHistory — without touching any other cycle's data.
+  const applyStatusToCycle = async (request, status) => {
+    const earningsRef = doc(db, 'ambassadorEarnings', request.ambassadorId);
+    const userRef = doc(db, 'users', request.ambassadorId);
+
+    const [earningsSnap, userSnap] = await Promise.all([getDoc(earningsRef), getDoc(userRef)]);
+    const earningsData = earningsSnap.exists() ? earningsSnap.data() : {};
+    const userCycleStartMs = userSnap.exists() ? userSnap.data().cycleStartAt?.toDate?.().getTime() : null;
+    const requestCycleStartMs = getRequestCycleStartMs(request);
+
+    const isStillLiveCycle =
+      requestCycleStartMs !== null &&
+      userCycleStartMs !== null &&
+      requestCycleStartMs === userCycleStartMs;
+
+    if (isStillLiveCycle) {
+      // Cycle hasn't rolled over yet — flip the live status flag the
+      // ambassador's earnings page reads directly.
+      await updateDoc(earningsRef, { cyclePaymentStatus: status === 'rejected' ? 'none' : status });
+    } else {
+      // Cycle already closed into history — patch that entry only.
+      const cycleHistory = earningsData.cycleHistory || [];
+      const updatedHistory = cycleHistory.map(cycle => {
+        const cycleStartMs = cycle.cycleStart?.toDate?.().getTime();
+        if (requestCycleStartMs !== null && cycleStartMs === requestCycleStartMs) {
+          return { ...cycle, status };
+        }
+        return cycle;
+      });
+      await updateDoc(earningsRef, { cycleHistory: updatedHistory });
+    }
+  };
+
   const handleMarkPaid = async (request) => {
     if (!confirm(`Mark ₦${request.amount?.toLocaleString()} as paid to ${request.ambassadorName}?`)) return;
     try {
       setProcessing(true);
 
-      // Update request status
       await updateDoc(doc(db, 'ambassadorPayoutRequests', request.id), {
         status: 'paid',
         paidAt: new Date(),
       });
 
-      // Deduct from ambassador's available balance and add to totalPaidOut
+      await applyStatusToCycle(request, 'paid');
+
+      // totalPaidOut is a lifetime running total — always safe to
+      // increment regardless of which cycle this belongs to.
       await updateDoc(doc(db, 'ambassadorEarnings', request.ambassadorId), {
-        availableBalance: increment(-request.amount),
         totalPaidOut: increment(request.amount),
       });
 
@@ -73,10 +120,18 @@ export default function AdminAmbassadorPayouts() {
     if (!confirm(`Reject payout request from ${request.ambassadorName}?`)) return;
     try {
       setProcessing(true);
+
       await updateDoc(doc(db, 'ambassadorPayoutRequests', request.id), {
         status: 'rejected',
         rejectedAt: new Date(),
       });
+
+      // If it's still their live cycle, this resets cyclePaymentStatus
+      // back to 'none' so they can submit another request for the same
+      // cycle (e.g. if the bank details on file were wrong). If the
+      // cycle already closed, only the history entry is marked rejected.
+      await applyStatusToCycle(request, 'rejected');
+
       setRequests(prev =>
         prev.map(r => r.id === request.id ? { ...r, status: 'rejected' } : r)
       );
@@ -199,7 +254,10 @@ export default function AdminAmbassadorPayouts() {
                             </span>
                           </div>
                           <p className="text-xs text-gray-500 mb-1">{request.ambassadorEmail}</p>
-                          <p className="text-xs text-gray-400">Requested {formatDate(request.requestedAt)}</p>
+                          <p className="text-xs text-gray-400">
+                            Requested {formatDate(request.requestedAt)}
+                            {typeof request.cycleReferrals === 'number' ? ` · ${request.cycleReferrals} referrals this cycle` : ''}
+                          </p>
 
                           {/* Bank details */}
                           <div className="mt-3 bg-gray-50 rounded-lg p-3 text-xs space-y-1">

@@ -82,7 +82,7 @@ import AmbassadorVendors from './pages/ambassador/AmbassadorVendors';
 import AmbassadorVendorForm from './pages/ambassador/AmbassadorVendorForm';
 import AmbassadorNotifications from './pages/ambassador/AmbassadorNotifications';
 import SubmittedEvents from './pages/ambassador/SubmittedEvents';
-import AmbassadorEarnings from './pages/ambassador/AmbassadorEarnings';
+import AmbassadorTracking from './pages/ambassador/AmbassadorTracking';
 import AdminBusinesses from './pages/admin/AdminBusinesses';
 import AdminPlaceClaims from './pages/admin/AdminPlaceClaims';
 import CityAmbassadorCreate from './pages/ambassador/CityAmbassadorCreate';
@@ -271,9 +271,17 @@ function App() {
                   <SubmittedEvents />
                 </AmbassadorRoute>
               } />
+              <Route path="/ambassador/tracking" element={
+                <AmbassadorRoute>
+                  <AmbassadorTracking />
+                </AmbassadorRoute>
+              } />
+              {/* ✅ Old /ambassador/earnings URL kept working for anyone
+                  with it bookmarked or linked from an old notification —
+                  just redirects straight to the renamed route. */}
               <Route path="/ambassador/earnings" element={
                 <AmbassadorRoute>
-                  <AmbassadorEarnings />
+                  <AmbassadorTracking />
                 </AmbassadorRoute>
               } />
 

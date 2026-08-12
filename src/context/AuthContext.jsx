@@ -98,14 +98,38 @@ async function awardReferralCredits(newUserId, newUserName, referrerCode) {
     const referrerCreditsHistory = referrerSnapshot.data()?.creditsHistory || [];
     const referrerTotalCredits = referrerSnapshot.data()?.totalCredits || 0;
 
-    await updateDoc(referrerRef, {
-      creditsHistory: [...referrerCreditsHistory, referrerCredit],
-      totalCredits: referrerTotalCredits + referrerCreditAmount,
-      totalReferrals: (referrerSnapshot.data()?.totalReferrals || 0) + 1,
-      updatedAt: serverTimestamp(),
-    });
+    // ✅ NEW — the 20/100 referral-slot limit (REFERRAL_LIMIT_NORMAL /
+    // REFERRAL_LIMIT_AMBASSADOR in referralUtils.js) was previously only
+    // enforced cosmetically — canStillRefer() hid the "share your link"
+    // buttons in the UI once reached, but nothing here actually stopped
+    // crediting or counting past it. A link copied/shared before hitting
+    // the cap could keep earning credits indefinitely. This now actually
+    // enforces it: once the referrer's totalReferrals hits their limit,
+    // no further credit is awarded and totalReferrals stops incrementing.
+    // cycleReferrals (the ambassador tracking dashboard) is NOT subject
+    // to this cap — it keeps counting regardless, since that tracking is
+    // intentionally unlimited.
+    const referralLimit = isAmbassador ? 100 : 20;
+    const referrerTotalReferrals = referrerSnapshot.data()?.totalReferrals || 0;
+    const referrerCycleReferrals = referrerSnapshot.data()?.cycleReferrals || 0;
+    const capReached = referrerTotalReferrals >= referralLimit;
 
-    console.log('✅ Credit awarded to referrer:', referrerName, '₦', referrerCreditAmount);
+    if (capReached) {
+      await updateDoc(referrerRef, {
+        cycleReferrals: referrerCycleReferrals + 1,
+        updatedAt: serverTimestamp(),
+      });
+      console.log(`ℹ️ Referral reward cap reached for ${referrerName} (${referrerTotalReferrals}/${referralLimit}) — no credit awarded, cycle tracking still counted`);
+    } else {
+      await updateDoc(referrerRef, {
+        creditsHistory: [...referrerCreditsHistory, referrerCredit],
+        totalCredits: referrerTotalCredits + referrerCreditAmount,
+        totalReferrals: referrerTotalReferrals + 1,
+        cycleReferrals: referrerCycleReferrals + 1,
+        updatedAt: serverTimestamp(),
+      });
+      console.log('✅ Credit awarded to referrer:', referrerName, '₦', referrerCreditAmount);
+    }
 
     // ✅ Update new user's credits
     const newUserRef = doc(db, 'users', newUserId);
@@ -198,6 +222,14 @@ export function AuthProvider({ children }) {
             totalCredits: 0,
             referralCode: referralCode,
             totalReferrals: 0,
+            // ✅ NEW — cycle-scoped referral tracking for ambassador tier
+            // payouts. Every user gets these fields from day one (cheap,
+            // and avoids a "field doesn't exist yet" branch anywhere else)
+            // even though only ambassadors currently see an earnings page
+            // that uses them. cycleStartAt marks day 0 of a 30-day
+            // window; the rollover cron resets both every 30 days.
+            cycleStartAt: serverTimestamp(),
+            cycleReferrals: 0,
             eventsListed: 0,
             ...(additionalData.referralCode ? { referredBy: additionalData.referralCode.toUpperCase() } : {}),
           };
@@ -241,6 +273,11 @@ export function AuthProvider({ children }) {
 
           if (!existingData.hasOwnProperty('totalCredits')) updates.totalCredits = 0;
           if (!existingData.hasOwnProperty('totalReferrals')) updates.totalReferrals = 0;
+          // ✅ NEW — backfill for accounts created before cycle tracking
+          // existed. Without this, any pre-existing ambassador would have
+          // no cycleStartAt for the rollover cron to read.
+          if (!existingData.hasOwnProperty('cycleReferrals')) updates.cycleReferrals = 0;
+          if (!existingData.hasOwnProperty('cycleStartAt')) updates.cycleStartAt = serverTimestamp();
           if (!existingData.hasOwnProperty('eventsListed')) updates.eventsListed = 0;
           if (!existingData.hasOwnProperty('creditsHistory')) updates.creditsHistory = [];
           if (!existingData.hasOwnProperty('isAmbassador')) updates.isAmbassador = false;
