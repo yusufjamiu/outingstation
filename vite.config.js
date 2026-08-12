@@ -22,18 +22,26 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes('node_modules')) return;
 
-          if (id.includes('firebase')) return 'vendor-firebase';
-          if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('canvg')) {
-            return 'vendor-pdf';
-          }
-          if (id.includes('react-router')) return 'vendor-router';
-          if (id.includes('recharts') || id.includes('chart.js') || id.includes('d3')) {
-            return 'vendor-charts';
-          }
-          if (id.includes('lucide-react') || id.includes('react-icons')) {
-            return 'vendor-icons';
-          }
-          if (id.includes('react-dom') || id.includes('/react/')) return 'vendor-react';
+          // ✅ FIXED — was matching on loose substrings like
+          // id.includes('/react/'), which also matched unrelated
+          // packages that happen to have "/react/" somewhere in their
+          // internal file path. That put files claimed by two different
+          // chunk rules, and those chunks ended up importing from each
+          // other (the "Circular chunk: vendor -> vendor-react ->
+          // vendor" warning). Extracting the actual top-level package
+          // name and matching on that exactly avoids the overlap.
+          const afterNodeModules = id.split('node_modules/').pop();
+          const segments = afterNodeModules.split('/');
+          const pkg = segments[0].startsWith('@')
+            ? `${segments[0]}/${segments[1]}`
+            : segments[0];
+
+          if (pkg === 'firebase' || pkg.startsWith('@firebase')) return 'vendor-firebase';
+          if (['jspdf', 'html2canvas', 'canvg'].includes(pkg)) return 'vendor-pdf';
+          if (pkg.startsWith('react-router')) return 'vendor-router';
+          if (pkg === 'recharts' || pkg === 'chart.js' || pkg === 'd3') return 'vendor-charts';
+          if (pkg === 'lucide-react' || pkg.startsWith('react-icons')) return 'vendor-icons';
+          if (pkg === 'react' || pkg === 'react-dom' || pkg === 'scheduler') return 'vendor-react';
 
           // Everything else in node_modules — smaller, shared utility
           // libs — grouped into one general vendor chunk.
