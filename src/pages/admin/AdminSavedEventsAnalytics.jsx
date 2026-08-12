@@ -212,6 +212,10 @@ export default function AdminSavedEventsAnalytics() {
   };
 
   // Send email reminder to all users who saved this event
+  // ✅ CHANGED — send-bulk-reminder.js was merged into send-notification.js
+  // (Vercel's Hobby plan caps deployments at 12 serverless functions; this
+  // project had 14). Same request body as before, just a different URL
+  // plus a `type` field.
   const sendEmailReminder = async (event) => {
     if (!confirm(`Send email reminder to ${event.users.length} users who saved "${event.eventTitle}"?`)) {
       return;
@@ -220,10 +224,11 @@ export default function AdminSavedEventsAnalytics() {
     const loadingToast = toast.loading(`📧 Sending emails to ${event.users.length} users...`);
 
     try {
-      const response = await fetch('/api/send-bulk-reminder', {
+      const response = await fetch('/api/send-notification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          type: 'bulk-reminder',
           eventId: event.eventId,
           eventTitle: event.eventTitle,
           eventDate: formatDate(event.eventDate),
@@ -235,7 +240,7 @@ export default function AdminSavedEventsAnalytics() {
       // Check if response is valid JSON
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('API returned invalid response. Make sure /api/send-bulk-reminder.js is deployed.');
+        throw new Error('API returned invalid response. Make sure /api/send-notification.js is deployed.');
       }
 
       const result = await response.json();

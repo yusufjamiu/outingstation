@@ -237,11 +237,16 @@ export default function AdminAmbassadorApplications() {
       }
 
       // Send approval email
+      // ✅ CHANGED — send-ambassador-approval-email.js was merged into
+      // send-notification.js (Vercel's Hobby plan caps deployments at 12
+      // serverless functions; this project had 14). Same request body as
+      // before, just a different URL plus a `type` field.
       try {
-        await fetch('/api/send-ambassador-approval-email', {
+        await fetch('/api/send-notification', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            type: 'ambassador-approval',
             name: app.fullName,
             email: app.email,
             ambassadorType: app.ambassadorType,
