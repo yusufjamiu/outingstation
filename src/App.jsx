@@ -46,6 +46,7 @@ const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const RestaurantsPage = lazy(() => import('./pages/RestaurantsPage'));
 const OpportunitiesPage = lazy(() => import('./pages/OpportunitiesPage'));
 const ResortsPage = lazy(() => import('./pages/ResortsPage'));
+const ShortletsPage = lazy(() => import('./pages/ShortletsPage')); // ✅ NEW
 const RentARidePage = lazy(() => import('./pages/RentARidePage'));
 const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
 const MarketplaceCategoryPage = lazy(() => import('./pages/MarketplaceCategoryPage'));
@@ -182,6 +183,7 @@ function App() {
                 <Route path="/restaurants" element={<RestaurantsPage />} />
                 <Route path="/opportunities" element={<OpportunitiesPage />} />
                 <Route path="/resorts" element={<ResortsPage />} />
+                <Route path="/shortlets" element={<ShortletsPage />} /> {/* ✅ NEW */}
                 <Route path="/rent-a-ride" element={<RentARidePage />} />
                 <Route path="/marketplace" element={<MarketplacePage />} />
                 <Route path="/marketplace/:slug" element={<MarketplaceCategoryPage />} />

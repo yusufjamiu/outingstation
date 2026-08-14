@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Menu, X, LogOut, ChevronDown,
   CalendarDays, MapPin, Building2, GraduationCap, Briefcase,
-  UtensilsCrossed, Palmtree, Sparkles, Rocket, Car,
+  UtensilsCrossed, Palmtree, Sparkles, Rocket, Car, Home,
   Cake, Heart, Award, Church, Landmark, Mic2, PartyPopper, BookOpen,
   Compass, Store, ListPlus, Handshake, LayoutDashboard,
 } from 'lucide-react';
@@ -27,6 +27,7 @@ const DISCOVER_ITEMS = [
   { icon: Building2,      label: 'Event Halls',    to: '/halls',          live: true  },
   { icon: UtensilsCrossed,label: 'Restaurants',    to: '/restaurants',    live: true  },
   { icon: Palmtree,       label: 'Resorts',        to: '/resorts',        live: true  },
+  { icon: Home,           label: 'Shortlets',      to: '/shortlets',      live: true  }, // ✅ NEW
   { icon: Car,          label: 'Rent a Ride',    to: '/rent-a-ride',    live: true  },
   { icon: Store,          label: 'Marketplace',    to: '/marketplace',    live: true  },
   { icon: Briefcase,      label: 'Opportunities',  to: '/opportunities',  live: false },
