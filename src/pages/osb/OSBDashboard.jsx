@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PaystackButton } from 'react-paystack';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import OSBSidebar from '../../components/OSBSidebar';
@@ -55,6 +55,36 @@ const EVENT_VENDOR_NAV = [
   { key: 'verification', label: 'Verification', icon: BadgeCheck },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
+
+// ✅ NEW — Shortlet is registered as businessCategory: 'Service Provider'
+// (same as DJ/Caterer), so without its own nav it would silently fall
+// into SERVICE_PROVIDER_NAV — Requests/Open Offers/My Quotes, a
+// marketplace-quote flow that makes no sense for a shortlet agency.
+// "My Listings" replaces that with the actual job: adding and managing
+// individual properties. Verification/Settings are unchanged from the
+// generic business-level sections already built for every business type.
+const SHORTLET_NAV = [
+  { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { key: 'listings', label: 'My Listings', icon: MapPin },
+  { key: 'verification', label: 'Verification', icon: FileCheck },
+  { key: 'settings', label: 'Settings', icon: Settings },
+];
+
+// ✅ NEW — fixed checklist, matching osb_shortlet_manage_screen.dart on
+// mobile exactly, so a listing added on one platform shows identical
+// amenities on the other.
+const SHORTLET_AMENITIES = [
+  'Kitchen', 'Washing Machine', 'WiFi', 'AC', 'Generator', 'Pool',
+  'Parking', 'TV / Netflix', 'Security', 'Water Heater', 'Pet Friendly', 'Workspace',
+];
+
+const EMPTY_LISTING_FORM = {
+  title: '', description: '', images: [],
+  priceType: 'night', price: '', minHours: '',
+  bedrooms: '', bathrooms: '', maxGuests: '',
+  amenities: [], city: '', customCity: '', area: '',
+  mapsLink: '', whatsappNumber: '', available: true,
+};
 
 const uploadToCloudinary = async (file, folder, onProgress) => {
   const data = new FormData();
@@ -113,6 +143,41 @@ function ImageUploadSlot({ imageUrl, onUploaded, folder }) {
       {uploading ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-500" /> : <Upload size={16} className="text-gray-400" />}
       <input type="file" accept="image/*" onChange={handleFile} disabled={uploading} className="sr-only" />
     </label>
+  );
+}
+
+// ✅ NEW — multi-image uploader for Shortlet listing galleries.
+// ImageUploadSlot above only replaces a single image; a listing needs
+// several photos, so this appends to an array instead and renders one
+// removable thumbnail per image plus a trailing add-slot.
+function GalleryUploadRow({ images, onChange, folder }) {
+  const [uploading, setUploading] = useState(false);
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    setUploading(true);
+    try {
+      const compressed = await compressImage(file, 1000, 0.85);
+      const url = await uploadToCloudinary(compressed, folder, () => {});
+      onChange([...images, url]);
+    } catch (err) { console.error(err); }
+    setUploading(false);
+    e.target.value = '';
+  };
+  return (
+    <div className="flex flex-wrap gap-2">
+      {images.map((url, i) => (
+        <div key={i} className="relative">
+          <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200" />
+          <button type="button" onClick={() => onChange(images.filter((_, idx) => idx !== i))}
+            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
+        </div>
+      ))}
+      <label className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center cursor-pointer hover:border-cyan-400 transition flex-shrink-0">
+        {uploading ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-500" /> : <Upload size={16} className="text-gray-400" />}
+        <input type="file" accept="image/*" onChange={handleFile} disabled={uploading} className="sr-only" />
+      </label>
+    </div>
   );
 }
 
@@ -189,6 +254,14 @@ export default function OSBDashboard() {
 
   const [settingsForm, setSettingsForm] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
+
+  // ✅ NEW — Shortlet "My Listings"
+  const [shortletListings, setShortletListings] = useState([]);
+  const [loadingListings, setLoadingListings] = useState(false);
+  const [listingModalOpen, setListingModalOpen] = useState(false);
+  const [editingListingId, setEditingListingId] = useState(null);
+  const [listingForm, setListingForm] = useState(EMPTY_LISTING_FORM);
+  const [savingListing, setSavingListing] = useState(false);
 
   useEffect(() => {
     if (!currentUser) { navigate('/login'); return; }
@@ -267,17 +340,29 @@ export default function OSBDashboard() {
   const selectedBusiness = businesses.find(b => b.id === selectedId);
   const isServiceProvider = selectedBusiness?.businessCategory === 'Service Provider' ||
     (!selectedBusiness?.businessCategory && SERVICE_PROVIDER_TYPE_VALUES.includes(selectedBusiness?.businessType));
+  // ✅ NEW — Shortlet carries businessCategory: 'Service Provider' too, so
+  // it needs its own check ahead of the generic marketplace nav/loaders.
+  const isShortletAgency = selectedBusiness?.businessType === 'Shortlet';
   const isEventVendor = selectedBusiness && !isServiceProvider;
   const isHourly = selectedBusiness && HOURLY_TYPES.includes(selectedBusiness.businessType);
-  const NAV_ITEMS = isServiceProvider ? SERVICE_PROVIDER_NAV : EVENT_VENDOR_NAV;
+  const NAV_ITEMS = isShortletAgency ? SHORTLET_NAV : isServiceProvider ? SERVICE_PROVIDER_NAV : EVENT_VENDOR_NAV;
 
   useEffect(() => {
-    if (selectedBusiness && selectedBusiness.status === 'approved' && isServiceProvider) {
+    if (selectedBusiness && selectedBusiness.status === 'approved' && isServiceProvider && !isShortletAgency) {
       loadDirectRequests(selectedBusiness);
       loadOpenOffers(selectedBusiness);
       loadMyQuotes(selectedBusiness);
     } else {
       setDirectRequests([]); setOpenOffers([]); setMyQuotes([]);
+    }
+    // ✅ NEW — listings load whenever the selected business is a Shortlet
+    // agency, independent of the approval-gated loaders above (an owner
+    // can start adding listings the moment they're approved, same as
+    // every other business type gets to use its own dashboard).
+    if (selectedBusiness && selectedBusiness.status === 'approved' && isShortletAgency) {
+      loadShortletListings(selectedBusiness);
+    } else {
+      setShortletListings([]);
     }
   }, [selectedId, businesses]);
 
@@ -371,6 +456,121 @@ export default function OSBDashboard() {
       console.error(err);
     }
     setLoadingQuotes(false);
+  };
+
+  // ─── Shortlet "My Listings" ─────────────────────────────────────────
+  // Listings live in a top-level `shortlets` collection (one doc per
+  // property), keyed by agencyId back to this business doc — not a field
+  // on the business itself. Mirrors osb_shortlet_manage_screen.dart on
+  // mobile: agency approved once, then adds unlimited listings, each
+  // going live instantly (no per-property admin approval).
+  const loadShortletListings = async (business) => {
+    setLoadingListings(true);
+    try {
+      const snap = await getDocs(query(collection(db, 'shortlets'), where('agencyId', '==', business.id)));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setShortletListings(list);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoadingListings(false);
+  };
+
+  const openAddListing = () => {
+    setEditingListingId(null);
+    setListingForm(EMPTY_LISTING_FORM);
+    setListingModalOpen(true);
+  };
+
+  const openEditListing = (listing) => {
+    setEditingListingId(listing.id);
+    const knownCity = NIGERIAN_STATES.includes(listing.city);
+    setListingForm({
+      title: listing.title || '', description: listing.description || '', images: listing.images || [],
+      priceType: listing.priceType || 'night', price: listing.price ?? '', minHours: listing.minHours ?? '',
+      bedrooms: listing.bedrooms ?? '', bathrooms: listing.bathrooms ?? '', maxGuests: listing.maxGuests ?? '',
+      amenities: listing.amenities || [],
+      city: knownCity ? listing.city : (listing.city ? 'Others' : ''),
+      customCity: knownCity ? '' : (listing.city || ''),
+      area: listing.area || '', mapsLink: listing.mapsLink || '',
+      whatsappNumber: listing.whatsappNumber || '', available: listing.available !== false,
+    });
+    setListingModalOpen(true);
+  };
+
+  const closeListingModal = () => { setListingModalOpen(false); setEditingListingId(null); };
+
+  const toggleListingAmenity = (a) => {
+    setListingForm(p => ({
+      ...p,
+      amenities: p.amenities.includes(a) ? p.amenities.filter(x => x !== a) : [...p.amenities, a],
+    }));
+  };
+
+  const listingFormValid = listingForm.title.trim() && listingForm.description.trim().length >= 20 &&
+    listingForm.price !== '' && listingForm.city && listingForm.whatsappNumber.trim() && listingForm.images.length >= 2;
+
+  const saveListing = async () => {
+    if (!selectedBusiness || !listingFormValid) return;
+    setSavingListing(true);
+    try {
+      const resolvedCity = listingForm.city === 'Others' ? (listingForm.customCity || '').trim() : listingForm.city;
+      const payload = {
+        agencyId: selectedBusiness.id,
+        agencyName: selectedBusiness.businessName,
+        ownerId: currentUser.uid,
+        title: listingForm.title.trim(),
+        description: listingForm.description.trim(),
+        images: listingForm.images,
+        priceType: listingForm.priceType,
+        price: Number(listingForm.price) || 0,
+        minHours: listingForm.priceType === 'hour' && listingForm.minHours ? Number(listingForm.minHours) : null,
+        bedrooms: listingForm.bedrooms !== '' ? Number(listingForm.bedrooms) : null,
+        bathrooms: listingForm.bathrooms !== '' ? Number(listingForm.bathrooms) : null,
+        maxGuests: listingForm.maxGuests !== '' ? Number(listingForm.maxGuests) : null,
+        amenities: listingForm.amenities,
+        city: resolvedCity,
+        area: listingForm.area.trim() || null,
+        mapsLink: listingForm.mapsLink.trim() || null,
+        whatsappNumber: listingForm.whatsappNumber.trim(),
+        available: listingForm.available,
+      };
+
+      if (editingListingId) {
+        await updateDoc(doc(db, 'shortlets', editingListingId), payload);
+        setShortletListings(prev => prev.map(l => l.id === editingListingId ? { ...l, ...payload } : l));
+      } else {
+        const docRef = await addDoc(collection(db, 'shortlets'), { ...payload, createdAt: serverTimestamp() });
+        setShortletListings(prev => [{ id: docRef.id, ...payload }, ...prev]);
+      }
+      closeListingModal();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to save listing. Please try again.');
+    }
+    setSavingListing(false);
+  };
+
+  const toggleListingAvailable = async (listing) => {
+    const newValue = !(listing.available !== false);
+    try {
+      await updateDoc(doc(db, 'shortlets', listing.id), { available: newValue });
+      setShortletListings(prev => prev.map(l => l.id === listing.id ? { ...l, available: newValue } : l));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const deleteListing = async (listing) => {
+    if (!window.confirm(`Delete "${listing.title}"? This can't be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, 'shortlets', listing.id));
+      setShortletListings(prev => prev.filter(l => l.id !== listing.id));
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete listing. Please try again.');
+    }
   };
 
   useEffect(() => {
@@ -563,7 +763,13 @@ export default function OSBDashboard() {
               {activeSection === 'overview' && (
                 <div className="space-y-4">
                   <h2 className="text-xl font-black text-gray-900">{selectedBusiness?.businessName} — Overview</h2>
-                  {isServiceProvider ? (
+                  {isShortletAgency ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      <StatCard label="Listings" value={shortletListings.length} icon={MapPin} />
+                      <StatCard label="Available Now" value={shortletListings.filter(l => l.available !== false).length} icon={CheckCircle2} />
+                      <StatCard label="Hidden" value={shortletListings.filter(l => l.available === false).length} icon={Clock} />
+                    </div>
+                  ) : isServiceProvider ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                       <StatCard label="Pricing Packages" value={isHourly ? hourlyPackages.length : pricingTiers.length} icon={Tag} />
                       <StatCard label="Pending Requests" value={directRequests.filter(r => r.status === 'pending').length} icon={Inbox} />
@@ -575,6 +781,65 @@ export default function OSBDashboard() {
                       <StatCard label="Events With Stands" value={standEvents.length} icon={Tent} />
                       <StatCard label="Applications" value={myApplications.length} icon={FileCheck} />
                       <StatCard label="Active Stands" value={myApplications.filter(a => a.organizerApprovalStatus === 'approved' && a.paymentStatus === 'paid').length} icon={CheckCircle2} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeSection === 'listings' && isShortletAgency && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-gray-800 text-lg">My Listings</h3>
+                    <button onClick={openAddListing}
+                      className="flex items-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white px-4 py-2.5 rounded-2xl font-bold text-sm hover:from-cyan-700 hover:to-blue-700 transition">
+                      <Plus size={16} /> Add Listing
+                    </button>
+                  </div>
+
+                  {loadingListings ? (
+                    <p className="text-sm text-gray-400">Loading...</p>
+                  ) : shortletListings.length === 0 ? (
+                    <div className="bg-white rounded-3xl border-2 border-gray-100 p-10 text-center">
+                      <div className="w-14 h-14 bg-cyan-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <MapPin size={22} className="text-cyan-400" />
+                      </div>
+                      <h4 className="font-bold text-gray-800 mb-1">No listings yet</h4>
+                      <p className="text-sm text-gray-400">Add your first shortlet property to start getting bookings.</p>
+                    </div>
+                  ) : (
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      {shortletListings.map(listing => {
+                        const available = listing.available !== false;
+                        const priceSuffix = listing.priceType === 'hour' ? '/hour' : listing.priceType === 'day' ? '/day' : '/night';
+                        return (
+                          <div key={listing.id} className="bg-white rounded-2xl border-2 border-gray-100 overflow-hidden">
+                            <div className="flex gap-3 p-3">
+                              <img
+                                src={(listing.images || [])[0] || 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=200&h=200&fit=crop'}
+                                alt={listing.title}
+                                className="w-20 h-20 rounded-xl object-cover flex-shrink-0"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-gray-900 text-sm truncate">{listing.title}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">₦{Number(listing.price || 0).toLocaleString()}{priceSuffix} · {listing.city}</p>
+                                <button onClick={() => toggleListingAvailable(listing)}
+                                  className={`mt-2 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
+                                    available ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                                  }`}>
+                                  {available ? <CheckCircle2 size={11} /> : <ClockIcon size={11} />}
+                                  {available ? 'Available' : 'Hidden'}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex border-t border-gray-100">
+                              <button onClick={() => openEditListing(listing)}
+                                className="flex-1 py-2.5 text-xs font-bold text-cyan-600 hover:bg-cyan-50 transition">Edit</button>
+                              <button onClick={() => deleteListing(listing)}
+                                className="flex-1 py-2.5 text-xs font-bold text-red-500 hover:bg-red-50 transition border-l border-gray-100">Delete</button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1010,6 +1275,145 @@ export default function OSBDashboard() {
           )}
         </div>
       </div>
+
+      {/* ✅ NEW — Add/Edit Shortlet Listing modal */}
+      {listingModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeListingModal}>
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-black text-lg text-gray-900">{editingListingId ? 'Edit Listing' : 'New Listing'}</h3>
+              <button onClick={closeListingModal} className="p-2 hover:bg-gray-100 rounded-full">
+                <XCircle size={20} className="text-gray-400" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Property Name *</label>
+                <input type="text" value={listingForm.title} onChange={e => setListingForm(p => ({ ...p, title: e.target.value }))}
+                  placeholder="e.g. Cozy 2BR in Lekki Phase 1" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Photos (min. 2) *</label>
+                <GalleryUploadRow images={listingForm.images} onChange={imgs => setListingForm(p => ({ ...p, images: imgs }))} folder="shortlets" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Description *</label>
+                <textarea rows={3} value={listingForm.description} onChange={e => setListingForm(p => ({ ...p, description: e.target.value }))}
+                  placeholder="What makes this property stand out?" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none" />
+                <p className="text-xs text-gray-400 mt-1">{listingForm.description.length} / 20 characters minimum</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">How is this property priced? *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[['night', 'Per Night'], ['hour', 'Per Hour'], ['day', 'Per Day']].map(([value, label]) => (
+                    <button key={value} type="button" onClick={() => setListingForm(p => ({ ...p, priceType: value }))}
+                      className={`py-2.5 rounded-xl text-sm font-bold border-2 transition ${
+                        listingForm.priceType === value ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-500'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Price (₦) *</label>
+                  <input type="number" value={listingForm.price} onChange={e => setListingForm(p => ({ ...p, price: e.target.value }))}
+                    placeholder="35000" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                {listingForm.priceType === 'hour' && (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-1">Min. hours</label>
+                    <input type="number" value={listingForm.minHours} onChange={e => setListingForm(p => ({ ...p, minHours: e.target.value }))}
+                      placeholder="2" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Bedrooms</label>
+                  <input type="number" value={listingForm.bedrooms} onChange={e => setListingForm(p => ({ ...p, bedrooms: e.target.value }))}
+                    placeholder="2" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Bathrooms</label>
+                  <input type="number" value={listingForm.bathrooms} onChange={e => setListingForm(p => ({ ...p, bathrooms: e.target.value }))}
+                    placeholder="2" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Max guests</label>
+                  <input type="number" value={listingForm.maxGuests} onChange={e => setListingForm(p => ({ ...p, maxGuests: e.target.value }))}
+                    placeholder="4" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-2">Amenities</label>
+                <div className="flex flex-wrap gap-2">
+                  {SHORTLET_AMENITIES.map(a => (
+                    <button key={a} type="button" onClick={() => toggleListingAmenity(a)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition ${
+                        listingForm.amenities.includes(a) ? 'border-cyan-500 bg-cyan-500 text-white' : 'border-gray-200 text-gray-600'
+                      }`}>
+                      {a}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">State *</label>
+                <select value={listingForm.city} onChange={e => setListingForm(p => ({ ...p, city: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  <option value="">Select a state</option>
+                  {NIGERIAN_STATES.map(s => <option key={s}>{s}</option>)}
+                </select>
+                {listingForm.city === 'Others' && (
+                  <input type="text" value={listingForm.customCity} onChange={e => setListingForm(p => ({ ...p, customCity: e.target.value }))}
+                    placeholder="Enter your state" className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Area</label>
+                <input type="text" value={listingForm.area} onChange={e => setListingForm(p => ({ ...p, area: e.target.value }))}
+                  placeholder="e.g. Lekki Phase 1" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">WhatsApp Number *</label>
+                <input type="tel" value={listingForm.whatsappNumber} onChange={e => setListingForm(p => ({ ...p, whatsappNumber: e.target.value }))}
+                  placeholder="+234 800 000 0000" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <p className="text-xs text-gray-400 mt-1">Guests will reach you here to book</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Google Maps Link</label>
+                <input type="url" value={listingForm.mapsLink} onChange={e => setListingForm(p => ({ ...p, mapsLink: e.target.value }))}
+                  placeholder="https://maps.google.com/..." className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={listingForm.available} onChange={e => setListingForm(p => ({ ...p, available: e.target.checked }))}
+                  className="w-4 h-4 accent-cyan-500" />
+                <span className="text-sm font-bold text-gray-800">Available for booking</span>
+              </label>
+              <p className="text-xs text-gray-400 -mt-3">Turn off to hide this listing without deleting it — e.g. fully booked for a while.</p>
+
+              <button onClick={saveListing} disabled={!listingFormValid || savingListing}
+                className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3.5 rounded-2xl font-black hover:from-cyan-700 hover:to-blue-700 transition disabled:opacity-50">
+                {savingListing ? 'Saving...' : (editingListingId ? 'Save Changes' : 'Publish Listing')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

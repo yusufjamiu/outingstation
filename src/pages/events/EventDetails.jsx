@@ -1008,15 +1008,30 @@ const handleRegister = (event, currentUser, navigate) => {
   toast.dismiss();
 
   if (event.subCategory === 'places') {
+    // ✅ NEW — Shortlets are booked by messaging the agency directly, not
+    // by "visiting the location" like a restaurant or hall — different
+    // copy and a WhatsApp button instead of (or alongside) View Map.
+    const isShortlet = event.category === 'Shortlet';
+    const whatsappHref = event.organizerPhone
+      ? `https://wa.me/${event.organizerPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi, I'm interested in "${event.title}" on OutingStation.`)}`
+      : null;
     toast((t) => (
       <div className="flex flex-col gap-3">
         <div>
-          <p className="font-semibold">📍 Visit Place</p>
+          <p className="font-semibold">{isShortlet ? '🏡 Book This Shortlet' : '📍 Visit Place'}</p>
           <p className="text-sm text-gray-600 mt-1">
-            This is a permanent place. Visit the location to purchase tickets or pay entry fees if applicable.
+            {isShortlet
+              ? 'Message the host on WhatsApp to check availability and book.'
+              : 'This is a permanent place. Visit the location to purchase tickets or pay entry fees if applicable.'}
           </p>
         </div>
         <div className="flex gap-2">
+          {isShortlet && whatsappHref && (
+            <a href={whatsappHref} target="_blank" rel="noopener noreferrer" onClick={() => toast.dismiss(t.id)}
+              className="flex-1 text-center px-4 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600">
+              Message on WhatsApp
+            </a>
+          )}
           {event.mapLocation && (
             <button onClick={() => { openInMaps(event); toast.dismiss(t.id); }}
               className="flex-1 px-4 py-2 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600">
@@ -1029,7 +1044,7 @@ const handleRegister = (event, currentUser, navigate) => {
           </button>
         </div>
       </div>
-    ), { duration: Infinity, icon: '🏪', id: 'place-info' });
+    ), { duration: Infinity, icon: isShortlet ? '🏡' : '🏪', id: 'place-info' });
     return;
   }
 
@@ -1226,27 +1241,71 @@ export default function EventDetails() {
           // businesses in, so this page can render it identically to a
           // real event/place.
           const bizDoc = await getDoc(doc(db, 'businesses', id));
-          if (!bizDoc.exists()) { navigate('/events'); return; }
-          const biz = bizDoc.data();
-          const packageImages = [...new Set(
-            (biz.pricingTiers || []).map(t => t.image).filter(img => img)
-          )];
-          eventData = {
-            id: bizDoc.id,
-            title: biz.businessName,
-            description: biz.description || '',
-            category: biz.businessType,
-            subCategory: 'places',
-            location: biz.city || '',
-            organizerPhone: biz.whatsappNumber,
-            isFree: true,
-            imageUrl: biz.logoUrl,
-            images: packageImages,
-            status: 'published',
-            openingTime: biz.openingTime || null,
-            closingTime: biz.closingTime || null,
-            openingDays: biz.openingDays || [],
-          };
+          if (bizDoc.exists()) {
+            const biz = bizDoc.data();
+            const packageImages = [...new Set(
+              (biz.pricingTiers || []).map(t => t.image).filter(img => img)
+            )];
+            // ✅ FIXED — was hardcoded `isFree: true` with no price or
+            // mapsLink copied over at all, regardless of what the owner
+            // actually set in OSBPlaceManageScreen/registration. Every
+            // business-sourced place shown through this fallback was
+            // silently wrong about pricing and missing its map link.
+            eventData = {
+              id: bizDoc.id,
+              title: biz.businessName,
+              description: biz.description || '',
+              category: biz.businessType,
+              subCategory: 'places',
+              location: biz.city || '',
+              organizerPhone: biz.whatsappNumber,
+              mapLocation: biz.mapsLink || null, // ✅ FIXED — was never copied
+              isFree: biz.isFree !== false, // ✅ FIXED — was hardcoded true
+              price: biz.isFree === false ? (biz.price || null) : null, // ✅ FIXED — was never set
+              imageUrl: biz.logoUrl,
+              images: packageImages,
+              status: 'published',
+              openingTime: biz.openingTime || null,
+              closingTime: biz.closingTime || null,
+              openingDays: biz.openingDays || [],
+            };
+          } else {
+            // ✅ NEW — Shortlet listings live in their own top-level
+            // `shortlets` collection (one doc per property, owned by an
+            // agency via `agencyId`), not as businessType: 'Shortlet'
+            // business docs — so they have a completely separate ID
+            // space from both `events` and `businesses`. Without this,
+            // every shortlet link 404'd (silently redirected to /events).
+            const shortletDoc = await getDoc(doc(db, 'shortlets', id));
+            if (!shortletDoc.exists()) { navigate('/events'); return; }
+            const listing = shortletDoc.data();
+            const priceType = listing.priceType || 'night';
+            const priceSuffix = priceType === 'hour' ? '/hour' : priceType === 'day' ? '/day' : '/night';
+            const statsLine = [
+              listing.bedrooms != null ? `${listing.bedrooms} bed${listing.bedrooms === 1 ? '' : 's'}` : null,
+              listing.bathrooms != null ? `${listing.bathrooms} bath${listing.bathrooms === 1 ? '' : 's'}` : null,
+              listing.maxGuests != null ? `up to ${listing.maxGuests} guests` : null,
+              priceType === 'hour' && listing.minHours ? `min. ${listing.minHours}hrs` : null,
+              (listing.amenities || []).length > 0 ? listing.amenities.join(' · ') : null,
+            ].filter(Boolean).join(' · ');
+            eventData = {
+              id: shortletDoc.id,
+              title: listing.title,
+              description: [statsLine, listing.description].filter(Boolean).join('\n\n'),
+              category: 'Shortlet',
+              subCategory: 'places',
+              location: [listing.area, listing.city].filter(Boolean).join(', '),
+              organizerName: listing.agencyName,
+              organizerPhone: listing.whatsappNumber,
+              mapLocation: listing.mapsLink || null,
+              isFree: false,
+              price: listing.price || null,
+              priceSuffix, // ✅ NEW — this file's own price field, not borrowed from Event.dart, so no workaround needed
+              imageUrl: (listing.images || [])[0] || null,
+              images: listing.images || [],
+              status: 'published',
+            };
+          }
         }
       } else if (slug) {
         const q = query(collection(db, 'events'), where('slug', '==', slug));
@@ -1689,7 +1748,10 @@ export default function EventDetails() {
                           ) : event.isFree ? (
                             <span className="text-emerald-600 font-semibold">Free</span>
                           ) : (
-                            <span className="font-semibold">₦{event.price?.toLocaleString() || 'Contact Organizer'}</span>
+                            <span className="font-semibold">
+                              ₦{event.price?.toLocaleString() || 'Contact Organizer'}
+                              {event.priceSuffix || ''}
+                            </span>
                           )}
                         </p>
                       )}
@@ -1708,7 +1770,7 @@ export default function EventDetails() {
                       ? 'Register'
                       : hasOutingStationTicketing
                       ? (hasTiers ? 'Select Ticket' : 'Buy Tickets')
-                      : isPlace ? 'Get Info'
+                      : isPlace ? (event.category === 'Shortlet' ? 'Book Now' : 'Get Info')
                       : (event.isFree ? 'Register' : 'Buy Tickets')}
                   </button>
 

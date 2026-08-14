@@ -11,11 +11,19 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 const CITIES = ['All Cities', 'Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
-// Shortlets are always paid per night, so a Free/Paid filter (like
-// RestaurantsPage.jsx uses) doesn't apply — Guests is the real filter
-// people actually want here.
 const GUEST_OPTIONS = ['Any', '1-2', '3-4', '5+'];
 const SHORTLETS_PER_PAGE = 12;
+
+// ✅ CHANGED — listings now live in their own `shortlets` collection
+// (one doc per property, owned by an agency via `agencyId`), not as
+// businessType: 'Shortlet' business docs. An agency (e.g. Success Homes)
+// registers once through OSB, gets approved once, then adds as many
+// individual property listings as they want from their dashboard.
+function priceSuffix(type) {
+  if (type === 'hour') return '/hour';
+  if (type === 'day') return '/day';
+  return '/night';
+}
 
 const SkeletonCard = () => (
   <div className="bg-white rounded-2xl overflow-hidden shadow-sm animate-pulse">
@@ -73,36 +81,28 @@ export default function ShortletsPage() {
 
   const loadShortlets = async () => {
     try {
-      // Shortlet only ever exists as a businessType on `businesses` — no
-      // legacy `events`-collection form the way Restaurant/Resort have
-      // (those predate OSB; Shortlet was added straight into the OSB
-      // "List a Place" wizard).
-      const bizSnap = await getDocs(
-        query(collection(db, 'businesses'), where('businessType', '==', 'Shortlet'), where('status', '==', 'approved'))
+      const snap = await getDocs(
+        query(collection(db, 'shortlets'), where('available', '==', true))
       );
-      const all = bizSnap.docs.map(d => {
-        const biz = d.data();
-        const gallery = biz.galleryImages || [];
-        const images = [...new Set([biz.logoUrl, ...gallery].filter(Boolean))];
-        const area = (biz.area || '').trim();
-        const cityName = (biz.city || '').trim();
-        const location = area && cityName ? `${area}, ${cityName}` : (cityName || '');
+      const all = snap.docs.map(d => {
+        const l = d.data();
         return {
           id: d.id,
-          title: biz.businessName,
-          description: biz.description || '',
-          category: 'Shortlet',
-          subCategory: 'places',
-          location,
-          city: cityName,
-          whatsappNumber: biz.whatsappNumber,
-          imageUrl: biz.logoUrl,
-          images,
-          status: 'published',
-          pricePerNight: biz.pricePerNight || 0,
-          maxGuests: biz.maxGuests,
-          bedrooms: biz.bedrooms,
-          bathrooms: biz.bathrooms,
+          title: l.title,
+          description: l.description || '',
+          location: [l.area, l.city].filter(Boolean).join(', '),
+          city: l.city || '',
+          whatsappNumber: l.whatsappNumber,
+          mapsLink: l.mapsLink || '',
+          images: l.images || [],
+          agencyName: l.agencyName || '',
+          priceType: l.priceType || 'night',
+          price: l.price || 0,
+          minHours: l.minHours,
+          maxGuests: l.maxGuests,
+          bedrooms: l.bedrooms,
+          bathrooms: l.bathrooms,
+          amenities: l.amenities || [],
         };
       }).sort((a, b) => (a.title || '').localeCompare(b.title || ''));
       setShortlets(all);
@@ -136,7 +136,8 @@ export default function ShortletsPage() {
       const q = search.toLowerCase();
       result = result.filter(s =>
         s.title?.toLowerCase().includes(q) ||
-        s.location?.toLowerCase().includes(q)
+        s.location?.toLowerCase().includes(q) ||
+        s.agencyName?.toLowerCase().includes(q)
       );
     }
     if (city !== 'All Cities') result = result.filter(s => s.city === city || (s.location || '').includes(city));
@@ -169,7 +170,7 @@ export default function ShortletsPage() {
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search shortlets by name or area..."
+                placeholder="Search shortlets by name, area, or agency..."
                 className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-amber-500 transition"
               />
             </div>
@@ -237,7 +238,7 @@ export default function ShortletsPage() {
                     <div className="relative h-48 overflow-hidden flex-shrink-0">
                       <Link to={`/event/${s.id}`}>
                         <img
-                          src={s.imageUrl || 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=400&h=300&fit=crop'}
+                          src={s.images[0] || 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=400&h=300&fit=crop'}
                           alt={s.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
@@ -252,16 +253,19 @@ export default function ShortletsPage() {
                       )}
                       <div className="absolute bottom-3 left-3">
                         <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-white text-gray-800">
-                          ₦{Number(s.pricePerNight || 0).toLocaleString()} /night
+                          ₦{Number(s.price || 0).toLocaleString()}{priceSuffix(s.priceType)}
                         </span>
                       </div>
                     </div>
                     <div className="p-4 flex flex-col flex-1">
                       <Link to={`/event/${s.id}`}>
-                        <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-amber-600 transition">
+                        <h3 className="font-bold text-gray-900 text-sm mb-1 line-clamp-2 hover:text-amber-600 transition">
                           {s.title}
                         </h3>
                       </Link>
+                      {s.agencyName && (
+                        <p className="text-xs text-gray-400 mb-2">by {s.agencyName}</p>
+                      )}
                       <div className="space-y-1.5 mt-auto">
                         {statLine && (
                           <div className="flex items-center gap-1.5 text-xs text-gray-500">

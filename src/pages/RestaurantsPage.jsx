@@ -4,7 +4,7 @@ import { db } from '../firebase';
 import { Link } from 'react-router-dom';
 import {
   Search, SlidersHorizontal, X, MapPin,
-  ChevronLeft, ChevronRight, Heart, Clock, UtensilsCrossed
+  ChevronLeft, ChevronRight, Heart, Clock, UtensilsCrossed, Navigation
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
@@ -50,7 +50,7 @@ const EmptyState = ({ onReset }) => (
   </div>
 );
 
-// ✅ NEW — matches ResortsPage.jsx/CampusPlaces.jsx exactly
+// matches ResortsPage.jsx/CampusPlaces.jsx exactly
 function formatOpeningDays(days) {
   if (!days || days.length === 0) return '';
   const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -89,11 +89,9 @@ export default function RestaurantsPage() {
       const fromEvents = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(e => e.status === 'published' && e.subCategory === 'places' && isRestaurant(e));
 
-      // ✅ NEW — also pull approved Restaurant businesses registered
-      // through OSB's "List a Place" flow, same fix as mobile's
-      // restaurants_screen.dart. Was completely invisible here before —
-      // this page didn't even exist until Restaurant got its own
-      // dedicated screen today.
+      // Also pull approved Restaurant businesses registered through
+      // OSB's "List a Place" flow, same fix as mobile's
+      // restaurants_screen.dart.
       let fromBusinesses = [];
       try {
         const bizSnap = await getDocs(
@@ -101,11 +99,11 @@ export default function RestaurantsPage() {
         );
         fromBusinesses = bizSnap.docs.map(d => {
           const biz = d.data();
-          // ✅ FIXED — package photos never carried over, only logoUrl.
+          // package photos never carried over, only logoUrl.
           const packageImages = [...new Set(
             (biz.pricingTiers || []).map(t => t.image).filter(img => img)
           )];
-          // ✅ FIXED — card reads alwaysOpen/operatingHours (a formatted
+          // card reads alwaysOpen/operatingHours (a formatted
           // string), not openingTime/closingTime/openingDays directly.
           const days = biz.openingDays || [];
           const isAlwaysOpen = days.length === 7;
@@ -121,7 +119,13 @@ export default function RestaurantsPage() {
             subCategory: 'places',
             location: biz.city || '',
             whatsappNumber: biz.whatsappNumber,
-            isFree: true,
+            mapsLink: biz.mapsLink || '', // ✅ NEW
+            // ✅ FIXED — was hardcoded `isFree: true` regardless of what
+            // the owner actually set on OSBPlaceManageScreen/registration.
+            // A restaurant marked "Paid Entry — ₦2000" was showing as
+            // free here no matter what.
+            isFree: biz.isFree !== false,
+            ticketPrice: biz.isFree === false ? (biz.price || 0) : null,
             imageUrl: biz.logoUrl,
             images: packageImages,
             status: 'published',
@@ -298,9 +302,23 @@ export default function RestaurantsPage() {
                           <Clock size={12} className="text-cyan-400 flex-shrink-0" />
                           <span className="line-clamp-1">{hours}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                          <MapPin size={12} className="text-cyan-400 flex-shrink-0" />
-                          <span className="line-clamp-1">{r.address || r.location || r.city || 'Lagos'}</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0">
+                            <MapPin size={12} className="text-cyan-400 flex-shrink-0" />
+                            <span className="line-clamp-1">{r.address || r.location || r.city || 'Lagos'}</span>
+                          </div>
+                          {/* ✅ NEW — only shows when the owner actually set one */}
+                          {r.mapsLink && (
+                            <a
+                              href={r.mapsLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1 text-xs font-semibold text-cyan-600 hover:text-cyan-700 flex-shrink-0"
+                            >
+                              <Navigation size={11} /> Map
+                            </a>
+                          )}
                         </div>
                       </div>
                     </div>
