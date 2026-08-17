@@ -61,6 +61,8 @@ const AboutUs = lazy(() => import('./pages/AboutUs'));
 const HowItWorks = lazy(() => import('./pages/HowItWorks'));
 const SubmitEventPage = lazy(() => import('./pages/SubmitEventPage'));
 const SubmitExperiencePage = lazy(() => import('./pages/SubmitExperiencePage'));
+// ✅ NEW — public browse page for Experiences
+const ExperiencesPage = lazy(() => import('./pages/ExperiencesPage'));
 const NotificationsPage = lazy(() => import('./pages/notifications/NotificationsPage'));
 const VerifyTicket = lazy(() => import('./pages/VerifyTicket'));
 const JoinAmbassador = lazy(() => import('./pages/JoinAmbassador'));
@@ -195,7 +197,15 @@ function App() {
                 <Route path="/plan-event" element={<PlanEventPage />} />
                 <Route path="/my-events" element={<MyEventsPage />} />
                 <Route path="/manage-events" element={<ManageEventsPage />} />
-                <Route path="/business/experience/:experienceId" element={<ManageExperience />} />
+                {/* ✅ FIXED — was /business/experience/:experienceId, a
+                    leftover from before Experience Host stopped being a
+                    business type. ManageExperience.jsx now authorizes via
+                    an unauthenticated manageKey query param (?key=...),
+                    same access model as /manage/:manageKey for events —
+                    not business ownership. Route path updated to match
+                    the actual links AdminExperienceSubmissions.jsx
+                    generates and sends to hosts. */}
+                <Route path="/manage-experience/:experienceId" element={<ManageExperience />} />
                 <Route path="/business" element={<OSBDashboard />} />
                 <Route path="/cookies" element={<CookiePolicy />} />
                 <Route path="/faqs" element={<FAQ />} />
@@ -206,6 +216,9 @@ function App() {
                 <Route path="/create-event" element={<SubmitEventPage />} />
                 <Route path="/create-place" element={<SubmitEventPage />} />
                 <Route path="/create-experience" element={<SubmitExperiencePage />} />
+                {/* ✅ NEW — public browse page, was 404ing before since
+                    no route existed for it at all */}
+                <Route path="/experiences" element={<ExperiencesPage />} />
                 <Route path="/list-vendor" element={<SubmitEventPage />} />
                 <Route path="/manage/:manageKey" element={<ManageEvent />} />
                 <Route path="/verify-ticket/:ticketId" element={<VerifyTicket />} />
