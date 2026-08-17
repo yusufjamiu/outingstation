@@ -1,8 +1,11 @@
-// SubmitExperiencePage.jsx — OSB Experience submission wizard
-// Route this at /create-experience (OSB, requires login — see bottom of file)
+// SubmitExperiencePage.jsx — public Experience submission wizard.
+// Route this at /create-experience. Mirrors SubmitEventPage.jsx exactly:
+// no login and no business/account required to submit — organizer
+// contact info is collected directly in the form (Step 1), and every
+// submission goes to admin for individual review, same as events.
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -340,14 +343,6 @@ export default function SubmitExperiencePage() {
   const [toBring, setToBring] = useState([]);
   const [sessions, setSessions] = useState([]);
 
-  // Experiences belong to an "Experience Host" business, the same way a
-  // Shortlet listing belongs to a Shortlet agency — this links a
-  // submission back to that business (agencyId) so it shows up under
-  // "My Experiences" on the OSB dashboard.
-  const [loadingAgency, setLoadingAgency] = useState(true);
-  const [experienceBusinesses, setExperienceBusinesses] = useState([]);
-  const [selectedAgencyId, setSelectedAgencyId] = useState('');
-
   const [form, setForm] = useState({
     organizerName: userProfile?.name || currentUser?.displayName || '',
     organizerEmail: currentUser?.email || '',
@@ -371,79 +366,6 @@ export default function SubmitExperiencePage() {
     set(name, type === 'checkbox' ? checked : value);
   };
   const scrollTop = () => topRef.current?.scrollIntoView({ behavior: 'smooth' });
-
-  useEffect(() => {
-    if (!currentUser) { setLoadingAgency(false); return; }
-    (async () => {
-      try {
-        const snap = await getDocs(query(
-          collection(db, 'businesses'),
-          where('ownerId', '==', currentUser.uid),
-          where('businessType', '==', 'Experience Host'),
-        ));
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setExperienceBusinesses(list);
-        const approved = list.find(b => b.status === 'approved');
-        if (approved) setSelectedAgencyId(approved.id);
-      } catch (err) {
-        console.error('Error loading Experience Host businesses:', err);
-      }
-      setLoadingAgency(false);
-    })();
-  }, [currentUser]);
-
-  // OSB requires login
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="max-w-sm w-full bg-white rounded-3xl shadow-xl p-8 text-center">
-          <div className="text-4xl mb-3">🔒</div>
-          <h2 className="text-xl font-black text-gray-900 mb-2">Login Required</h2>
-          <p className="text-sm text-gray-500 mb-6">List an experience through OutingStation Business — please log in first.</p>
-          <button onClick={() => navigate('/login')} className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3 rounded-2xl font-bold">Log In</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (loadingAgency) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500" />
-      </div>
-    );
-  }
-
-  const approvedAgency = experienceBusinesses.find(b => b.id === selectedAgencyId);
-  const hasPendingAgency = !approvedAgency && experienceBusinesses.some(b => b.status === 'pending');
-
-  // No "Experience Host" business yet — same gate Shortlet listings sit
-  // behind: register the business first, then come back here to add
-  // sessions. Keeps every experience owned by a business, so it slots
-  // into the OSB dashboard's business-switcher like everything else.
-  if (!approvedAgency) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4 py-16">
-        <div className="max-w-sm w-full bg-white rounded-3xl shadow-xl p-8 text-center">
-          <div className="text-4xl mb-3">✨</div>
-          <h2 className="text-xl font-black text-gray-900 mb-2">
-            {hasPendingAgency ? 'Business Under Review' : 'Register as an Experience Host'}
-          </h2>
-          <p className="text-sm text-gray-500 mb-6">
-            {hasPendingAgency
-              ? "You've registered as an Experience Host — we'll email you once it's approved (usually 24–48 hours), then you can add experiences."
-              : 'Experiences are listed under an Experience Host business on OutingStation Business (OSB). Register one first — it only takes a minute.'}
-          </p>
-          {!hasPendingAgency && (
-            <button onClick={() => navigate('/business/register')} className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3 rounded-2xl font-bold hover:from-cyan-700 hover:to-blue-700 transition">
-              Register as Experience Host
-            </button>
-          )}
-          <button onClick={() => navigate('/business')} className="block mx-auto mt-4 text-sm text-gray-400 hover:text-gray-600 transition">← Back to OSB Dashboard</button>
-        </div>
-      </div>
-    );
-  }
 
   const validateStep = (s) => {
     const e = {};
@@ -520,13 +442,10 @@ export default function SubmitExperiencePage() {
         } : null,
         imageUrl: images[0] || '', images: images.slice(1),
         status: 'pending', submittedAt: serverTimestamp(),
+        // Same as events: ownerId is optional, set only if the person
+        // happened to be logged in — no business/account requirement to
+        // submit at all, matching SubmitEventPage.jsx exactly.
         ownerId: currentUser?.uid || null,
-        // Links this experience back to the Experience Host business —
-        // same pattern as a Shortlet listing's agencyId/agencyName —
-        // so it shows up under "My Experiences" on that business's OSB
-        // dashboard once approved.
-        agencyId: approvedAgency.id,
-        agencyName: approvedAgency.businessName,
       });
       setSubmitSuccess(true);
       scrollTop();
@@ -549,8 +468,8 @@ export default function SubmitExperiencePage() {
           <p className="text-gray-500 text-sm mb-1"><span className="font-bold text-gray-800">"{form.title}"</span> is under review</p>
           <p className="text-xs text-gray-400 mb-8">We'll email you at <strong>{form.organizerEmail}</strong> within 24–48 hours</p>
           <div className="space-y-3">
-            <a href="/business" className="block w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-4 rounded-2xl font-black text-base hover:from-cyan-700 hover:to-blue-700 transition shadow-lg">
-              Back to OSB Dashboard
+            <a href="/" className="block w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-4 rounded-2xl font-black text-base hover:from-cyan-700 hover:to-blue-700 transition shadow-lg">
+              Back to Home
             </a>
           </div>
         </div>
@@ -564,7 +483,10 @@ export default function SubmitExperiencePage() {
     <div ref={topRef} className="min-h-screen bg-gradient-to-br from-gray-50 to-cyan-50 py-10 px-4">
       <div className="max-w-xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => step === 1 ? navigate('/business') : back()} className="w-10 h-10 rounded-xl bg-white border-2 border-gray-200 flex items-center justify-center hover:border-cyan-400 transition flex-shrink-0 shadow-sm">
+          {/* No OSB dependency anymore — just goes back in history,
+              same as landing here straight from SubmitEventPage.jsx's
+              type picker (which routes here via /create-experience). */}
+          <button onClick={() => step === 1 ? navigate(-1) : back()} className="w-10 h-10 rounded-xl bg-white border-2 border-gray-200 flex items-center justify-center hover:border-cyan-400 transition flex-shrink-0 shadow-sm">
             <ChevronLeft size={18} className="text-gray-600" />
           </button>
           <div className="flex-1 min-w-0">

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Home, Calendar, Users, Grid, GraduationCap, BarChart3, Unlock, LogOut, X,
   FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag, ClipboardList,
-  Wallet, Store, ChevronDown, BadgeCheck, Siren, Music,
+  Wallet, Store, ChevronDown, BadgeCheck, Siren, Music, Sparkles, CalendarCheck,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -17,11 +17,14 @@ const GROUPS = [
     items: [
       { icon: Calendar, label: 'Events', path: '/admin/events' },
       { icon: MapPin, label: 'Places', path: '/admin/places' },
+      { icon: Sparkles, label: 'Experiences', path: '/admin/experiences' },
       { icon: ShoppingBag, label: 'Vendors', path: '/admin/vendors' },
       { icon: Store, label: 'Businesses', path: '/admin/businesses' },
       { icon: BadgeCheck, label: 'Place Claims', path: '/admin/place-claims' },
       { icon: FileText, label: 'Event Submissions', path: '/admin/event-submissions' },
+      { icon: FileText, label: 'Experience Submissions', path: '/admin/experience-submissions' },
       { icon: Ticket, label: 'Ticketing', path: '/admin/tickets' },
+      { icon: CalendarCheck, label: 'Experience Bookings', path: '/admin/experience-bookings' }
     ],
   },
   {

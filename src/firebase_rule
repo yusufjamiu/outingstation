@@ -69,6 +69,8 @@ service cloud.firestore {
           'status', 
           'isAmbassador', 
           'ambassadorSince',
+          'earningActivated',  // ✅ NEW — separate from isAmbassador; only
+                                // admins may turn on tier-cycle earning
           'creditsUnlocked',  // ✅ NEW — prevent users self-unlocking credits
           'isCampusAmbassador',  // ✅ NEW — prevent users self-promoting to campus ambassador
           'assignedCampuses'  // ✅ NEW — prevent users self-assigning campuses
@@ -83,9 +85,19 @@ service cloud.firestore {
         'creditsHistory', 
         'totalCredits', 
         'totalReferrals',
+        'cycleReferrals',      // ✅ NEW — same write as totalReferrals, made explicit
         'aiPromptsToday',      // ✅ ADD
         'aiPromptsResetAt'     // ✅ ADD
       ]);
+
+      // ✅ NEW — the ambassador cycle-rollover cron resets exactly these
+      // two fields every 30 days. Unauthenticated (same trust model as
+      // the Paystack webhook and other server jobs in this file — the
+      // real gate is the CRON_SECRET check in the route itself). Scoped
+      // tightly: only these two fields, and cycleReferrals must be reset
+      // to 0 — can't be abused to inflate a referral count.
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cycleStartAt', 'cycleReferrals']) &&
+        request.resource.data.cycleReferrals == 0;
 
       // ✅ Allow admins to update anything including isAmbassador
       allow update: if isAdmin();
@@ -122,13 +134,16 @@ service cloud.firestore {
         (isOrganizer() && isOwner(resource.data.createdBy)) ||
         isCampusAmbassador();
       
-      // ✅ Allow webhook to update ticket fields
-      // ✅ UPDATED — also allow vendorStands + vendorStandsEnabled, needed by
-      // VendorStandsManager.jsx (ManageEvent is manageKey-gated, not auth-gated,
-      // so this stays a field-level allow rather than an isOwner() check)
-      allow update: if request.resource.data.diff(resource.data)
-        .affectedKeys()
-        .hasOnly(['ticketsSold', 'ticketsAvailable', 'ticketTiers', 'vendorStands', 'vendorStandsEnabled']);
+// ✅ FIXED — added 'groupCodes'. The code-gated group-code capacity
+// transaction in register-free-event.js and paystack-webhook.js updates
+// groupCodes and ticketsSold together in one write; since hasOnly()
+// requires every affected field to be allow-listed, the missing
+// 'groupCodes' entry was silently rejecting the entire update
+// (PERMISSION_DENIED) — not just the group field, the ticketsSold
+// increment too, since they're one atomic write.
+allow update: if request.resource.data.diff(resource.data)
+  .affectedKeys()
+  .hasOnly(['ticketsSold', 'ticketsAvailable', 'ticketTiers', 'vendorStands', 'vendorStandsEnabled', 'groupCodes']);
 }
     
     
@@ -400,14 +415,37 @@ match /creditUnlockRequests/{requestId} {
 // AMBASSADOR EARNINGS COLLECTION
 // ==========================================
 match /ambassadorEarnings/{docId} {
-  // Ambassadors can read their own earnings
-  allow read: if isAuthenticated() && request.auth.uid == docId;
+  // Ambassadors can read their own earnings; admins can read/list all
+  allow read: if (isAuthenticated() && request.auth.uid == docId) || isAdmin();
+  allow list: if isAdmin();
 
-  // Webhook can create/update (unauthenticated)
-  allow create, update: if true;
+  // First-ever write for a given ambassador (rollover cron creating the
+  // doc when their first cycle closes). Unauthenticated by design — same
+  // trust model as the Paystack webhook elsewhere in this file; the real
+  // gate is the CRON_SECRET check inside the cron route itself, not here.
+  allow create: if true;
 
-  // Admins can read and manage all
-  allow read, list: if isAdmin();
+  // ✅ TIGHTENED — was "allow update: if true", meaning literally anyone,
+  // signed in or not, could set cyclePaymentStatus straight to 'paid' or
+  // rewrite totalEarned/totalPaidOut on any ambassador's doc. Now three
+  // narrow paths only:
+  allow update: if
+    // 1) The ambassador submitting a payout request on their OWN doc —
+    //    only cyclePaymentStatus, only none → pending. Can never set
+    //    'paid' themselves, never touch totalEarned/totalPaidOut/history.
+    (isAuthenticated() && request.auth.uid == docId &&
+      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cyclePaymentStatus', 'updatedAt']) &&
+      resource.data.cyclePaymentStatus == 'none' &&
+      request.resource.data.cyclePaymentStatus == 'pending')
+    // 2) The rollover cron closing a cycle — archives into cycleHistory,
+    //    bumps totalEarned, and must reset cyclePaymentStatus to 'none'
+    //    for the fresh cycle. Unauthenticated, gated by CRON_SECRET at
+    //    the route level, same as the create rule above.
+    || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cycleHistory', 'cyclePaymentStatus', 'totalEarned', 'updatedAt']) &&
+        request.resource.data.cyclePaymentStatus == 'none')
+    // 3) Admin — marking paid/rejected, patching cycleHistory, totalPaidOut.
+    || isAdmin();
+
   allow delete: if isAdmin();
 }
 
@@ -415,8 +453,19 @@ match /ambassadorEarnings/{docId} {
 // AMBASSADOR PAYOUT REQUESTS COLLECTION
 // ==========================================
 match /ambassadorPayoutRequests/{docId} {
-  // Ambassadors can create payout requests
-  allow create: if isAuthenticated();
+  // ✅ TIGHTENED — was "allow create: if isAuthenticated()", which let any
+  // signed-in user create a request with an arbitrary ambassadorId
+  // (impersonating someone else) and an arbitrary amount (not one of the
+  // real tier payouts). Admin's "Mark Paid" trusts request.amount at face
+  // value, so this was a real forgery path, not just messy data.
+  // NOTE: the tier amounts below are duplicated from AmbassadorEarnings.jsx
+  // and rollover-ambassador-cycles.js — if you ever change the tier table,
+  // update it in all three places.
+  allow create: if isAuthenticated() &&
+    request.resource.data.ambassadorId == request.auth.uid &&
+    request.resource.data.amount is number &&
+    request.resource.data.amount in [5000, 10000, 15000, 20000] &&
+    request.resource.data.status == 'pending';
 
   // Ambassadors can read their own requests
   allow read: if isAuthenticated() &&
@@ -472,9 +521,17 @@ match /businesses/{businessId} {
      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pricingTiers', 'hourlyPackages'])) ||
     // ✅ UPDATED — businessName removed from here. Name changes now go
     // through the separate pending-request clause below.
+    // ✅ FIXED — added mapsLink, openingTime, closingTime, openingDays,
+    // isFree, price. OSBPlaceManageScreen (the post-approval edit screen
+    // for Restaurant/Resort/Event Hall/etc.) writes all of these in one
+    // update() call alongside description/city/area/whatsappNumber/
+    // logoUrl; since hasOnly() rejects the ENTIRE write if even one
+    // affected key isn't listed, saving from that screen was failing
+    // outright — not just silently dropping the new fields.
     (isAuthenticated() && resource.data.ownerId == request.auth.uid &&
      request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-       ['description', 'city', 'area', 'whatsappNumber', 'pricingInfo', 'logoUrl']
+       ['description', 'city', 'area', 'whatsappNumber', 'pricingInfo', 'logoUrl',
+        'mapsLink', 'openingTime', 'closingTime', 'openingDays', 'isFree', 'price']
      )) ||
     // ✅ owner can submit a Gov ID for verification, but only ever to
     // 'pending'. Flipping it to 'approved' requires isAdmin(), covered by
@@ -502,6 +559,42 @@ match /businesses/{businessId} {
      resource.data.cacStatus != 'approved' &&
      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pendingBusinessName', 'pendingBusinessNameRequestedAt']));
   allow delete: if isAdmin() || (isAuthenticated() && resource.data.ownerId == request.auth.uid);
+}
+
+// ==========================================
+// SHORTLETS COLLECTION ✅ NEW (individual shortlet properties, agency model)
+// ==========================================
+// ✅ NEW — this collection had NO rules block at all, so every read and
+// write to it (both OSBShortletManageScreen's dashboard query and
+// HomeScreen._loadApprovedShortlets' public browse query) fell through
+// to the catch-all "allow read, write: if false" at the bottom of this
+// file — confirmed by the "Listen for query at shortlets failed: Missing
+// or insufficient permissions" log. This block fixes that.
+match /shortlets/{shortletId} {
+  // ✅ Public marketplace browsing — same open-read pattern as vendors,
+  // vehicles, and approved businesses elsewhere in this file. Consumer-
+  // facing browse/detail screens (HomeScreen, discover, etc.) need this
+  // with no auth required.
+  allow read, list: if true;
+
+  // ✅ Only the OWNER of the parent agency business doc can add a listing
+  // under it — and only if that agency is itself approved and actually
+  // registered as a Shortlet business. Prevents forging a listing under
+  // someone else's agencyId, or an unapproved/wrong-type agency spawning
+  // live listings.
+  allow create: if isAuthenticated() &&
+    request.resource.data.ownerId == request.auth.uid &&
+    exists(/databases/$(database)/documents/businesses/$(request.resource.data.agencyId)) &&
+    get(/databases/$(database)/documents/businesses/$(request.resource.data.agencyId)).data.ownerId == request.auth.uid &&
+    get(/databases/$(database)/documents/businesses/$(request.resource.data.agencyId)).data.status == 'approved' &&
+    get(/databases/$(database)/documents/businesses/$(request.resource.data.agencyId)).data.businessType == 'Shortlet';
+
+  // ✅ The agency that owns the listing can edit/toggle-availability;
+  // admin can moderate/remove any listing.
+  allow update: if isAdmin() ||
+    (isAuthenticated() && resource.data.ownerId == request.auth.uid);
+  allow delete: if isAdmin() ||
+    (isAuthenticated() && resource.data.ownerId == request.auth.uid);
 }
 
 // ==========================================

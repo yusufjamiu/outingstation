@@ -52,6 +52,12 @@ function isEventOver(eventDateStr) {
 export default function VerifyTicket() {
   const { ticketId } = useParams();
   const [ticket, setTicket] = useState(null);
+  // NEW — true when the loaded doc came from `experienceBookings`
+  // instead of `tickets`. Drives every field-name and wording swap
+  // below (bookingId vs ticketId, sessionDate vs eventDate, guestCount
+  // vs quantity, amountPaid vs totalPaid, etc.) since the two
+  // collections don't share a schema.
+  const [isBooking, setIsBooking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -65,8 +71,24 @@ export default function VerifyTicket() {
       const ticketDoc = await getDoc(doc(db, 'tickets', ticketId));
       if (ticketDoc.exists()) {
         setTicket({ id: ticketDoc.id, ...ticketDoc.data() });
+        setIsBooking(false);
       } else {
-        setNotFound(true);
+        // NEW — fall back to experienceBookings. QR codes and
+        // confirmation emails for Experience session bookings
+        // (SessionBookingSection.jsx, paystack-webhook.js's
+        // generateExperienceBookingEmail) point at this exact same
+        // /verify-ticket/:id URL, but the ID is a bookingId that only
+        // exists in this separate collection. Without this fallback
+        // every experience booking scan 404'd here — same shape of gap
+        // as shortlets/experiences 404ing on EventDetails.jsx before
+        // those fallbacks were added.
+        const bookingDoc = await getDoc(doc(db, 'experienceBookings', ticketId));
+        if (bookingDoc.exists()) {
+          setTicket({ id: bookingDoc.id, ...bookingDoc.data() });
+          setIsBooking(true);
+        } else {
+          setNotFound(true);
+        }
       }
     } catch (err) {
       console.error('Error loading ticket:', err);
@@ -117,9 +139,13 @@ export default function VerifyTicket() {
     );
   }
 
-  const eventOver = isEventOver(ticket.eventDate);
-  const isValid = ticket.status === 'valid';
-  const isUsed = ticket.status === 'used';
+  // NEW — date field, "over" check, valid/used flags all branch on
+  // isBooking since experienceBookings has no `status` field the way
+  // tickets does — it uses paidStatus + checkedIn instead.
+  const relevantDate = isBooking ? ticket.sessionDate : ticket.eventDate;
+  const eventOver = isEventOver(relevantDate);
+  const isValid = isBooking ? (ticket.paidStatus === 'paid' && !ticket.checkedIn) : ticket.status === 'valid';
+  const isUsed = isBooking ? ticket.checkedIn === true : ticket.status === 'used';
 
   const getStatus = () => {
     if (eventOver) return 'expired';
@@ -137,8 +163,8 @@ export default function VerifyTicket() {
       border: 'border-emerald-200',
       text: 'text-emerald-700',
       icon: <CheckCircle size={52} className="text-white" />,
-      label: '✅ Valid Ticket',
-      description: 'This ticket is authentic and valid for entry',
+      label: isBooking ? '✅ Valid Booking' : '✅ Valid Ticket',
+      description: isBooking ? 'This booking is confirmed for the session' : 'This ticket is authentic and valid for entry',
       badge: 'VALID',
     },
     used: {
@@ -147,8 +173,8 @@ export default function VerifyTicket() {
       border: 'border-yellow-200',
       text: 'text-yellow-700',
       icon: <AlertCircle size={52} className="text-white" />,
-      label: '⚠️ Already Used',
-      description: 'This ticket has already been scanned for entry',
+      label: isBooking ? '⚠️ Already Checked In' : '⚠️ Already Used',
+      description: isBooking ? 'This guest has already been checked in for this session' : 'This ticket has already been scanned for entry',
       badge: 'USED',
     },
     expired: {
@@ -157,8 +183,10 @@ export default function VerifyTicket() {
       border: 'border-gray-200',
       text: 'text-gray-600',
       icon: <CalendarX size={52} className="text-white" />,
-      label: '🗓️ Event Has Ended',
-      description: `This event took place on ${ticket.eventDate}. The ticket is no longer valid for entry.`,
+      label: isBooking ? '🗓️ Session Has Passed' : '🗓️ Event Has Ended',
+      description: isBooking
+        ? `This session took place on ${relevantDate}. Check-in is no longer available.`
+        : `This event took place on ${relevantDate}. The ticket is no longer valid for entry.`,
       badge: 'EXPIRED',
     },
     invalid: {
@@ -167,28 +195,35 @@ export default function VerifyTicket() {
       border: 'border-red-200',
       text: 'text-red-700',
       icon: <XCircle size={52} className="text-white" />,
-      label: '❌ Invalid Ticket',
-      description: 'This ticket is not valid',
+      label: isBooking ? '❌ Invalid Booking' : '❌ Invalid Ticket',
+      description: isBooking ? 'This booking is not valid' : 'This ticket is not valid',
       badge: 'INVALID',
     },
   };
 
   const config = statusConfig[status];
 
-  // ✅ Tier — null for old tickets, no UI impact whatsoever
+  // Tier — null for old tickets, no UI impact whatsoever. Naturally
+  // absent (undefined) on experienceBookings docs, so this whole block
+  // stays inert for a booking without needing an explicit isBooking guard.
   const tierName = ticket.tierName;
   const hasTier = tierName && tierName.trim().length > 0;
-  // ✅ NEW — free-registration flag, mirrors the treatment in
+  // free-registration flag, mirrors the treatment in
   // my_tickets_screen.dart / the ticket emails: no payment breakdown to
-  // show, "people" instead of "tickets", guest names if any.
+  // show, "people" instead of "tickets", guest names if any. Also
+  // naturally absent on a booking doc.
   const isFreeRegistration = ticket.isFreeRegistration === true;
-  // ✅ NEW — "Invited by" applies to BOTH free and paid group-code
+  // "Invited by" applies to BOTH free and paid group-code
   // tickets (register-free-event.js and paystack-webhook.js both set
   // this field the same way), so it's checked independently of
-  // isFreeRegistration.
+  // isFreeRegistration. Absent on bookings — experiences don't have
+  // group-code private access.
   const invitedBy = ticket.invitedBy;
   const hasInvitedBy = invitedBy && invitedBy.trim().length > 0;
   const guests = ticket.guests || [];
+
+  const headerTitle = isBooking ? ticket.experienceTitle : ticket.eventTitle;
+  const headerImage = isBooking ? null : ticket.eventImageUrl;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-blue-50">
@@ -203,11 +238,20 @@ export default function VerifyTicket() {
           </div>
           <h1 className="text-2xl font-black text-white mb-2">{config.label}</h1>
           <p className="text-white/85 text-sm">{config.description}</p>
-          {/* ✅ Tier badge in banner — first thing a bouncer sees when scanning */}
+          {/* Tier badge in banner — first thing a bouncer sees when scanning */}
           {hasTier && (
             <div className="inline-flex items-center gap-1.5 mt-4 bg-white/20 border border-white/30 rounded-full px-4 py-1.5">
               <Ticket size={13} className="text-white" />
               <span className="text-white text-xs font-black tracking-wide">{tierName}</span>
+            </div>
+          )}
+          {/* NEW — Experience Booking badge, same spot the tier pill
+              uses for event tickets, so a host scanning at the door
+              immediately sees this isn't a regular event ticket */}
+          {isBooking && (
+            <div className="inline-flex items-center gap-1.5 mt-4 bg-white/20 border border-white/30 rounded-full px-4 py-1.5">
+              <span className="text-white text-xs">✨</span>
+              <span className="text-white text-xs font-black tracking-wide">Experience Booking</span>
             </div>
           )}
         </div>
@@ -216,21 +260,21 @@ export default function VerifyTicket() {
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
 
           {/* Event image */}
-          {ticket.eventImageUrl ? (
+          {headerImage ? (
             <div className="relative h-44">
               <img
-                src={ticket.eventImageUrl}
-                alt={ticket.eventTitle}
+                src={headerImage}
+                alt={headerTitle}
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
               <div className="absolute bottom-4 left-5 right-5">
-                <h2 className="text-white font-black text-xl line-clamp-2">{ticket.eventTitle}</h2>
+                <h2 className="text-white font-black text-xl line-clamp-2">{headerTitle}</h2>
               </div>
             </div>
           ) : (
-            <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 p-6">
-              <h2 className="text-white font-black text-xl">{ticket.eventTitle}</h2>
+            <div className={`bg-gradient-to-r ${isBooking ? 'from-purple-500 to-pink-500' : 'from-cyan-500 to-cyan-600'} p-6`}>
+              <h2 className="text-white font-black text-xl">{headerTitle}</h2>
             </div>
           )}
 
@@ -238,28 +282,28 @@ export default function VerifyTicket() {
 
             {/* Event details */}
             <div className="space-y-2.5 mb-6 pb-6 border-b border-gray-100">
-              {ticket.eventDate && (
+              {relevantDate && (
                 <div className="flex items-center gap-3 text-sm text-gray-600">
                   <div className="w-8 h-8 bg-cyan-50 rounded-full flex items-center justify-center flex-shrink-0">
                     <Calendar size={15} className="text-cyan-500" />
                   </div>
-                  <span>{ticket.eventDate}</span>
+                  <span>{relevantDate}</span>
                 </div>
               )}
-              {ticket.eventTime && (
+              {(isBooking ? ticket.sessionTime : ticket.eventTime) && (
                 <div className="flex items-center gap-3 text-sm text-gray-600">
                   <div className="w-8 h-8 bg-cyan-50 rounded-full flex items-center justify-center flex-shrink-0">
                     <Clock size={15} className="text-cyan-500" />
                   </div>
-                  <span>{ticket.eventTime}</span>
+                  <span>{isBooking ? ticket.sessionTime : ticket.eventTime}</span>
                 </div>
               )}
-              {ticket.eventLocation && (
+              {(isBooking ? ticket.experienceLocation : ticket.eventLocation) && (
                 <div className="flex items-center gap-3 text-sm text-gray-600">
                   <div className="w-8 h-8 bg-cyan-50 rounded-full flex items-center justify-center flex-shrink-0">
                     <MapPin size={15} className="text-cyan-500" />
                   </div>
-                  <span>{ticket.eventLocation}</span>
+                  <span>{isBooking ? ticket.experienceLocation : ticket.eventLocation}</span>
                 </div>
               )}
             </div>
@@ -267,8 +311,8 @@ export default function VerifyTicket() {
             {/* Ticket ID + status badge */}
             <div className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-2xl p-4 mb-6 flex items-center justify-between border border-cyan-100">
               <div>
-                <p className="text-xs font-bold text-cyan-500 uppercase tracking-wider mb-1">Ticket ID</p>
-                <p className="text-xl font-black text-cyan-700 font-mono tracking-wide">{ticket.ticketId}</p>
+                <p className="text-xs font-bold text-cyan-500 uppercase tracking-wider mb-1">{isBooking ? 'Booking ID' : 'Ticket ID'}</p>
+                <p className="text-xl font-black text-cyan-700 font-mono tracking-wide">{isBooking ? ticket.bookingId : ticket.ticketId}</p>
               </div>
               <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${config.lightBg} ${config.text} ${config.border} border`}>
                 {config.badge}
@@ -277,13 +321,13 @@ export default function VerifyTicket() {
 
             {/* Holder info */}
             <div className="mb-6">
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Ticket Holder</h3>
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">{isBooking ? 'Guest' : 'Ticket Holder'}</h3>
               <div className="space-y-3">
                 <HolderRow icon={<User size={14} className="text-gray-400" />} label="Name" value={ticket.buyerName} />
                 <HolderRow icon={<Mail size={14} className="text-gray-400" />} label="Email" value={ticket.buyerEmail} />
                 <HolderRow icon={<Phone size={14} className="text-gray-400" />} label="Phone" value={ticket.buyerPhone} />
 
-                {/* ✅ Ticket Type — only for tier tickets, completely invisible for old ones */}
+                {/* Ticket Type — only for tier tickets, completely invisible for old ones */}
                 {hasTier && (
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-cyan-50 rounded-full flex items-center justify-center flex-shrink-0">
@@ -298,7 +342,7 @@ export default function VerifyTicket() {
                   </div>
                 )}
 
-                {/* ✅ NEW — "Invited By" for code-gated group tickets
+                {/* "Invited By" for code-gated group tickets
                     (free or paid). Purple to match the group-code
                     branding used everywhere else in this feature. */}
                 {hasInvitedBy && (
@@ -315,7 +359,7 @@ export default function VerifyTicket() {
                   </div>
                 )}
 
-                {/* ✅ NEW — guest names for free-registration group
+                {/* guest names for free-registration group
                     registrations, so the person checking people in at
                     the gate can see who's covered by this one ticket. */}
                 {isFreeRegistration && guests.length > 0 && (
@@ -326,21 +370,30 @@ export default function VerifyTicket() {
                   />
                 )}
 
+                {/* NEW — guest count row for a booking, using
+                    guestCount (bookings have no `quantity` field at
+                    all — that's a tickets-only concept) */}
                 <HolderRow
                   icon={<Hash size={14} className="text-gray-400" />}
-                  label={isFreeRegistration ? 'Group Size' : 'Quantity'}
-                  value={`${ticket.quantity} ${isFreeRegistration ? 'people' : `ticket${ticket.quantity > 1 ? 's' : ''}`}`}
+                  label={isBooking ? 'Guests' : (isFreeRegistration ? 'Group Size' : 'Quantity')}
+                  value={
+                    isBooking
+                      ? `${ticket.guestCount} guest${ticket.guestCount > 1 ? 's' : ''}`
+                      : `${ticket.quantity} ${isFreeRegistration ? 'people' : `ticket${ticket.quantity > 1 ? 's' : ''}`}`
+                  }
                 />
               </div>
             </div>
 
-            {/* ✅ FIXED — free-registration tickets showed "Amount Paid
+            {/* FIXED — free-registration tickets showed "Amount Paid
                 ₦0" here, which reads like a pricing glitch rather than
                 the intentional "nothing was ever charged" it actually
                 is. Now shows a plain FREE pill instead, matching the
                 treatment already used in my_tickets_screen.dart and the
                 ticket emails. Paid tickets (including paid group-code
-                ones) are completely unaffected — same card as before. */}
+                ones) and bookings are completely unaffected — same card
+                as before, just reading amountPaid instead of totalPaid
+                for a booking. */}
             {isFreeRegistration ? (
               <div className="bg-emerald-50 rounded-2xl p-4 mb-6 flex items-center justify-between border border-emerald-100">
                 <div>
@@ -352,7 +405,7 @@ export default function VerifyTicket() {
               <div className="bg-gray-50 rounded-2xl p-4 mb-6 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-1">Amount Paid</p>
-                  <p className="text-3xl font-black text-gray-900">₦{ticket.totalPaid?.toLocaleString()}</p>
+                  <p className="text-3xl font-black text-gray-900">₦{(isBooking ? ticket.amountPaid : ticket.totalPaid)?.toLocaleString()}</p>
                 </div>
                 {ticket.creditsApplied > 0 && (
                   <div className="text-right">
@@ -363,11 +416,13 @@ export default function VerifyTicket() {
               </div>
             )}
 
-            {/* ✅ FIXED — free-registration tickets have no payment
+            {/* FIXED — free-registration tickets have no payment
                 reference at all (paymentReference is null, no charge
                 ever happened), so this card used to render with an
                 empty/blank value under the label — now hidden entirely
-                for free-registration tickets instead. */}
+                for free-registration tickets instead. Bookings always
+                have a paymentReference (every booking is paid), so this
+                shows normally for them under the same field name. */}
             {!isFreeRegistration && (
               <div className="bg-gray-50 rounded-xl p-3 mb-5">
                 <p className="text-xs text-gray-400 mb-1 font-semibold uppercase tracking-wide">Payment Reference</p>
@@ -375,12 +430,12 @@ export default function VerifyTicket() {
               </div>
             )}
 
-            {/* Event ended notice */}
+            {/* Event/session ended notice */}
             {eventOver && (
               <div className="bg-gray-100 rounded-xl p-4 mb-5 border border-gray-200">
                 <p className="text-sm text-gray-600 text-center font-medium">
-                  🗓️ This event has already taken place on <strong>{ticket.eventDate}</strong>.
-                  This ticket is no longer valid for entry.
+                  🗓️ This {isBooking ? 'session' : 'event'} has already taken place on <strong>{relevantDate}</strong>.
+                  {isBooking ? ' Check-in is no longer available.' : ' This ticket is no longer valid for entry.'}
                 </p>
               </div>
             )}

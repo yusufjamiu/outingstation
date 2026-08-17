@@ -47,6 +47,28 @@ function formatEventTime(event) {
   return 'TBD';
 }
 
+// Same date/time formatting as EventDetails.jsx / SessionBookingSection.jsx
+// use client-side, duplicated here since this webhook runs server-side with
+// no shared utils module — kept in sync manually if either changes.
+function formatSessionDate(dateStr) {
+  if (!dateStr) return 'TBD';
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  } catch {
+    return dateStr;
+  }
+}
+
+function formatSessionTime(timeStr) {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  if (Number.isNaN(h)) return timeStr;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m || 0).padStart(2, '0')} ${period}`;
+}
+
 function applyCreditsToTransaction(creditsHistory, amountToUse) {
   const activeCredits = creditsHistory
     .filter(credit => credit.status === 'active' && credit.amount > 0)
@@ -156,7 +178,7 @@ async function updateTierSoldCount(eventId, tierId, tierName, quantity) {
   }
 }
 
-// ✅ NEW: same pattern as updateTierSoldCount, but for vendor stand "filled" counts
+// same pattern as updateTierSoldCount, but for vendor stand "filled" counts
 async function updateStandFilledCount(eventId, standId) {
   if (!eventId || !standId) {
     console.log('⚠️ updateStandFilledCount: missing eventId or standId — skipping');
@@ -192,7 +214,7 @@ async function updateStandFilledCount(eventId, standId) {
   }
 }
 
-// ⛔ DISABLED — ambassador 50% commission distribution turned off.
+// DISABLED — ambassador 50% commission distribution turned off.
 // Function body commented out below and left in place (unused) in case
 // this needs to be re-enabled later. See call site further down (also
 // commented out) for where this was invoked.
@@ -294,7 +316,12 @@ async function distributeAmbassadorCommission(eventData, eventId, serviceFee, qu
   */
 }
 
-// ✅ Extract metadata — now also extracts purchase_type + vendor stand fields
+// Extract metadata — now also extracts purchase_type + vendor stand fields
+// + experience booking fields (experienceId, sessionId, bookingId,
+// guestCount, pricePerPerson). Same three-path structure as before
+// (string fallback / custom_fields array / flat object) — experience
+// fields added to all three so extraction stays consistent regardless
+// of how Paystack happens to serialize a given payload.
 function extractMetadata(paymentData) {
   let rawMetadata = paymentData.metadata || {};
 
@@ -328,9 +355,13 @@ function extractMetadata(paymentData) {
       const businessType = extract('business_type');
       const whatsappNumber = extract('whatsapp_number');
       const applicationId = extract('application_id');
-      // ✅ NEW — group code for code-gated private events, if this
-      // paid ticket was purchased through an unlocked group code
       const groupCode = extract('group_code');
+      // NEW — experience booking fields
+      const experienceId = extract('experience_id');
+      const sessionId = extract('session_id');
+      const bookingId = extract('booking_id');
+      const guestCount = extract('guest_count');
+      const pricePerPerson = extract('price_per_person');
 
       return {
         ticketId,
@@ -357,6 +388,11 @@ function extractMetadata(paymentData) {
         whatsappNumber: whatsappNumber || null,
         applicationId: applicationId || null,
         groupCode: groupCode || null,
+        experienceId: experienceId || null,
+        sessionId: sessionId || null,
+        bookingId: bookingId || null,
+        guestCount: parseInt(guestCount) || 1,
+        pricePerPerson: parseInt(pricePerPerson) || 0,
       };
     }
   }
@@ -381,8 +417,13 @@ function extractMetadata(paymentData) {
     const businessType = fields.business_type || null;
     const whatsappNumber = fields.whatsapp_number || null;
     const applicationId = fields.application_id || rawMetadata.application_id || null;
-    // ✅ NEW — group code, same reasoning as the fallback path above
     const groupCode = fields.group_code || rawMetadata.group_code || null;
+    // NEW — experience booking fields
+    const experienceId = fields.experience_id || rawMetadata.experience_id || null;
+    const sessionId = fields.session_id || rawMetadata.session_id || null;
+    const bookingId = fields.booking_id || rawMetadata.booking_id || null;
+    const guestCount = fields.guest_count || rawMetadata.guest_count || null;
+    const pricePerPerson = fields.price_per_person || rawMetadata.price_per_person || null;
 
     return {
       ticketId,
@@ -407,6 +448,11 @@ function extractMetadata(paymentData) {
       whatsappNumber,
       applicationId,
       groupCode,
+      experienceId,
+      sessionId,
+      bookingId,
+      guestCount: parseInt(guestCount) || 1,
+      pricePerPerson: parseInt(pricePerPerson) || 0,
     };
   }
 
@@ -432,8 +478,13 @@ function extractMetadata(paymentData) {
     businessName: rawMetadata.business_name || null,
     businessType: rawMetadata.business_type || null,
     whatsappNumber: rawMetadata.whatsapp_number || null,
-    // ✅ NEW — group code, same reasoning as the other two paths
     groupCode: rawMetadata.group_code || rawMetadata.groupCode || null,
+    // NEW — experience booking fields
+    experienceId: rawMetadata.experience_id || rawMetadata.experienceId || null,
+    sessionId: rawMetadata.session_id || rawMetadata.sessionId || null,
+    bookingId: rawMetadata.booking_id || rawMetadata.bookingId || null,
+    guestCount: parseInt(rawMetadata.guest_count || rawMetadata.guestCount) || 1,
+    pricePerPerson: parseInt(rawMetadata.price_per_person || rawMetadata.pricePerPerson) || 0,
   };
 }
 
@@ -610,7 +661,7 @@ function generateTicketEmail(ticketData, eventData) {
 </html>`;
 }
 
-// ✅ NEW: simple confirmation email for vendor stand applications
+// simple confirmation email for vendor stand applications
 function generateStandConfirmationEmail(appData, eventData) {
   return `<!DOCTYPE html>
 <html>
@@ -651,6 +702,133 @@ function generateStandConfirmationEmail(appData, eventData) {
 </html>`;
 }
 
+// NEW — confirmation email for an Experience session booking. Same
+// visual language as generateTicketEmail (gradient header, dashed
+// booking-ID card, QR block) but purple/pink to match
+// SessionBookingSection.jsx's confirmation modal, and shows guest count
+// + session date/time instead of tier/ticket-quantity fields.
+function generateExperienceBookingEmail(bookingData, experienceData) {
+  const verifyUrl = `https://www.outingstation.com/verify-ticket/${bookingData.bookingId}`;
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}&color=9333ea&bgcolor=ffffff`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your OutingStation Experience Booking</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #faf5ff;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #faf5ff; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.12);">
+
+          <tr>
+            <td style="background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%); padding: 44px 36px; text-align: center;">
+              <p style="color: rgba(255,255,255,0.75); margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">OutingStation</p>
+              <h1 style="color: #ffffff; margin: 0 0 8px; font-size: 30px; font-weight: 900;">✨ Booking Confirmed!</h1>
+              <p style="color: #fce7f3; margin: 0; font-size: 15px;">Your spot has been reserved</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 28px 36px 16px;">
+              <h2 style="margin: 0 0 12px; color: #0f172a; font-size: 22px; font-weight: 800; line-height: 1.3;">${experienceData.title}</h2>
+              <table cellpadding="0" cellspacing="0">
+                <tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">📅&nbsp;&nbsp;${bookingData.sessionDate}</td></tr>
+                <tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">🕐&nbsp;&nbsp;${bookingData.sessionTime}</td></tr>
+                <tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">📍&nbsp;&nbsp;${experienceData.address || experienceData.city || 'TBD'}</td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 36px;">
+              <div style="border-top: 2px dashed #e9d5ff;"></div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 24px 36px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="vertical-align: top; padding-right: 24px;">
+                    <div style="background: linear-gradient(135deg, #faf5ff, #fdf2f8); border: 2px dashed #a855f7; border-radius: 14px; padding: 16px 20px; margin-bottom: 16px;">
+                      <p style="margin: 0 0 4px; font-size: 10px; color: #9333ea; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px;">Booking ID</p>
+                      <p style="margin: 0; font-size: 20px; font-weight: 900; color: #9333ea; font-family: 'Courier New', monospace; letter-spacing: 1px;">${bookingData.bookingId}</p>
+                    </div>
+                    <table cellpadding="0" cellspacing="0" width="100%">
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Guest</p>
+                        <p style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">${bookingData.buyerName}</p>
+                      </td></tr>
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Email</p>
+                        <p style="margin: 0; font-size: 13px; color: #1e293b; font-weight: 500;">${bookingData.buyerEmail}</p>
+                      </td></tr>
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Phone</p>
+                        <p style="margin: 0; font-size: 13px; color: #1e293b; font-weight: 500;">${bookingData.buyerPhone}</p>
+                      </td></tr>
+                      <tr><td style="padding-bottom: 10px;">
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Guests</p>
+                        <p style="margin: 0; font-size: 14px; color: #1e293b; font-weight: 700;">${bookingData.guestCount} guest${bookingData.guestCount > 1 ? 's' : ''}</p>
+                      </td></tr>
+                      <tr><td>
+                        <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Amount Paid</p>
+                        <p style="margin: 0; font-size: 20px; color: #9333ea; font-weight: 900;">₦${bookingData.amountPaid?.toLocaleString()}</p>
+                      </td></tr>
+                    </table>
+                  </td>
+                  <td style="vertical-align: top; width: 160px; text-align: center;">
+                    <div style="background: white; border: 2px solid #f3e8ff; border-radius: 14px; padding: 12px; display: inline-block;">
+                      <img src="${qrImageUrl}" alt="QR Code" width="136" height="136" style="display: block; border-radius: 6px;" />
+                    </div>
+                    <p style="margin: 8px 0 0; font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.4;">Scan at<br/>check-in</p>
+                    <div style="margin-top: 8px; background: #ecfdf5; border-radius: 8px; padding: 4px 8px;">
+                      <p style="margin: 0; font-size: 10px; color: #059669; font-weight: 700;">✓ VALID</p>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 36px 24px;">
+              <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px 18px;">
+                <p style="margin: 0; font-size: 13px; color: #166534; line-height: 1.6;">
+                  ✨ <strong>Check-in Instructions:</strong> Show this email (QR code or Booking ID) to the host when you arrive.
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 36px 28px;">
+              <p style="margin: 0 0 4px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Payment Reference</p>
+              <p style="margin: 0; font-size: 12px; color: #64748b; font-family: 'Courier New', monospace;">${bookingData.paymentReference}</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background: linear-gradient(135deg, #9333ea, #ec4899); padding: 28px 36px; text-align: center;">
+              <p style="margin: 0 0 6px; color: #ffffff; font-size: 16px; font-weight: 800;">See you there! ✨</p>
+              <p style="margin: 0 0 12px; color: rgba(255,255,255,0.75); font-size: 13px;">Have questions? We're here to help.</p>
+              <a href="mailto:admin@outingstation.com" style="display: inline-block; background: rgba(255,255,255,0.15); color: #ffffff; text-decoration: none; padding: 8px 20px; border-radius: 20px; font-size: 13px; font-weight: 600;">admin@outingstation.com</a>
+              <p style="margin: 16px 0 0; color: rgba(255,255,255,0.4); font-size: 11px;">© ${new Date().getFullYear()} OutingStation • outingstation.com</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -677,6 +855,134 @@ export default async function handler(req, res) {
     const metadata = extractMetadata(paymentData);
     console.log('📦 Processing payment:', paymentData.customer.email, '| type:', metadata.purchaseType);
 
+    // ─── EXPERIENCE BOOKING branch ─────────────────────────────────────────
+    // Placed BEFORE the generic `if (!metadata.eventId)` guard below —
+    // experience bookings key off experienceId, not eventId, so they'd
+    // always fail that check if this branch came after it (the way
+    // vendor_stand and ticket purchases both correctly require eventId).
+    if (metadata.purchaseType === 'experience_booking') {
+      if (!metadata.experienceId) {
+        console.error('❌ CRITICAL: experienceId missing from experience_booking metadata!');
+        return res.status(400).json({ error: 'Missing experienceId in metadata' });
+      }
+      if (!metadata.sessionId) {
+        console.error('❌ CRITICAL: sessionId missing from experience_booking metadata!');
+        return res.status(400).json({ error: 'Missing sessionId in metadata' });
+      }
+
+      // Idempotency — mirrors the tickets-collection check further down
+      const existingBookingQuery = query(
+        collection(db, 'experienceBookings'),
+        where('paymentReference', '==', paymentData.reference)
+      );
+      const existingBookingSnap = await getDocs(existingBookingQuery);
+      if (!existingBookingSnap.empty) {
+        console.log('⚠️ Booking already exists for this payment');
+        return res.status(200).json({ success: true, message: 'Already processed' });
+      }
+
+      const expDoc = await getDoc(doc(db, 'experiences', metadata.experienceId));
+      if (!expDoc.exists()) {
+        console.error('❌ Experience not found:', metadata.experienceId);
+        return res.status(404).json({ error: 'Experience not found' });
+      }
+      const expData = expDoc.data();
+
+      const bookingId = metadata.bookingId || `EXP-${new Date().getFullYear()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      const totalPaid = metadata.totalAmount > 0 ? metadata.totalAmount : Math.round(paymentData.amount / 100);
+      const guestCount = metadata.guestCount || 1;
+
+      // Bump the matched session's bookedSpots inside a transaction —
+      // same "best-effort, never block an already-paid booking" policy
+      // as the groupCode transaction below for paid event tickets: the
+      // customer has already paid, so this proceeds and logs a warning
+      // even if it would push the session over its totalSpots, rather
+      // than silently dropping their booking. Real overbooking
+      // prevention happens client-side in SessionBookingSection before
+      // Paystack ever opens.
+      let sessionSnapshot = null;
+      try {
+        await runTransaction(db, async (transaction) => {
+          const freshExpSnap = await transaction.get(doc(db, 'experiences', metadata.experienceId));
+          if (!freshExpSnap.exists()) return;
+          const freshExpData = freshExpSnap.data();
+          const sessions = freshExpData.sessions || [];
+          const sessionIndex = sessions.findIndex(s => s.id === metadata.sessionId);
+          if (sessionIndex === -1) {
+            console.warn(`⚠️ Session "${metadata.sessionId}" not found on experience — booking still created, session count NOT updated`);
+            return;
+          }
+          const session = sessions[sessionIndex];
+          const newBooked = (session.bookedSpots || 0) + guestCount;
+          if (session.totalSpots && newBooked > session.totalSpots) {
+            console.warn(`⚠️ Session now exceeds totalSpots (${newBooked}/${session.totalSpots}) — payment already succeeded, booking created anyway`);
+          }
+          sessionSnapshot = { date: session.date, time: session.time };
+          const updatedSessions = sessions.map((s, i) => i === sessionIndex ? { ...s, bookedSpots: newBooked } : s);
+          transaction.update(doc(db, 'experiences', metadata.experienceId), { sessions: updatedSessions });
+        });
+      } catch (txErr) {
+        console.error('❌ Session booking transaction failed (booking still recorded):', txErr);
+      }
+
+      const bookingData = {
+        bookingId,
+        experienceId: metadata.experienceId,
+        experienceTitle: expData.title,
+        sessionId: metadata.sessionId,
+        sessionDate: sessionSnapshot ? formatSessionDate(sessionSnapshot.date) : 'TBD',
+        sessionTime: sessionSnapshot ? formatSessionTime(sessionSnapshot.time) : '',
+        buyerName: metadata.buyerName || paymentData.customer.first_name || 'Guest',
+        buyerEmail: paymentData.customer.email,
+        buyerPhone: metadata.buyerPhone || paymentData.customer.phone || 'N/A',
+        guestCount,
+        pricePerPerson: metadata.pricePerPerson || 0,
+        amountPaid: totalPaid,
+        paidStatus: 'paid',
+        paymentReference: paymentData.reference,
+        checkedIn: false,
+        // Location snapshot, stored on the booking itself so
+        // VerifyTicket.jsx's QR scan page can show it without a second
+        // lookup — mirrors how ticketData.eventLocation is a stored
+        // snapshot rather than a live join. The confirmation email
+        // already reads location straight off expData (it has the full
+        // experience doc in scope), so this addition is purely for the
+        // scan page and any future admin/host views.
+        experienceLocation: expData.address || expData.city || null,
+        mapsLink: expData.mapsLink || null,
+        // CHANGED — was agencyId/agencyName, denormalized from a
+        // business the experience no longer belongs to (experiences
+        // don't require a business account, same as events). Storing
+        // the host's own contact info instead — actually populated on
+        // every experience doc, and what AdminExperienceBookings.jsx's
+        // "Host" column now displays.
+        organizerName: expData.organizerName || null,
+        organizerEmail: expData.organizerEmail || null,
+        createdAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, 'experienceBookings', bookingId), bookingData);
+      console.log(`✅ Experience booking saved: ${bookingId}`);
+
+      try {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+        });
+        await transporter.sendMail({
+          from: `"OutingStation" <${process.env.GMAIL_USER}>`,
+          to: paymentData.customer.email,
+          subject: `✨ Your Booking for ${expData.title} — ${bookingId}`,
+          html: generateExperienceBookingEmail(bookingData, expData)
+        });
+        console.log(`📧 Experience booking confirmation sent to: ${paymentData.customer.email}`);
+      } catch (emailErr) {
+        console.error('❌ Failed to send experience booking email:', emailErr);
+      }
+
+      return res.status(200).json({ success: true, purchaseType: 'experience_booking', bookingId });
+    }
+
     if (!metadata.eventId) {
       console.error('❌ CRITICAL: eventId missing from metadata!');
       return res.status(400).json({ error: 'Missing eventId in metadata' });
@@ -684,7 +990,7 @@ export default async function handler(req, res) {
 
     // ─── VENDOR STAND branch ──────────────────────────────────────────────
     if (metadata.purchaseType === 'vendor_stand') {
-      // ✅ REWORKED: applications now exist BEFORE payment (created free at
+      // REWORKED: applications now exist BEFORE payment (created free at
       // apply-time, approved/rejected by the organizer with no money moved).
       // This webhook now confirms PAYMENT on an already-approved application,
       // rather than creating a brand new one.
@@ -715,7 +1021,7 @@ export default async function handler(req, res) {
 
       const amountPaid = appData.standPrice > 0 ? appData.standPrice : Math.round(paymentData.amount / 100);
 
-      // ✅ NEW: OutingStation takes a 10% platform fee on vendor stand fees;
+      // OutingStation takes a 10% platform fee on vendor stand fees;
       // the rest is what's owed to the organizer. Vendor still pays exactly
       // the stand price shown — this split doesn't change what they pay,
       // it's just how the money is accounted for once it's in.
@@ -792,7 +1098,7 @@ export default async function handler(req, res) {
 
     const paystackFee = Math.round((paymentData.amount / 100) * 0.015 + 100);
 
-    // ✅ NEW — code-gated group tagging for paid events. IMPORTANT: this
+    // code-gated group tagging for paid events. IMPORTANT: this
     // runs AFTER Paystack has already confirmed payment, so it can never
     // reject/block ticket creation the way register-free-event.js's
     // transaction does for free registrations — the customer already
@@ -862,12 +1168,12 @@ export default async function handler(req, res) {
       purchasedAt: serverTimestamp(),
       tierId: metadata.tierId || null,
       tierName: metadata.tierName || null,
-      // ✅ NEW — same invitedBy/groupCode tagging as free-registration
+      // same invitedBy/groupCode tagging as free-registration
       // group tickets, so it shows up consistently on the ticket itself
       // and in Manage Event regardless of whether the event was free or paid.
       invitedBy: invitedByGroupName,
       groupCode: metadata.groupCode ? metadata.groupCode.toUpperCase().trim() : null,
-      // ✅ NEW — same reasoning as register-free-event.js's identical
+      // same reasoning as register-free-event.js's identical
       // field: nothing currently records whether the underlying event
       // was private for an UNLISTED paid event's ticket (invitedBy is
       // only set for group-code purchases). Stamped here so "My Tickets"
@@ -909,7 +1215,7 @@ export default async function handler(req, res) {
     console.log(`✅ Ticket created: ${ticketId}`);
     console.log(`📧 Email sent to: ${paymentData.customer.email}`);
 
-    // ⛔ DISABLED — ambassador 50% commission distribution turned off.
+    // DISABLED — ambassador 50% commission distribution turned off.
     // distributeAmbassadorCommission(
     //   { ...eventData, id: metadata.eventId },
     //   metadata.serviceFee,

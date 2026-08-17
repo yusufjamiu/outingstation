@@ -31,7 +31,7 @@ const DISCOVER_ITEMS = [
   { icon: Car,          label: 'Rent a Ride',    to: '/rent-a-ride',    live: true  },
   { icon: Store,          label: 'Marketplace',    to: '/marketplace',    live: true  },
   { icon: Briefcase,      label: 'Opportunities',  to: '/opportunities',  live: false },
-  { icon: Sparkles,       label: 'Experiences',    to: '/experiences',    live: false },
+  { icon: Sparkles, label: 'Experiences', to: '/experiences', live: true },
 ];
 
 const PLAN_ITEMS = [
@@ -53,6 +53,7 @@ const BUSINESS_ITEMS = [
   { icon: Rocket,          label: 'Campus Vendor',             to: '/campus-vendor',    live: true  },
   { icon: ListPlus,        label: 'Create Event',              to: '/create-event',     live: true  },
   { icon: ListPlus,        label: 'List Places',              to: '/create-place',     live: true  },
+  { icon: Sparkles, label: 'Host an Experience', to: '/create-experience', live: true },
   { icon: Handshake,       label: 'Become a Partner',          to: '/partner',          live: false },
 ];
 

@@ -17,6 +17,7 @@ import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import VendorStandsSection from '../../components/VendorStandsSection';
 import FreeRegistrationSection from '../../components/FreeRegistrationSection';
+import SessionBookingSection from '../../components/SessionBookingSection';
 import { formatEventDateFull, formatEventTime } from '../../utils/dateTimeHelpers';
 import { PaystackButton } from 'react-paystack';
 import {
@@ -61,7 +62,7 @@ const generateTicketId = () => {
 // ─── Image Carousel ───────────────────────────────────────────────────────────
 
 function EventImageCarousel({ event, isPlace }) {
-  // ✅ EXTENDED — was capped at 10, now 20, matching mobile
+  // EXTENDED — was capped at 10, now 20, matching mobile
   const allImages = [
     ...(event.imageUrl ? [event.imageUrl] : []),
     ...(event.images || []).filter(img => img && img !== event.imageUrl),
@@ -175,6 +176,11 @@ function EventImageCarousel({ event, isPlace }) {
             {isPlace && (
               <span className="bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
                 📍 PLACE
+              </span>
+            )}
+            {event.subCategory === 'experiences' && (
+              <span className="bg-pink-500 text-white px-4 py-2 rounded-full text-sm font-semibold">
+                ✨ EXPERIENCE
               </span>
             )}
           </div>
@@ -545,7 +551,6 @@ function TicketTierSelector({ tiers, selectedTier, onSelect }) {
 
 // ─── Ticket Purchase Section ──────────────────────────────────────────────────
 
-// ✅ CHANGE 1: Added onPurchaseComplete prop
 const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplete, invitedGroup }) => {
   const [buyerName, setBuyerName] = useState(currentUser?.displayName || '');
   const [buyerEmail, setBuyerEmail] = useState(currentUser?.email || '');
@@ -558,12 +563,10 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketData, setTicketData] = useState(null);
 
-  // ✅ Credit state
   const [isAmbassador, setIsAmbassador] = useState(false);
   const [creditsUnlocked, setCreditsUnlocked] = useState(false);
   const [creditUsedOnEvents, setCreditUsedOnEvents] = useState([]);
 
-  // ✅ Tier state
   const hasTiers = event.hasTicketTiers && event.ticketTiers?.length > 0;
   const firstAvailableTier = hasTiers
     ? event.ticketTiers.find(t => {
@@ -596,7 +599,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
     loadUserData();
   }, [currentUser]);
 
-  // ✅ All credit conditions
   const creditsUsable = areCreditsUsable(isAmbassador, creditsUnlocked);
   const alreadyUsedCreditsOnEvent = hasUsedCreditsOnEvent(creditUsedOnEvents, event.id);
   const canUseCredits = canApplyCreditsToTicket(
@@ -607,13 +609,11 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
     event.id
   );
 
-  // ✅ Use selected tier price if tiers exist, otherwise fall back to event.ticketPrice
   const activeTicketPrice = hasTiers && selectedTier ? selectedTier.price : (event.ticketPrice || 0);
 
   const ticketPrice = activeTicketPrice;
   const serviceFee = calculateServiceFee(event);
   const paystackFee = calculatePaystackFee(event);
-  // ✅ Recalculate total using active tier price
   const baseTotal = ticketPrice + serviceFee + paystackFee;
   const totalBeforeCredits = baseTotal * quantity;
   const maxCreditsAllowed = calculateMaxCreditUsage(totalBeforeCredits, availableCredits);
@@ -622,16 +622,9 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
     : 0;
   const finalTotal = totalBeforeCredits - actualCreditsApplied;
 
-  // ✅ Tickets remaining — tier-aware
   const eventTicketsRemaining = hasTiers && selectedTier
     ? (selectedTier.quantity != null ? selectedTier.quantity - (selectedTier.sold ?? 0) : 9999)
     : (event.ticketsAvailable || 0) - (event.ticketsSold || 0);
-  // ✅ NEW — for a code-gated group purchase, the REAL cap is whichever
-  // is smaller: the event's own remaining tickets, or this specific
-  // group's remaining guest allowance. This is the actual enforcement
-  // point for paid group tickets — it stops checkout from ever opening
-  // on an exhausted group, unlike the webhook's necessarily best-effort
-  // (post-payment) check.
   const groupRemaining = invitedGroup
     ? Math.max(0, (invitedGroup.maxGuests || 0) - (invitedGroup.usedGuests || 0))
     : null;
@@ -639,7 +632,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
     ? Math.min(eventTicketsRemaining, groupRemaining)
     : eventTicketsRemaining;
 
-  // ✅ Reset credits if quantity > 1
   useEffect(() => {
     if (quantity > 1) setUseCredits(false);
   }, [quantity]);
@@ -648,13 +640,11 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
     setCreditsToApply(useCredits && canUseCredits ? maxCreditsAllowed : 0);
   }, [useCredits, maxCreditsAllowed, canUseCredits]);
 
-  // ✅ Reset paystack button when tier changes
   useEffect(() => {
     setShowPaystackButton(false);
   }, [selectedTier]);
 
   const handlePaymentSuccess = async (reference) => {
-    // ✅ Record credit usage on this event
     if (actualCreditsApplied > 0 && currentUser) {
       try {
         await updateDoc(doc(db, 'users', currentUser.uid), {
@@ -677,7 +667,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
       buyerPhone,
       quantity,
       ticketPrice,
-      // ✅ Include tier info in ticket
       tierName: selectedTier?.name || null,
       tierId: selectedTier?.id || null,
       serviceFee: serviceFee * quantity,
@@ -691,9 +680,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
     setShowTicketModal(true);
     toast.success('🎉 Payment successful! Check your email for your ticket.', { duration: 5000 });
 
-    // ✅ FIX: Pass tierId+qty to parent so it updates event state optimistically
-    // Do NOT call loadEventDetails — it triggers setLoading(true), unmounts this
-    // component, and re-fetches Firestore before the webhook has time to update it
     if (onPurchaseComplete) onPurchaseComplete(selectedTier?.id, quantity);
   };
 
@@ -702,7 +688,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
   };
 
   const handleProceedToPayment = () => {
-    // ✅ Validate tier selection
     if (hasTiers && !selectedTier) {
       toast.error('Please select a ticket type');
       return;
@@ -730,9 +715,7 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
         { display_name: 'TID', variable_name: 'tid', value: ticketId.current },
         { display_name: 'Name', variable_name: 'buyer_name', value: buyerName },
         { display_name: 'Phone', variable_name: 'buyer_phone', value: buyerPhone },
-        // ✅ Include tier in Paystack metadata
         { display_name: 'Tier', variable_name: 'tier_name', value: selectedTier?.name || 'Standard' },
-        // ✅ FIX: tier_id must be in custom_fields — Paystack drops direct metadata fields in webhook
         { display_name: 'TierID', variable_name: 'tier_id', value: selectedTier?.id || '' },
         { display_name: 'Price', variable_name: 'ticket_price', value: String(ticketPrice) },
         { display_name: 'Fee', variable_name: 'service_fee', value: String(serviceFee) },
@@ -740,24 +723,16 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
         { display_name: 'Sub', variable_name: 'subtotal', value: String(totalBeforeCredits) },
         { display_name: 'Cr', variable_name: 'credits_applied', value: String(actualCreditsApplied) },
         { display_name: 'Tot', variable_name: 'total_amount', value: String(finalTotal) },
-        // ✅ NEW — group code, only present for a code-gated group
-        // purchase. The webhook reads this to tag the ticket with
-        // invitedBy and update that group's usedGuests.
         ...(invitedGroup ? [{ display_name: 'Group', variable_name: 'group_code', value: invitedGroup.code }] : []),
       ],
       event_id: event.id,
       ticket_id: ticketId.current,
       tier_id: selectedTier?.id || null,
       total_amount: finalTotal,
-      // ✅ NEW — also present in the flat metadata object, matching how
-      // event_id/ticket_id/tier_id are duplicated here too (the webhook's
-      // extractMetadata checks both the custom_fields array and this flat
-      // object depending on how Paystack serializes the payload)
       group_code: invitedGroup ? invitedGroup.code : null,
     },
   };
 
-  // ✅ Smart credits message logic
   const getCreditsMessage = () => {
     if (!currentUser || availableCredits === 0) return null;
     if (!creditsUsable) return { type: 'locked' };
@@ -776,8 +751,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
           <h3 className="text-xl font-bold text-gray-900">Purchase Tickets</h3>
         </div>
 
-        {/* ✅ NEW — shows which group this purchase is going through,
-            matching the treatment on the free-registration side */}
         {invitedGroup && (
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
             <p className="text-sm text-purple-700">
@@ -800,7 +773,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
           )}
         </div>
 
-        {/* ✅ Tier selector — shown only when event has tiers */}
         {hasTiers && (
           <TicketTierSelector
             tiers={event.ticketTiers}
@@ -837,10 +809,8 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
           </div>
         </div>
 
-        {/* ✅ Smart credits section */}
         {creditsMessage && (
           <>
-            {/* Locked */}
             {creditsMessage.type === 'locked' && (
               <div className="bg-orange-50 border-2 border-orange-200 rounded-lg p-4 mb-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -859,7 +829,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
               </div>
             )}
 
-            {/* Already used on this event */}
             {creditsMessage.type === 'used' && (
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 mb-4">
                 <div className="flex items-center gap-2 mb-1">
@@ -873,7 +842,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
               </div>
             )}
 
-            {/* Quantity > 1 */}
             {creditsMessage.type === 'qty' && (
               <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-4">
                 <div className="flex items-center gap-2 mb-1">
@@ -887,7 +855,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
               </div>
             )}
 
-            {/* Available — show toggle */}
             {creditsMessage.type === 'available' && (
               <div className="bg-purple-50 rounded-lg p-4 mb-4 border-2 border-purple-200">
                 <div className="flex items-start justify-between mb-2">
@@ -920,11 +887,9 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
           </>
         )}
 
-        {/* Price Breakdown */}
         <div className="bg-gray-50 rounded-lg p-4 mb-4">
           <p className="text-sm font-semibold text-gray-900 mb-2">Price Breakdown:</p>
           <div className="space-y-1 text-sm">
-            {/* ✅ Show selected tier name in breakdown */}
             {hasTiers && selectedTier && (
               <div className="flex justify-between text-xs text-gray-500 pb-1 border-b border-gray-200 mb-1">
                 <span>Tier:</span>
@@ -977,7 +942,6 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
               className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
             >
               <Ticket size={20} />
-              {/* ✅ Show tier name in button */}
               {hasTiers && selectedTier ? `Buy ${selectedTier.name} Ticket` : 'Proceed to Payment'}
             </button>
           )
@@ -1007,8 +971,22 @@ const TicketPurchaseSection = ({ event, currentUser, navigate, onPurchaseComplet
 const handleRegister = (event, currentUser, navigate) => {
   toast.dismiss();
 
+  // NEW — Experiences scroll down to the session booking section, same
+  // shape as the free-registration/outingstation-ticketing scroll below.
+  // Kept as its own branch (rather than folding into the ticketing
+  // branch) since an experience is never "places" and never carries
+  // ticketingOption at all — subCategory is the one reliable signal.
+  if (event.subCategory === 'experiences') {
+    const section = document.getElementById('ticket-purchase-section');
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      toast.success('👇 Pick a session below to book');
+    }
+    return;
+  }
+
   if (event.subCategory === 'places') {
-    // ✅ NEW — Shortlets are booked by messaging the agency directly, not
+    // Shortlets are booked by messaging the agency directly, not
     // by "visiting the location" like a restaurant or hall — different
     // copy and a WhatsApp button instead of (or alongside) View Map.
     const isShortlet = event.category === 'Shortlet';
@@ -1048,7 +1026,6 @@ const handleRegister = (event, currentUser, navigate) => {
     return;
   }
 
-  // ✅ NEW — free registration events scroll down to the registration form
   if (event.ticketingOption === 'free_registration') {
     const section = document.getElementById('ticket-purchase-section');
     if (section) {
@@ -1062,7 +1039,6 @@ const handleRegister = (event, currentUser, navigate) => {
     const ticketSection = document.getElementById('ticket-purchase-section');
     if (ticketSection) {
       ticketSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // ✅ Different message for tier events
       toast.success(
         event.hasTicketTiers
           ? '👇 Select your ticket type below'
@@ -1136,11 +1112,6 @@ export default function EventDetails() {
   const { currentUser } = useAuth();
 
   const [event, setEvent] = useState(null);
-  // ✅ NEW — code-gated private event access. `unlockedGroup` holds the
-  // matched group's { code, groupName, maxGuests, usedGuests } once a
-  // valid code with remaining capacity is entered — null means still
-  // locked. Passed down to whichever registration/ticket flow renders
-  // below so the resulting ticket can be tagged with invitedBy.
   const [gateCodeInput, setGateCodeInput] = useState('');
   const [gateError, setGateError] = useState('');
   const [gateChecking, setGateChecking] = useState(false);
@@ -1159,9 +1130,6 @@ export default function EventDetails() {
     return () => { toast.dismiss(); };
   }, []);
 
-  // ✅ FIX: Optimistically update tier sold count in parent state — no Firestore re-fetch
-  // Re-fetching causes a race condition: webhook hasn't fired yet so Firestore
-  // still shows old sold count, making the tier appear available again
   const handlePurchaseComplete = (tierId, qty) => {
     if (!tierId || !event?.ticketTiers) return;
     setEvent(prev => ({
@@ -1172,11 +1140,6 @@ export default function EventDetails() {
     }));
   };
 
-  // ✅ NEW — same optimistic-update idea as handlePurchaseComplete, but for
-  // free registrations. There's no Paystack webhook to update ticketsSold
-  // here (the register-free-event endpoint does that server-side), so this
-  // just keeps the UI's "spots remaining" count in sync immediately without
-  // a re-fetch.
   const handleRegistrationComplete = (groupSize) => {
     if (!groupSize) return;
     setEvent(prev => ({
@@ -1185,15 +1148,22 @@ export default function EventDetails() {
     }));
   };
 
-  // ✅ NEW — validates the entered code against event.groupCodes.
-  // Case-insensitive, trims whitespace. Checks remaining capacity
-  // (maxGuests - usedGuests) so an exhausted group's code stops working
-  // the moment it hits its limit, even though every OTHER group's code
-  // keeps working independently. Reads directly from `event` state
-  // rather than a fresh fetch — groupCodes only change server-side when
-  // someone actually registers (which updates usedGuests via the
-  // registration/ticket flow, not here), so this is safe against the
-  // data the page already has loaded.
+  // NEW — same optimistic-update idea, for experience session bookings.
+  // Bumps the specific session's bookedSpots in local state immediately
+  // after a successful payment, so "X/Y booked" and the "spots left"
+  // count update without waiting on a re-fetch (mirrors
+  // handlePurchaseComplete's reasoning for tier sold counts exactly —
+  // the webhook may not have finished writing yet).
+  const handleSessionBookingComplete = (sessionId, guestCount) => {
+    if (!sessionId || !event?.sessions) return;
+    setEvent(prev => ({
+      ...prev,
+      sessions: prev.sessions.map(s =>
+        s.id === sessionId ? { ...s, bookedSpots: (s.bookedSpots || 0) + guestCount } : s
+      )
+    }));
+  };
+
   const handleCheckGateCode = () => {
     const input = gateCodeInput.trim().toUpperCase();
     if (!input) {
@@ -1233,24 +1203,12 @@ export default function EventDetails() {
         if (eventDoc.exists()) {
           eventData = { id: eventDoc.id, ...eventDoc.data() };
         } else {
-          // ✅ NEW — fallback to businesses. A business registered through
-          // OSB (Event Hall/Restaurant/Resort/the 8 discover themes) has
-          // no matching document in 'events' at all, so the lookup above
-          // always failed and silently redirected away. This constructs
-          // the same shape the list pages already build when merging
-          // businesses in, so this page can render it identically to a
-          // real event/place.
           const bizDoc = await getDoc(doc(db, 'businesses', id));
           if (bizDoc.exists()) {
             const biz = bizDoc.data();
             const packageImages = [...new Set(
               (biz.pricingTiers || []).map(t => t.image).filter(img => img)
             )];
-            // ✅ FIXED — was hardcoded `isFree: true` with no price or
-            // mapsLink copied over at all, regardless of what the owner
-            // actually set in OSBPlaceManageScreen/registration. Every
-            // business-sourced place shown through this fallback was
-            // silently wrong about pricing and missing its map link.
             eventData = {
               id: bizDoc.id,
               title: biz.businessName,
@@ -1259,9 +1217,9 @@ export default function EventDetails() {
               subCategory: 'places',
               location: biz.city || '',
               organizerPhone: biz.whatsappNumber,
-              mapLocation: biz.mapsLink || null, // ✅ FIXED — was never copied
-              isFree: biz.isFree !== false, // ✅ FIXED — was hardcoded true
-              price: biz.isFree === false ? (biz.price || null) : null, // ✅ FIXED — was never set
+              mapLocation: biz.mapsLink || null,
+              isFree: biz.isFree !== false,
+              price: biz.isFree === false ? (biz.price || null) : null,
               imageUrl: biz.logoUrl,
               images: packageImages,
               status: 'published',
@@ -1270,41 +1228,80 @@ export default function EventDetails() {
               openingDays: biz.openingDays || [],
             };
           } else {
-            // ✅ NEW — Shortlet listings live in their own top-level
-            // `shortlets` collection (one doc per property, owned by an
-            // agency via `agencyId`), not as businessType: 'Shortlet'
-            // business docs — so they have a completely separate ID
-            // space from both `events` and `businesses`. Without this,
-            // every shortlet link 404'd (silently redirected to /events).
             const shortletDoc = await getDoc(doc(db, 'shortlets', id));
-            if (!shortletDoc.exists()) { navigate('/events'); return; }
-            const listing = shortletDoc.data();
-            const priceType = listing.priceType || 'night';
-            const priceSuffix = priceType === 'hour' ? '/hour' : priceType === 'day' ? '/day' : '/night';
-            const statsLine = [
-              listing.bedrooms != null ? `${listing.bedrooms} bed${listing.bedrooms === 1 ? '' : 's'}` : null,
-              listing.bathrooms != null ? `${listing.bathrooms} bath${listing.bathrooms === 1 ? '' : 's'}` : null,
-              listing.maxGuests != null ? `up to ${listing.maxGuests} guests` : null,
-              priceType === 'hour' && listing.minHours ? `min. ${listing.minHours}hrs` : null,
-              (listing.amenities || []).length > 0 ? listing.amenities.join(' · ') : null,
-            ].filter(Boolean).join(' · ');
-            eventData = {
-              id: shortletDoc.id,
-              title: listing.title,
-              description: [statsLine, listing.description].filter(Boolean).join('\n\n'),
-              category: 'Shortlet',
-              subCategory: 'places',
-              location: [listing.area, listing.city].filter(Boolean).join(', '),
-              organizerName: listing.agencyName,
-              organizerPhone: listing.whatsappNumber,
-              mapLocation: listing.mapsLink || null,
-              isFree: false,
-              price: listing.price || null,
-              priceSuffix, // ✅ NEW — this file's own price field, not borrowed from Event.dart, so no workaround needed
-              imageUrl: (listing.images || [])[0] || null,
-              images: listing.images || [],
-              status: 'published',
-            };
+            if (shortletDoc.exists()) {
+              const listing = shortletDoc.data();
+              const priceType = listing.priceType || 'night';
+              const priceSuffix = priceType === 'hour' ? '/hour' : priceType === 'day' ? '/day' : '/night';
+              const statsLine = [
+                listing.bedrooms != null ? `${listing.bedrooms} bed${listing.bedrooms === 1 ? '' : 's'}` : null,
+                listing.bathrooms != null ? `${listing.bathrooms} bath${listing.bathrooms === 1 ? '' : 's'}` : null,
+                listing.maxGuests != null ? `up to ${listing.maxGuests} guests` : null,
+                priceType === 'hour' && listing.minHours ? `min. ${listing.minHours}hrs` : null,
+                (listing.amenities || []).length > 0 ? listing.amenities.join(' · ') : null,
+              ].filter(Boolean).join(' · ');
+              eventData = {
+                id: shortletDoc.id,
+                title: listing.title,
+                description: [statsLine, listing.description].filter(Boolean).join('\n\n'),
+                category: 'Shortlet',
+                subCategory: 'places',
+                location: [listing.area, listing.city].filter(Boolean).join(', '),
+                organizerName: listing.agencyName,
+                organizerPhone: listing.whatsappNumber,
+                mapLocation: listing.mapsLink || null,
+                isFree: false,
+                price: listing.price || null,
+                priceSuffix,
+                imageUrl: (listing.images || [])[0] || null,
+                images: listing.images || [],
+                status: 'published',
+              };
+            } else {
+              // Experience listings live in their own top-level
+              // `experiences` collection (published there by admin
+              // approval, same as events/places — no business account
+              // required to submit, same as events). Without this
+              // fourth fallback, every experience link 404'd the same
+              // way shortlets did before that fallback was added — the
+              // id lookup chain never reached them. Fields not native
+              // to the generic event/place shape (pricePerPerson,
+              // sessions, included, toBring, bookingMethod,
+              // bankAccount) are kept as-is rather than mapped into
+              // event-shaped fields, since SessionBookingSection and
+              // the sidebar below read them directly off
+              // `event.sessions` / `event.pricePerPerson`.
+              const expDoc = await getDoc(doc(db, 'experiences', id));
+              if (!expDoc.exists()) { navigate('/events'); return; }
+              const exp = expDoc.data();
+              eventData = {
+                id: expDoc.id,
+                title: exp.title,
+                description: exp.description || '',
+                category: exp.category,
+                subCategory: 'experiences',
+                city: exp.city,
+                location: exp.city || '',
+                address: exp.address || '',
+                mapLocation: exp.mapsLink || null,
+                organizerName: exp.organizerName || null,
+                organizerPhone: exp.organizerPhone || null,
+                organizerEmail: exp.organizerEmail || null,
+                isFree: false,
+                imageUrl: exp.imageUrl || (exp.images || [])[0] || null,
+                images: exp.images || [],
+                status: 'published',
+                // Experience-specific fields, read directly by
+                // SessionBookingSection and the sidebar price block
+                pricePerPerson: exp.pricePerPerson || 0,
+                minGuests: exp.minGuests || 1,
+                maxGuests: exp.maxGuests || null,
+                sessions: exp.sessions || [],
+                included: exp.included || [],
+                toBring: exp.toBring || [],
+                bookingMethod: exp.bookingMethod || 'contact',
+              };
+            }
           }
         }
       } else if (slug) {
@@ -1416,15 +1413,16 @@ export default function EventDetails() {
   }
 
   const isPlace = event.subCategory === 'places';
+  // NEW — experience flag, used throughout the render below the same
+  // way isPlace already is: swaps in SessionBookingSection instead of
+  // TicketPurchaseSection/FreeRegistrationSection, and adjusts the
+  // sidebar's price block and CTA button label.
+  const isExperience = event.subCategory === 'experiences';
   const eventDate = formatEventDateFull(event);
   const eventTime = formatEventTime(event);
   const hasOutingStationTicketing = event.ticketingOption === 'outingstation' && event.ticketingEnabled;
-  // ✅ NEW — free registration flag, mirrors hasOutingStationTicketing
   const hasFreeRegistration = event.ticketingOption === 'free_registration' && event.ticketingEnabled;
-  // ✅ Tier flag for sidebar
   const hasTiers = event.hasTicketTiers && event.ticketTiers?.length > 0;
-  // ✅ NEW — code-gated private event. Registration/ticket UI below stays
-  // hidden behind the gate until unlockedGroup is set.
   const isCodeGated = event.visibility === 'private' && event.privacyMode === 'code_gated';
   const canonicalUrl = event.slug
     ? `https://www.outingstation.com/e/${event.slug}`
@@ -1434,11 +1432,11 @@ export default function EventDetails() {
     <>
       <SEO
         title={`${event.title} - OutingStation`}
-        description={event.description?.substring(0, 155) || `Join ${event.title} - an amazing ${isPlace ? 'place' : 'event'} in ${event.location || 'Nigeria'}`}
+        description={event.description?.substring(0, 155) || `Join ${event.title} - an amazing ${isPlace ? 'place' : isExperience ? 'experience' : 'event'} in ${event.location || 'Nigeria'}`}
         image={event.imageUrl}
         url={canonicalUrl}
         type="article"
-        keywords={`${event.category}, ${event.location}, ${isPlace ? 'places' : 'events'} Nigeria, ${event.eventType} events, ${event.isFree ? 'free events' : 'paid events'}`}
+        keywords={`${event.category}, ${event.location}, ${isPlace ? 'places' : isExperience ? 'experiences' : 'events'} Nigeria, ${event.eventType || ''} events, ${event.isFree ? 'free events' : 'paid events'}`}
       />
 
       <div className="min-h-screen bg-gray-50">
@@ -1454,7 +1452,7 @@ export default function EventDetails() {
 
             <div className="lg:col-span-2">
               <EventImageCarousel event={event} isPlace={isPlace} />
-              {(hasOutingStationTicketing || hasFreeRegistration) && (
+              {(hasOutingStationTicketing || hasFreeRegistration || isExperience) && (
   <div
     onClick={() => {
       document.getElementById('ticket-purchase-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1464,7 +1462,9 @@ export default function EventDetails() {
   >
     <Ticket size={16} />
     <span>
-      {hasFreeRegistration
+      {isExperience
+        ? 'Pick a session below to book'
+        : hasFreeRegistration
         ? 'Register for free — scroll down'
         : hasTiers ? 'Select your ticket type below' : 'Get your ticket — scroll down'}
     </span>
@@ -1510,18 +1510,44 @@ export default function EventDetails() {
               </div>
 
               <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">About This {isPlace ? 'Place' : 'Event'}</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-4">About This {isPlace ? 'Place' : isExperience ? 'Experience' : 'Event'}</h2>
                 <p className="text-gray-700 leading-relaxed whitespace-pre-line">
                   {event.description || 'No description available.'}
                 </p>
               </div>
 
-              {/* ✅ NEW — code-gated access. Shown instead of the normal
-                  registration/ticket section until a valid group code is
-                  entered. Once unlocked, the exact same
-                  TicketPurchaseSection / FreeRegistrationSection renders
-                  below as it always did — the gate only decides whether
-                  guests can reach it, not what happens once they do. */}
+              {/* NEW — What's Included / What to Bring, experience-only.
+                  Sits right after the description, same spot Additional
+                  Information sits for events below. */}
+              {isExperience && (event.included?.length > 0 || event.toBring?.length > 0) && (
+                <div className="bg-white rounded-xl p-6 mb-6 shadow-sm grid sm:grid-cols-2 gap-6">
+                  {event.included?.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-1.5">✅ What's Included</h3>
+                      <ul className="space-y-1.5">
+                        {event.included.map((item, i) => (
+                          <li key={i} className="text-sm text-gray-600 flex items-start gap-1.5">
+                            <span className="text-emerald-500 mt-0.5">•</span> {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {event.toBring?.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-1.5">🎒 What to Bring</h3>
+                      <ul className="space-y-1.5">
+                        {event.toBring.map((item, i) => (
+                          <li key={i} className="text-sm text-gray-600 flex items-start gap-1.5">
+                            <span className="text-cyan-500 mt-0.5">•</span> {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {isCodeGated && !unlockedGroup && (
                 <div id="ticket-purchase-section" className="bg-white rounded-2xl p-6 mb-6 shadow-sm border-2 border-purple-100">
                   <div className="flex items-center gap-2 mb-2">
@@ -1559,12 +1585,6 @@ export default function EventDetails() {
                 </div>
               )}
 
-              {/* ✅ NEW — invite-only events never show a self-service
-                  registration/purchase section at all, paid or free.
-                  Invited guests already have a comped ticket sitting in
-                  their inbox (issued automatically at approval, or later
-                  from Manage Event's Invite Guests panel) — there's
-                  nothing for them to do here. */}
               {event.visibility === 'private' && event.privacyMode === 'invite_only' && (
                 <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-6 mb-6 text-center">
                   <p className="text-2xl mb-2">💌</p>
@@ -1573,27 +1593,35 @@ export default function EventDetails() {
                 </div>
               )}
 
-              {hasOutingStationTicketing && !(event.visibility === 'private' && event.privacyMode === 'invite_only') && (!isCodeGated || unlockedGroup) && (
+              {/* NEW — Experience session booking. Its own top-level
+                  branch (not folded into the outingstation-ticketing
+                  check below) since experiences never carry
+                  ticketingOption at all — bookingMethod is the
+                  equivalent field, and 'contact' vs 'outingstation'
+                  is handled inside SessionBookingSection itself. */}
+              {isExperience && (
                 <div id="ticket-purchase-section" className="mb-6">
-                  {/* ✅ CHANGE 3: Pass onPurchaseComplete so tier counts refresh after purchase */}
-                  {/* ✅ NEW — invitedGroup passed through so a code-gated
-                      paid ticket gets tagged with which group unlocked it */}
+                  <SessionBookingSection
+                    experience={event}
+                    currentUser={currentUser}
+                    onBookingComplete={handleSessionBookingComplete}
+                  />
+                </div>
+              )}
+
+              {hasOutingStationTicketing && !isExperience && !(event.visibility === 'private' && event.privacyMode === 'invite_only') && (!isCodeGated || unlockedGroup) && (
+                <div id="ticket-purchase-section" className="mb-6">
                   <TicketPurchaseSection event={event} currentUser={currentUser} navigate={navigate} onPurchaseComplete={handlePurchaseComplete} invitedGroup={isCodeGated ? unlockedGroup : null} />
                 </div>
               )}
 
-              {/* ✅ NEW — Free Registration section, mutually exclusive with TicketPurchaseSection */}
-              {hasFreeRegistration && !(event.visibility === 'private' && event.privacyMode === 'invite_only') && (!isCodeGated || unlockedGroup) && (
+              {hasFreeRegistration && !isExperience && !(event.visibility === 'private' && event.privacyMode === 'invite_only') && (!isCodeGated || unlockedGroup) && (
                 <div id="ticket-purchase-section" className="mb-6">
-                  {/* ✅ NEW — invitedGroup passed through so a code-gated
-                      free-registration ticket gets tagged with which
-                      group unlocked it */}
                   <FreeRegistrationSection event={event} currentUser={currentUser} onRegistrationComplete={handleRegistrationComplete} invitedGroup={isCodeGated ? unlockedGroup : null} />
                 </div>
               )}
 
-              {/* ✅ Vendor Stands — public browse/apply/pay section, self-hides if not enabled */}
-              <VendorStandsSection event={event} currentUser={currentUser} navigate={navigate} />
+              {!isExperience && <VendorStandsSection event={event} currentUser={currentUser} navigate={navigate} />}
 
               {(event.university || event.platform || event.religionType) && (
                 <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
@@ -1633,7 +1661,7 @@ export default function EventDetails() {
               {(event.organizerName || event.organizerEmail || event.organizerPhone) && (
                 <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
                   <h2 className="text-xl font-bold text-gray-900 mb-4">
-                    {isPlace ? 'Contact Information' : 'Organizer'}
+                    {isPlace ? 'Contact Information' : isExperience ? 'Host' : 'Organizer'}
                   </h2>
                   <div className="space-y-3">
                     {event.organizerName && (
@@ -1669,17 +1697,34 @@ export default function EventDetails() {
             <div className="lg:col-span-1">
               <div className="bg-white rounded-xl p-6 shadow-lg sticky top-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">
-                  {isPlace ? 'Place Details' : 'Event Details'}
+                  {isPlace ? 'Place Details' : isExperience ? 'Experience Details' : 'Event Details'}
                 </h2>
                 <div className="space-y-4 mb-6">
-                  <div className="flex items-start gap-3">
-                    <Calendar size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
-                    <div>
-                      <p className="font-semibold text-gray-900 text-sm">{isPlace ? 'Availability' : 'Date'}</p>
-                      <p className="text-gray-600 text-sm">{eventDate}</p>
+                  {/* NEW — experiences show their next upcoming session
+                      date here instead of a single fixed date, since an
+                      experience can have many sessions across many days */}
+                  {isExperience ? (
+                    <div className="flex items-start gap-3">
+                      <Calendar size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
+                      <div>
+                        <p className="font-semibold text-gray-900 text-sm">Sessions</p>
+                        <p className="text-gray-600 text-sm">
+                          {(event.sessions || []).length > 0
+                            ? `${event.sessions.length} session${event.sessions.length !== 1 ? 's' : ''} available`
+                            : 'No sessions scheduled yet'}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  {eventTime && eventTime !== 'TBD' && (
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <Calendar size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
+                      <div>
+                        <p className="font-semibold text-gray-900 text-sm">{isPlace ? 'Availability' : 'Date'}</p>
+                        <p className="text-gray-600 text-sm">{eventDate}</p>
+                      </div>
+                    </div>
+                  )}
+                  {!isExperience && eventTime && eventTime !== 'TBD' && (
                     <div className="flex items-start gap-3">
                       <Clock size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                       <div>
@@ -1712,9 +1757,17 @@ export default function EventDetails() {
                   <div className="flex items-start gap-3">
                     <DollarSign size={20} className="text-cyan-500 mt-1 flex-shrink-0" />
                     <div className="flex-1">
-                      <p className="font-semibold text-gray-900 text-sm">{isPlace ? 'Entry Fee' : 'Price'}</p>
-                      {/* ✅ Show tier prices in sidebar */}
-                      {hasTiers ? (
+                      <p className="font-semibold text-gray-900 text-sm">{isPlace ? 'Entry Fee' : isExperience ? 'Price' : 'Price'}</p>
+                      {/* NEW — experience price is always per-person,
+                          shown plainly rather than routed through the
+                          tier/free-registration/external ladder below
+                          (none of which apply to experiences) */}
+                      {isExperience ? (
+                        <p className="text-gray-600 text-sm">
+                          <span className="font-semibold">₦{Number(event.pricePerPerson || 0).toLocaleString()}</span>
+                          <span className="text-gray-400"> /person</span>
+                        </p>
+                      ) : hasTiers ? (
                         <div className="space-y-1 mt-1">
                           {event.ticketTiers.slice(0, 4).map((tier, i) => (
                             <div key={i} className="flex justify-between items-center">
@@ -1735,9 +1788,6 @@ export default function EventDetails() {
                           {hasOutingStationTicketing ? (
                             <span className="font-semibold">₦{event.ticketPrice?.toLocaleString()}</span>
                           ) : event.ticketingOption === 'external' ? (
-                            // ✅ FIX: external ticketing was checking isFree first, showing
-                            // "Free" even when a real priced external ticket link existed.
-                            // Trust the actual price for this ticketing type instead.
                             event.price > 0 ? (
                               <span className="font-semibold">₦{event.price.toLocaleString()}</span>
                             ) : event.isFree ? (
@@ -1765,8 +1815,9 @@ export default function EventDetails() {
                     className="w-full bg-gradient-to-r from-cyan-400 to-cyan-500 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition flex items-center justify-center gap-2"
                   >
                     <CheckCircle size={20} />
-                    {/* ✅ Button label — accounts for free registration too */}
-                    {hasFreeRegistration
+                    {isExperience
+                      ? 'Book a Session'
+                      : hasFreeRegistration
                       ? 'Register'
                       : hasOutingStationTicketing
                       ? (hasTiers ? 'Select Ticket' : 'Buy Tickets')
@@ -1781,7 +1832,7 @@ export default function EventDetails() {
                     }`}
                   >
                     <Bookmark size={20} className={saved ? 'fill-current' : ''} />
-                    {saved ? 'Saved' : `Save ${isPlace ? 'Place' : 'Event'}`}
+                    {saved ? 'Saved' : `Save ${isPlace ? 'Place' : isExperience ? 'Experience' : 'Event'}`}
                   </button>
 
                   {!currentUser && (

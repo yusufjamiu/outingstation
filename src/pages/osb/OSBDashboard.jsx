@@ -14,11 +14,11 @@ import {
 
 const HOURLY_TYPES = ['DJ', 'MC', 'Musician', 'Photographer'];
 const MAX_ITEMS = 10;
-// ✅ Fallback list — businessCategory alone isn't reliable on older docs
+// Fallback list — businessCategory alone isn't reliable on older docs
 // saved before that field existed, so this infers from businessType instead.
 const SERVICE_PROVIDER_TYPE_VALUES = [
   'Event Hall', 'DJ', 'MC', 'Caterer', 'Decorator', 'Photographer', 'Musician',
-  'Furniture Rental', 'Ride Provider', 'Experience Host', 'Security',
+  'Furniture Rental', 'Ride Provider', 'Security',
   'Restaurant', 'Livestock Seller', 'Gift Vendor', 'Food Stuffs Seller',
   'Baker', 'Beverages Seller', 'Other Service',
 ];
@@ -56,7 +56,7 @@ const EVENT_VENDOR_NAV = [
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
-// ✅ NEW — Shortlet is registered as businessCategory: 'Service Provider'
+// Shortlet is registered as businessCategory: 'Service Provider'
 // (same as DJ/Caterer), so without its own nav it would silently fall
 // into SERVICE_PROVIDER_NAV — Requests/Open Offers/My Quotes, a
 // marketplace-quote flow that makes no sense for a shortlet agency.
@@ -70,7 +70,7 @@ const SHORTLET_NAV = [
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
-// ✅ NEW — fixed checklist, matching osb_shortlet_manage_screen.dart on
+// fixed checklist, matching osb_shortlet_manage_screen.dart on
 // mobile exactly, so a listing added on one platform shows identical
 // amenities on the other.
 const SHORTLET_AMENITIES = [
@@ -146,7 +146,7 @@ function ImageUploadSlot({ imageUrl, onUploaded, folder }) {
   );
 }
 
-// ✅ NEW — multi-image uploader for Shortlet listing galleries.
+// multi-image uploader for Shortlet listing galleries.
 // ImageUploadSlot above only replaces a single image; a listing needs
 // several photos, so this appends to an array instead and renders one
 // removable thumbnail per image plus a trailing add-slot.
@@ -193,7 +193,7 @@ function ComingSoon({ label }) {
   );
 }
 
-// ✅ NEW — small status label for a single verification document
+// small status label for a single verification document
 function VerifyStatusPill({ status }) {
   const config = {
     pending: { label: 'Under Review', color: 'bg-amber-100 text-amber-700' },
@@ -231,18 +231,18 @@ export default function OSBDashboard() {
   const [hourlyPackages, setHourlyPackages] = useState([]);
   const [savingPricing, setSavingPricing] = useState(false);
 
-  // ✅ Direct requests (targeted at this business — Accept/Decline)
+  // Direct requests (targeted at this business — Accept/Decline)
   const [directRequests, setDirectRequests] = useState([]);
   const [loadingDirect, setLoadingDirect] = useState(false);
   const [respondingId, setRespondingId] = useState('');
 
-  // ✅ Open offers (browsable — submit a quote)
+  // Open offers (browsable — submit a quote)
   const [openOffers, setOpenOffers] = useState([]);
   const [loadingOffers, setLoadingOffers] = useState(false);
   const [quotingOfferId, setQuotingOfferId] = useState('');
   const [quoteForm, setQuoteForm] = useState({ price: '', message: '' });
 
-  // ✅ My quotes (submitted by this business)
+  // My quotes (submitted by this business)
   const [myQuotes, setMyQuotes] = useState([]);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
 
@@ -255,7 +255,7 @@ export default function OSBDashboard() {
   const [settingsForm, setSettingsForm] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // ✅ NEW — Shortlet "My Listings"
+  // Shortlet "My Listings"
   const [shortletListings, setShortletListings] = useState([]);
   const [loadingListings, setLoadingListings] = useState(false);
   const [listingModalOpen, setListingModalOpen] = useState(false);
@@ -275,12 +275,12 @@ export default function OSBDashboard() {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setBusinesses(list);
       if (list.length > 0) {
-        // ✅ FIX: honor ?business={id} from the URL (set when navigating here
+        // honor ?business={id} from the URL (set when navigating here
         // from the Navbar's account dropdown) — previously this always
         // defaulted to list[0], ignoring which business was actually clicked.
         const requestedId = searchParams.get('business');
         const target = (requestedId && list.some(b => b.id === requestedId)) ? requestedId : list[0].id;
-        // ✅ FIX: first arrival now plays the same "Switching to..." overlay
+        // first arrival now plays the same "Switching to..." overlay
         // as any later switch, instead of skipping it. Safe this time because
         // `loading` stays true (see onDone below) until the switch actually
         // completes — the dashboard never gets a chance to render with no
@@ -301,7 +301,7 @@ export default function OSBDashboard() {
     const b = list.find(x => x.id === id);
     if (!b) { if (onDone) onDone(); return; }
 
-    // ✅ Cancel any switch already in flight. Without this, clicking a
+    // Cancel any switch already in flight. Without this, clicking a
     // second business before the first one's 900ms transition finishes let
     // both timeouts fire — the earlier one could overwrite the later one's
     // selection after the fact, making the switch look like it "didn't work."
@@ -340,12 +340,14 @@ export default function OSBDashboard() {
   const selectedBusiness = businesses.find(b => b.id === selectedId);
   const isServiceProvider = selectedBusiness?.businessCategory === 'Service Provider' ||
     (!selectedBusiness?.businessCategory && SERVICE_PROVIDER_TYPE_VALUES.includes(selectedBusiness?.businessType));
-  // ✅ NEW — Shortlet carries businessCategory: 'Service Provider' too, so
+  // Shortlet carries businessCategory: 'Service Provider' too, so
   // it needs its own check ahead of the generic marketplace nav/loaders.
   const isShortletAgency = selectedBusiness?.businessType === 'Shortlet';
-  const isEventVendor = selectedBusiness && !isServiceProvider;
+  const isEventVendor = selectedBusiness && !isServiceProvider && !isShortletAgency;
   const isHourly = selectedBusiness && HOURLY_TYPES.includes(selectedBusiness.businessType);
-  const NAV_ITEMS = isShortletAgency ? SHORTLET_NAV : isServiceProvider ? SERVICE_PROVIDER_NAV : EVENT_VENDOR_NAV;
+  const NAV_ITEMS = isShortletAgency ? SHORTLET_NAV
+    : isServiceProvider ? SERVICE_PROVIDER_NAV
+    : EVENT_VENDOR_NAV;
 
   useEffect(() => {
     if (selectedBusiness && selectedBusiness.status === 'approved' && isServiceProvider && !isShortletAgency) {
@@ -355,7 +357,7 @@ export default function OSBDashboard() {
     } else {
       setDirectRequests([]); setOpenOffers([]); setMyQuotes([]);
     }
-    // ✅ NEW — listings load whenever the selected business is a Shortlet
+    // listings load whenever the selected business is a Shortlet
     // agency, independent of the approval-gated loaders above (an owner
     // can start adding listings the moment they're approved, same as
     // every other business type gets to use its own dashboard).
@@ -632,7 +634,7 @@ export default function OSBDashboard() {
     setSavingPricing(false);
   };
 
-  // ✅ NEW — submits a Gov ID or CAC upload for review. Always writes
+  // submits a Gov ID or CAC upload for review. Always writes
   // status:'pending' — matches the Firestore rule exactly, which only
   // lets the owner submit as pending, never self-approve.
   const submitVerificationDoc = async (type, url) => {
@@ -655,7 +657,7 @@ export default function OSBDashboard() {
     if (!selectedBusiness || !settingsForm) return;
     setSavingSettings(true);
     try {
-      // ✅ Resolve "Others" to the actual typed state, and don't persist
+      // Resolve "Others" to the actual typed state, and don't persist
       // the temporary customCity field itself
       const { customCity, ...formToSave } = settingsForm;
       const resolvedCity = settingsForm.city === 'Others' ? (customCity || '').trim() : settingsForm.city;
@@ -728,7 +730,7 @@ export default function OSBDashboard() {
         onSelectSection={setActiveSection}
         selectedBusiness={selectedBusiness}
         badgeCounts={{
-          // ✅ Live counts, not stored notifications — these shrink naturally
+          // Live counts, not stored notifications — these shrink naturally
           // as the business acts on each item, no "mark as read" needed.
           requests: directRequests.filter(r => r.status === 'pending').length,
           offers: openOffers.filter(o => !myQuotes.some(q => q.requestId === o.id)).length,
@@ -1276,7 +1278,7 @@ export default function OSBDashboard() {
         </div>
       </div>
 
-      {/* ✅ NEW — Add/Edit Shortlet Listing modal */}
+      {/* Add/Edit Shortlet Listing modal */}
       {listingModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeListingModal}>
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>

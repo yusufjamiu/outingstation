@@ -53,12 +53,14 @@ const MarketplaceCategoryPage = lazy(() => import('./pages/MarketplaceCategoryPa
 const PlanEventPage = lazy(() => import('./pages/PlanEventPage'));
 const CityEventsPage = lazy(() => import('./pages/events/CityEventsPage'));
 const MyEventsPage = lazy(() => import('./pages/MyEventsPage'));
+const ManageExperience = lazy(() => import('./pages/ManageExperience'));
 const OSBDashboard = lazy(() => import('./pages/osb/OSBDashboard'));
 const CookiePolicy = lazy(() => import('./pages/CookiePolicy'));
 const FAQ = lazy(() => import('./pages/FAQ'));
 const AboutUs = lazy(() => import('./pages/AboutUs'));
 const HowItWorks = lazy(() => import('./pages/HowItWorks'));
 const SubmitEventPage = lazy(() => import('./pages/SubmitEventPage'));
+const SubmitExperiencePage = lazy(() => import('./pages/SubmitExperiencePage'));
 const NotificationsPage = lazy(() => import('./pages/notifications/NotificationsPage'));
 const VerifyTicket = lazy(() => import('./pages/VerifyTicket'));
 const JoinAmbassador = lazy(() => import('./pages/JoinAmbassador'));
@@ -108,6 +110,8 @@ const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
 const AdminCategories = lazy(() => import('./pages/admin/AdminCategories'));
 const AdminUniversities = lazy(() => import('./pages/admin/Adminuniversities'));
 const AdminTickets = lazy(() => import('./pages/admin/AdminTickets'));
+const AdminExperiences = lazy(() => import('./pages/admin/AdminExperiences'));
+const AdminExperienceSubmissions = lazy(() => import('./pages/admin/AdminExperienceSubmissions'));
 const AdminSavedEventsAnalytics = lazy(() => import('./pages/admin/AdminSavedEventsAnalytics'));
 const AdminEssentialServices = lazy(() => import('./pages/admin/AdminEssentialServices'));
 const EventSubmissionsPage = lazy(() => import('./pages/admin/EventSubmissionsPage'));
@@ -120,6 +124,7 @@ const AdminMusicTracks = lazy(() => import('./pages/admin/AdminMusicTracks'));
 const AdminCreditRequests = lazy(() => import('./pages/admin/AdminCreditRequests'));
 const AdminAmbassadorApplications = lazy(() => import('./pages/admin/AdminAmbassadorApplications'));
 const AdminAmbassadorPayouts = lazy(() => import('./pages/admin/AdminAmbassadorPayouts'));
+const AdminExperienceBookings = lazy(() => import('./pages/admin/AdminExperienceBookings'));
 
 // ✅ NEW — minimal loading fallback shown while a route's chunk downloads.
 // Deliberately lightweight (no image/icon assets) so IT doesn't add to
@@ -190,6 +195,7 @@ function App() {
                 <Route path="/plan-event" element={<PlanEventPage />} />
                 <Route path="/my-events" element={<MyEventsPage />} />
                 <Route path="/manage-events" element={<ManageEventsPage />} />
+                <Route path="/business/experience/:experienceId" element={<ManageExperience />} />
                 <Route path="/business" element={<OSBDashboard />} />
                 <Route path="/cookies" element={<CookiePolicy />} />
                 <Route path="/faqs" element={<FAQ />} />
@@ -199,6 +205,7 @@ function App() {
                 <Route path="/create" element={<SubmitEventPage />} />
                 <Route path="/create-event" element={<SubmitEventPage />} />
                 <Route path="/create-place" element={<SubmitEventPage />} />
+                <Route path="/create-experience" element={<SubmitExperiencePage />} />
                 <Route path="/list-vendor" element={<SubmitEventPage />} />
                 <Route path="/manage/:manageKey" element={<ManageEvent />} />
                 <Route path="/verify-ticket/:ticketId" element={<VerifyTicket />} />
@@ -288,6 +295,7 @@ function App() {
                     <AmbassadorNotifications />
                   </AmbassadorRoute>
                 } />
+                
 
                 <Route path="/admin/music-tracks" element={
                   <AdminRoute>
@@ -416,6 +424,12 @@ function App() {
                   </AdminRoute>
                 } />
 
+                <Route path="/admin/experience-bookings" element={
+                  <AdminRoute>
+                    <AdminExperienceBookings />
+                  </AdminRoute>
+                } />
+
                 <Route path="/admin/notifications" element={
                   <AdminRoute>
                     <AdminNotifications />
@@ -437,6 +451,18 @@ function App() {
                 <Route path="/admin/ambassadors" element={
                   <AdminRoute>
                     <AdminAmbassadors />
+                  </AdminRoute>
+                } />
+
+                <Route path="/admin/experiences" element={
+                  <AdminRoute>
+                    <AdminExperiences />
+                  </AdminRoute>
+                } />
+                
+                <Route path="/admin/experience-submissions" element={
+                  <AdminRoute>
+                    <AdminExperienceSubmissions />
                   </AdminRoute>
                 } />
 
