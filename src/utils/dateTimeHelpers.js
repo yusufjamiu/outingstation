@@ -14,7 +14,7 @@ export const formatEventDate = (event) => {
     return event.placeAvailability || 'Always Open';
   }
   
-  // ✅ RECURRING EVENTS
+  // ✅ RECURRING EVENTS' 
   if (event.eventDuration === 'recurring') {
     const patterns = {
       'daily': 'Daily',
