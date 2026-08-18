@@ -5,6 +5,18 @@ import { AdminSidebar } from '../../components/AdminSidebar';
 import { collection, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 
+// ✅ NEW — same Nigerian states list used across the app (mobile city
+// pickers, marketplace city filter, etc.), with "All Cities" prepended
+// since this one drives a filter rather than a required field.
+const NIGERIAN_CITIES = [
+  'All Cities',
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+];
+
 export default function AdminPlaces() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -13,6 +25,8 @@ export default function AdminPlaces() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
+  // ✅ NEW
+  const [filterCity, setFilterCity] = useState('All Cities');
 
   useEffect(() => {
     loadPlaces();
@@ -64,7 +78,15 @@ export default function AdminPlaces() {
       filterType === 'All' || place.eventType === filterType;
     const matchesStatus =
       filterStatus === 'All' || place.status === filterStatus;
-    return matchesSearch && matchesType && matchesStatus;
+    // ✅ NEW — matches the same "loose contains" approach the mobile
+    // city filters use, so "FCT (Abuja)" still matches a place whose
+    // location just says "Abuja".
+    const matchesCity =
+      filterCity === 'All Cities' ||
+      (place.location || '').toLowerCase().includes(
+        filterCity.toLowerCase().replace(' (abuja)', '')
+      );
+    return matchesSearch && matchesType && matchesStatus && matchesCity;
   });
 
   const publishedCount = places.filter(p => p.status === 'published').length;
@@ -139,6 +161,16 @@ export default function AdminPlaces() {
               <option value="All">All Status</option>
               <option value="published">Published</option>
               <option value="draft">Draft</option>
+            </select>
+            {/* ✅ NEW — city filter */}
+            <select
+              value={filterCity}
+              onChange={(e) => setFilterCity(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
+            >
+              {NIGERIAN_CITIES.map(city => (
+                <option key={city} value={city}>{city}</option>
+              ))}
             </select>
           </div>
         </header>

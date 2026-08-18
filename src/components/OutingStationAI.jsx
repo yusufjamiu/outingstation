@@ -38,16 +38,25 @@ const STARTERS = [
   { icon: Heart,          color: '#C98BE0', label: 'Chill spot for a date' },
 ];
 
+// ✅ CHANGED — added 'Resort'. Resorts registered as businesses (via
+// OSB, not admin-added place-events) were previously invisible to the
+// AI entirely — this list controls which businessTypes get pulled in
+// as "services" at all, and Resort was missing from it.
 const SERVICE_TYPES = [
   'Event Hall', 'DJ', 'MC', 'Caterer', 'Decorator', 'Photographer',
-  'Musician', 'Rentals', 'Security', 'Restaurant',
+  'Musician', 'Rentals', 'Security', 'Restaurant', 'Resort',
 ];
 
+// ✅ CHANGED — added 'Arts & Crafts' and 'Books & Stationery', which
+// exist as real Marketplace categories in the app but were never added
+// here, so vendors under them were invisible to the AI even though they
+// show up fine in the Marketplace tab.
 const MARKETPLACE_TYPES = [
   'Tailor', 'Cobbler', 'Footwear Seller', 'Bag & Accessories', 'Caftan Seller',
   'Traditional Caps', 'Premium Watches', 'Jewelry', 'Perfume Seller', 'Baker',
   'Food Stuffs Seller', 'Livestock Seller', 'Beverages Seller', 'Laundry Service',
   'Gift Vendor', 'Souvenirs & Branding', 'Mechanic', 'Furniture Carpenter',
+  'Arts & Crafts', 'Books & Stationery',
 ];
 
 function eventUrl(r) {
@@ -73,16 +82,17 @@ function timeGreeting() {
 // ── Preloaded catalog cache ───────────────────────────────────────────────
 // ✅ NEW — mirrors _OutingAICatalogCache in the Flutter app. Kicks off all
 // catalog fetches (events, vendors, services, marketplace, essential
-// services, rides, universities) once, cached at module scope so re-opening
-// the widget doesn't refetch. User-specific data (name, city, credits,
-// prompts, tickets) is NOT cached here — that still loads fresh on every
-// open in loadData(), same as before.
+// services, rides, shortlets, experiences, universities) once, cached at
+// module scope so re-opening the widget doesn't refetch. User-specific
+// data (name, city, credits, prompts, tickets) is NOT cached here — that
+// still loads fresh on every open in loadData(), same as before.
 const catalogCache = {
   loaded: false,
   promise: null,
   cachedForCity: null,
   events: [], vendors: [], services: [], marketplace: [],
   essentialServices: [], rides: [], uniNames: [], standEvents: [],
+  shortlets: [], experiences: [], // ✅ NEW
 };
 
 function preloadCatalog(userCity) {
@@ -220,7 +230,7 @@ async function fetchAllCatalog(userCity) {
         };
       });
 
-    // ✅ NEW — Marketplace category (Tailor, Cobbler, Baker, etc.)
+    // ✅ Marketplace category (Tailor, Cobbler, Baker, Arts & Crafts, etc.)
     catalogCache.marketplace = allBiz
       .filter(b => MARKETPLACE_TYPES.includes(b.businessType))
       .map(b => {
@@ -280,6 +290,59 @@ async function fetchAllCatalog(userCity) {
     });
   } catch (e) { console.error('AI essential services preload error:', e); }
 
+  // ✅ NEW — Shortlets (top-level `shortlets` collection). Was completely
+  // absent from the AI's catalog before this change.
+  try {
+    const shortletSnap = await getDocs(collection(db, 'shortlets'));
+    catalogCache.shortlets = shortletSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(s => s.available === true)
+      .map(s => {
+        const images = Array.isArray(s.images) ? s.images : [];
+        const priceType = s.priceType || 'night';
+        const suffix = priceType === 'hour' ? '/hour' : priceType === 'day' ? '/day' : '/night';
+        const price = s.price || 0;
+        const statsBits = [
+          s.bedrooms != null ? `${s.bedrooms} bed${s.bedrooms === 1 ? '' : 's'}` : null,
+          s.bathrooms != null ? `${s.bathrooms} bath${s.bathrooms === 1 ? '' : 's'}` : null,
+          s.maxGuests != null ? `up to ${s.maxGuests} guests` : null,
+        ].filter(Boolean).join(' · ');
+        return {
+          id: d.id, title: s.title || 'Shortlet', kind: 'shortlet',
+          desc: [statsBits, s.description || ''].filter(Boolean).join(' — '),
+          city: s.city || '', area: s.area || '',
+          priceLabel: `₦${Number(price).toLocaleString()}${suffix}`,
+          priceFrom: price,
+          whatsapp: (s.whatsappNumber || '').replace(/[^0-9]/g, ''),
+          imageUrl: images[0] || '',
+          mapLocation: s.mapsLink || '',
+        };
+      });
+  } catch (e) { console.error('AI shortlets preload error:', e); }
+
+  // ✅ NEW — Experiences (top-level `experiences` collection). Was
+  // completely absent from the AI's catalog before this change.
+  try {
+    const expSnap = await getDocs(collection(db, 'experiences'));
+    catalogCache.experiences = expSnap.docs.map(d => {
+      const data = d.data();
+      const images = Array.isArray(data.images) ? data.images : [];
+      const imageUrl = (data.imageUrl || '').trim() || images[0] || '';
+      const price = data.pricePerPerson || 0;
+      return {
+        id: d.id, title: data.title || 'Experience', kind: 'experience',
+        desc: data.description || '',
+        category: data.category || 'Experience',
+        city: data.city || '', area: data.address || data.city || '',
+        priceLabel: `₦${Number(price).toLocaleString()}/person`,
+        priceFrom: price,
+        whatsapp: (data.organizerPhone || '').replace(/[^0-9]/g, ''),
+        imageUrl,
+        mapLocation: data.mapsLink || '',
+      };
+    });
+  } catch (e) { console.error('AI experiences preload error:', e); }
+
   // Universities
   try {
     const uSnap = await getDocs(collection(db, 'universities'));
@@ -320,6 +383,8 @@ export default function OutingStationAI() {
   const [marketplace, setMarketplace] = useState([]);         // ✅ NEW
   const [essentialServices, setEssentialServices] = useState([]); // ✅ NEW
   const [rides, setRides] = useState([]);                      // ✅ NEW
+  const [shortlets, setShortlets] = useState([]);              // ✅ NEW
+  const [experiences, setExperiences] = useState([]);          // ✅ NEW
   const [standEvents, setStandEvents] = useState([]);
   const [uniNames, setUniNames] = useState([]);
   const [tickets, setTickets] = useState([]);
@@ -493,6 +558,8 @@ export default function OutingStationAI() {
     setMarketplace(catalogCache.marketplace);
     setEssentialServices(catalogCache.essentialServices);
     setRides(catalogCache.rides);
+    setShortlets(catalogCache.shortlets);       // ✅ NEW
+    setExperiences(catalogCache.experiences);   // ✅ NEW
     setUniNames(catalogCache.uniNames);
 
     setDataLoaded(true);
@@ -590,6 +657,8 @@ export default function OutingStationAI() {
           marketplace: marketplace.slice(0, 100),           // ✅ NEW
           essentialServices: essentialServices.slice(0, 60), // ✅ NEW
           rides: rides.slice(0, 60),                          // ✅ NEW
+          shortlets: shortlets.slice(0, 60),                  // ✅ NEW
+          experiences: experiences.slice(0, 60),              // ✅ NEW
           universities: uniNames, userCity,
         }),
       });
@@ -606,6 +675,8 @@ export default function OutingStationAI() {
         marketplace.find(m => m.id === id) ||            // ✅ NEW
         essentialServices.find(es => es.id === id) ||     // ✅ NEW
         rides.find(r => r.id === id) ||                   // ✅ NEW
+        shortlets.find(s => s.id === id) ||                // ✅ NEW
+        experiences.find(e => e.id === id) ||              // ✅ NEW
         null
       ).filter(Boolean);
       const aiId = `ai-${Date.now()}`;
@@ -961,10 +1032,15 @@ function ResultCard({ r, reason }) {
   const isVendor = r.kind === 'vendor';
   const isService = r.kind === 'service';
   const isStandEvent = r.kind === 'stand_event';
-  const isMarketplace = r.kind === 'marketplace'; // ✅ NEW
-  const isRide = r.kind === 'ride';                // ✅ NEW
-  const isEssential = r.kind === 'essentialService'; // ✅ NEW
-  const hasContactAction = isVendor || isService || isMarketplace || isRide;
+  const isMarketplace = r.kind === 'marketplace';
+  const isRide = r.kind === 'ride';
+  const isEssential = r.kind === 'essentialService';
+  const isShortlet = r.kind === 'shortlet';       // ✅ NEW
+  const isExperience = r.kind === 'experience';   // ✅ NEW
+  // ✅ CHANGED — shortlets and experiences added to the "contact via
+  // WhatsApp" bucket, since they're booked the same way (message the
+  // host/agency directly) rather than via a "View Details" event page.
+  const hasContactAction = isVendor || isService || isMarketplace || isRide || isShortlet || isExperience;
   const url = eventUrl(r);
 
   // ✅ NEW — flags a free-registration event so the card can badge it
@@ -974,6 +1050,8 @@ function ResultCard({ r, reason }) {
     : null;
 
   const kindLabel = isEssential ? (r.group || 'Essential')
+    : isShortlet ? 'Shortlet'
+    : isExperience ? (r.category || 'Experience')
     : isMarketplace ? 'Marketplace'
     : isRide ? 'Rent a Ride'
     : isVendor ? 'Vendor'
@@ -982,6 +1060,8 @@ function ResultCard({ r, reason }) {
     : r.kind === 'place' ? 'Place' : 'Event';
 
   const emoji = isEssential ? '🚨'
+    : isShortlet ? '🏡'
+    : isExperience ? '✨'
     : isMarketplace ? '🛍️'
     : isRide ? '🚗'
     : isVendor ? '🛒'

@@ -10,8 +10,19 @@ import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
-const CITIES = ['All Cities', 'Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
-const KNOWN_CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt'];
+// ✅ CHANGED — was a short hardcoded list (Lagos, Abuja, Ibadan, Port
+// Harcourt, Others) with a free-text fallback for anything else. Now
+// the same full Nigerian states list used everywhere else in the app
+// (mobile city pickers, Marketplace, AdminPlaces, AdminPlaceForm), so
+// every state is a real option instead of falling into "Others".
+const CITIES = [
+  'All Cities',
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+];
 const CATEGORIES = [
   'All', 'Business & Tech', 'Art & Culture', 'Food & Dining',
   'Sport & Fitness', 'Education', 'Religion & Community',
@@ -58,7 +69,6 @@ export default function EventsPage() {
   const [savedEvents, setSavedEvents] = useState([]);
   const [search, setSearch] = useState('');
   const [city, setCity] = useState('All Cities');
-  const [customCity, setCustomCity] = useState('');
   const [category, setCategory] = useState('All');
   const [price, setPrice] = useState('All');
   const [date, setDate] = useState('');
@@ -67,7 +77,7 @@ export default function EventsPage() {
 
   useEffect(() => { loadEvents(); }, []);
   useEffect(() => { if (currentUser) loadSaved(); }, [currentUser]);
-  useEffect(() => { applyFilters(); }, [events, search, city, customCity, category, price, date]);
+  useEffect(() => { applyFilters(); }, [events, search, city, category, price, date]);
 
   const loadEvents = async () => {
     try {
@@ -128,17 +138,14 @@ export default function EventsPage() {
         e.category?.toLowerCase().includes(q)
       );
     }
+    // ✅ CHANGED — was an exact match against a known 4-city list, with an
+    // "Others" branch (custom text, or "anything not in that list"). Now
+    // a loose match against the full state, same approach as AdminPlaces'
+    // city filter, so "FCT (Abuja)" still matches an event whose city is
+    // just "Abuja".
     if (city !== 'All Cities') {
-      if (city === 'Others') {
-        if (customCity.trim()) {
-          const q = customCity.toLowerCase();
-          result = result.filter(e => e.city?.toLowerCase().includes(q));
-        } else {
-          result = result.filter(e => e.city && !KNOWN_CITIES.includes(e.city));
-        }
-      } else {
-        result = result.filter(e => e.city === city);
-      }
+      const q = city.toLowerCase().replace(' (abuja)', '');
+      result = result.filter(e => (e.city || '').toLowerCase().includes(q));
     }
     if (category !== 'All') result = result.filter(e => e.category === category || e.eventCategory === category);
     if (price === 'Free') result = result.filter(e => {
@@ -160,7 +167,7 @@ export default function EventsPage() {
   };
 
   const resetFilters = () => {
-    setSearch(''); setCity('All Cities'); setCustomCity(''); setCategory('All');
+    setSearch(''); setCity('All Cities'); setCategory('All');
     setPrice('All'); setDate(''); setPage(1);
   };
 
@@ -211,19 +218,10 @@ export default function EventsPage() {
           {/* Filters */}
           {showFilters && (
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-              <select value={city} onChange={e => { setCity(e.target.value); if (e.target.value !== 'Others') setCustomCity(''); }}
+              <select value={city} onChange={e => setCity(e.target.value)}
                 className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
                 {CITIES.map(c => <option key={c}>{c}</option>)}
               </select>
-              {city === 'Others' && (
-                <input
-                  type="text"
-                  value={customCity}
-                  onChange={e => setCustomCity(e.target.value)}
-                  placeholder="Enter city name..."
-                  className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500"
-                />
-              )}
               <select value={category} onChange={e => setCategory(e.target.value)}
                 className="px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 appearance-none bg-white">
                 {CATEGORIES.map(c => <option key={c}>{c}</option>)}

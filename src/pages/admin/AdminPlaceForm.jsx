@@ -32,6 +32,46 @@ const categoryOptions = [
   'Malls', 'Spas', // ✅ Places-only categories
 ];
 
+// ✅ NEW — same Nigerian states list used across the app (mobile city
+// pickers, marketplace city filter, AdminPlaces' new city filter). No
+// "All Cities" here since this drives a required field, not a filter.
+const NIGERIAN_CITIES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+];
+
+// ✅ NEW — existing places were saved with `location` as free text (e.g.
+// "Lagos, Yaba") from before the city dropdown existed. A <select>'s
+// value only shows as selected on an exact match, so loading that raw
+// string straight into the dropdown left it blank when editing — looked
+// like the dropdown wasn't there at all. This matches the raw value
+// against the known city list and folds any leftover text (the "Yaba"
+// part) into Full Address so it isn't silently lost.
+const resolveCityAndAddress = (rawLocation, existingAddress) => {
+  if (!rawLocation) return { city: '', address: existingAddress || '' };
+  if (NIGERIAN_CITIES.includes(rawLocation)) {
+    return { city: rawLocation, address: existingAddress || '' };
+  }
+  const lower = rawLocation.toLowerCase();
+  const matchedCity = NIGERIAN_CITIES.find(city =>
+    lower.includes(city.toLowerCase().replace(' (abuja)', ''))
+  );
+  if (!matchedCity) {
+    // No known city found in the legacy string at all — leave the
+    // dropdown for the admin to set, but don't lose the old text.
+    return { city: '', address: existingAddress || rawLocation };
+  }
+  const leftover = rawLocation
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => s && s.toLowerCase() !== matchedCity.toLowerCase().replace(' (abuja)', ''))
+    .join(', ');
+  return { city: matchedCity, address: existingAddress || leftover };
+};
+
 export default function AdminPlaceForm() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -96,6 +136,9 @@ export default function AdminPlaceForm() {
       if (placeDoc.exists()) {
         const data = placeDoc.data();
         const loadedType = data.eventType || 'campus';
+        // ✅ NEW — resolve the legacy free-text location into a valid
+        // dropdown value (see resolveCityAndAddress above).
+        const { city, address } = resolveCityAndAddress(data.location, data.address);
         setForm({
           title: data.title || '',
           description: data.description || '',
@@ -107,8 +150,8 @@ export default function AdminPlaceForm() {
           eventType: loadedType,
           subCategory: 'places',
           status: data.status || 'published',
-          location: data.location || '',
-          address: data.address || '',
+          location: city,
+          address: address,
           mapLocation: data.mapLocation || '',
           university: data.university || '',
           openingTime: data.openingTime || '',
@@ -206,7 +249,7 @@ export default function AdminPlaceForm() {
 
   const handleSubmit = async () => {
     if (!form.title) { alert('Please enter a place name'); return; }
-    if (!form.location) { alert('Please enter a location'); return; }
+    if (!form.location) { alert('Please select a city'); return; }
     if (!form.imageUrl) { alert('Please upload a main image'); return; }
     if (form.eventType === 'campus' && !form.university) {
       alert('Please select a university for campus places');
@@ -568,15 +611,24 @@ await updateDoc(newRef, { slug: makeSlug(form.title, newRef.id) });
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <h3 className="text-base font-bold text-gray-900 mb-4">Location</h3>
                 <div className="space-y-4">
+                  {/* ✅ CHANGED — was a free-text "City / Area" input. Now a
+                  dropdown of the same Nigerian states list used across the
+                  app, so the value is consistent and filterable (matches
+                  AdminPlaces' new city filter, and the mobile city
+                  pickers). Street-level detail still goes in Full Address
+                  below. */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">City / Area *</label>
-                    <input
-                      type="text"
+                    <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
+                    <select
                       value={form.location}
                       onChange={(e) => handleChange('location', e.target.value)}
-                      placeholder="e.g. Lagos, Yaba"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none text-sm"
-                    />
+                    >
+                      <option value="">Select city</option>
+                      {NIGERIAN_CITIES.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
@@ -833,7 +885,7 @@ await updateDoc(newRef, { slug: makeSlug(form.title, newRef.id) });
                       <p className="text-xs text-gray-500 mt-1">🏛️ {form.university}</p>
                     )}
                     <p className="text-xs text-gray-500 mt-1">
-                      📍 {form.location || 'Location'}
+                      📍 {form.location || 'City'}
                     </p>
                     {form.openingTime && form.closingTime && (
                       <p className="text-xs text-gray-500 mt-1">
