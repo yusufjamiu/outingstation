@@ -1,16 +1,21 @@
-// SubmitExperiencePage.jsx — OSB Experience submission wizard
-// Route this at /create-experience (OSB, requires login — see bottom of file)
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+// SubmitEventPage.jsx — Multi-step wizard with Cloudinary upload + Ticket Tiers + Bank Account
+import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
+import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import {
-  X, Upload, Plus, ChevronRight, ChevronLeft, Check, Trash2,
-  Building2, Phone, Ticket, MapPin, Calendar, Repeat,
-} from 'lucide-react';
+import { Gift, X, Upload, Plus, ChevronRight, ChevronLeft, Check, Ticket, Trash2, Building2, UserPlus, Lock, Globe } from 'lucide-react';
+import CustomQuestionBuilder from '../components/CustomQuestionBuilder';
 
-// ─── Constants ────────────────────────────────────────────────────────────
+const makeSlug = (title, id) =>
+  title.toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+  + '-' + id.slice(0, 5);
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const NIGERIAN_BANKS = [
   'Access Bank', 'Citibank', 'Ecobank', 'Fidelity Bank', 'First Bank',
@@ -22,13 +27,40 @@ const NIGERIAN_BANKS = [
   'Wema Bank', 'Zenith Bank', 'Other',
 ];
 
-const EXPERIENCE_CATEGORIES = [
-  { value: 'Outdoor', emoji: '🌳' },
-  { value: 'Indoor', emoji: '🏠' },
-  { value: 'Food', emoji: '🍽️' },
-  { value: 'Arts', emoji: '🎨' },
-  { value: 'Wellness', emoji: '🧘' },
-  { value: 'Adventure', emoji: '🧗' },
+const VENDOR_CATEGORIES = [
+  { value: 'Food & Drinks', emoji: '🍔' },
+  { value: 'Fashion & Clothing', emoji: '👗' },
+  { value: 'Electronics & Gadgets', emoji: '📱' },
+  { value: 'Beauty & Grooming', emoji: '💄' },
+  { value: 'Books & Stationery', emoji: '📚' },
+  { value: 'Accessories', emoji: '💍' },
+];
+
+const EVENT_CATEGORIES = [
+  'Business & Tech', 'Art & Culture', 'Food & Dining',
+  'Sport & Fitness', 'Education', 'Religion & Community',
+  'Nightlife & Parties', 'Family & Kids Fun', 'Networking & Social',
+  'Gaming & Esport', 'Music & Concerts', 'Cinema & Show', 'Other',
+];
+
+const PLACE_CATEGORIES = [
+  'Halls & Venues', 'Restaurant', 'Resort', 'Business & Tech',
+  'Art & Culture', 'Food & Dining', 'Sport & Fitness',
+  'Nightlife & Parties', 'Family & Kids Fun', 'Cinema & Show',
+  'Malls', 'Spas', 'Other',
+];
+
+// ✅ Campus category lists — mirrors AdminEventForm
+const CAMPUS_EVENT_CATEGORIES = [
+  'Lectures & Seminars', 'Competitions', 'Social Events',
+  'Religious Programs', 'Sports Events', 'Career & Opportunities',
+  'Cultural Events', 'Other',
+];
+
+const CAMPUS_PLACE_SUBCATEGORIES = [
+  'Cafeteria', 'Food Vendors', 'Library', 'Auditorium',
+  'Faculty Building', 'Health Center', 'Sport Center',
+  'Hostel', 'Chapel / Mosque', 'Admin Block', 'Market', 'Other',
 ];
 
 const CITIES = [
@@ -39,10 +71,45 @@ const CITIES = [
   'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
   'Others',
 ];
+const PLATFORMS = [
+  'Zoom', 'Google Meet', 'Microsoft Teams', 'YouTube Live',
+  'Instagram Live', 'LinkedIn Live', 'Twitter Space', 'Other',
+];
 
-// ─── Cloudinary helpers (same pattern as SubmitEventPage) ─────────────────
+const DEFAULT_UNIS = [
+  'University of Lagos (Unilag)', 'University of Ibadan (UI)',
+  'Covenant University (CU)', 'Ahmadu Bello University (ABU)',
+  'University of Benin (Uniben)', 'Obafemi Awolowo University (OAU)',
+  'University of Ilorin (Unilorin)', 'Lagos State University (LASU)',
+];
 
-const uploadToCloudinary = async (file, folder = 'experiences', onProgress = () => {}) => {
+const TIER_PRESETS = [
+  { name: 'Regular', emoji: '🎫' },
+  { name: 'Early Bird', emoji: '🐦' },
+  { name: 'VIP', emoji: '⭐' },
+  { name: 'VVIP', emoji: '👑' },
+  { name: 'Table of 5', emoji: '🪑' },
+  { name: 'Student', emoji: '🎓' },
+  { name: 'Couple', emoji: '💑' },
+];
+
+const parseEmailList = (text) => {
+  if (!text) return [];
+  const candidates = text.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const valid = candidates.filter(e => emailRegex.test(e)).map(e => e.toLowerCase());
+  return [...new Set(valid)];
+};
+
+const generateGroupCode = (groupName) => {
+  const base = (groupName || 'GROUP').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12) || 'GROUP';
+  const suffix = Math.random().toString(36).slice(2, 5).toUpperCase();
+  return `${base}${suffix}`;
+};
+
+// ─── Cloudinary helpers ───────────────────────────────────────────────────────
+
+const uploadToCloudinary = async (file, folder = 'events', onProgress = () => {}) => {
   const data = new FormData();
   data.append('file', file);
   data.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
@@ -72,34 +139,42 @@ const compressImage = async (file, maxWidth = 1200, quality = 0.8) => {
       canvas.height = img.height * scale;
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
-      canvas.toBlob((blob) => resolve(new File([blob], file.name, { type: 'image/jpeg' })), 'image/jpeg', quality);
+      canvas.toBlob(
+        (blob) => resolve(new File([blob], file.name, { type: 'image/jpeg' })),
+        'image/jpeg', quality,
+      );
     };
     img.src = url;
   });
 };
 
-function MultiImageUploader({ images, onAdd, onRemove, maxImages = 10 }) {
+// ─── Multi-image uploader ─────────────────────────────────────────────────────
+
+function MultiImageUploader({ images, onAdd, onRemove, maxImages = 10, folder = 'events', label = 'Photos', singleMode = false }) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const slotsLeft = maxImages - images.length;
 
   const handleFiles = async (e) => {
-    const files = Array.from(e.target.files).slice(0, slotsLeft);
+    const files = Array.from(e.target.files);
     if (!files.length) return;
+    const toUpload = singleMode ? [files[0]] : files.slice(0, slotsLeft);
+    if (!toUpload.length) { alert(`Maximum ${maxImages} photos allowed`); return; }
     setUploading(true);
     const uploaded = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < toUpload.length; i++) {
+      const file = toUpload[i];
       if (!file.type.startsWith('image/')) continue;
       if (file.size > 10 * 1024 * 1024) { alert(`${file.name} is too large. Max 10MB.`); continue; }
       try {
-        setProgress(Math.round(((i + 0.5) / files.length) * 100));
-        const compressed = await compressImage(file);
-        const url = await uploadToCloudinary(compressed, 'experiences', (p) => {
-          setProgress(Math.round(((i + p / 100) / files.length) * 100));
+        setProgress(Math.round(((i + 0.5) / toUpload.length) * 100));
+        const compressed = await compressImage(file, 1200, 0.8);
+        const url = await uploadToCloudinary(compressed, folder, (p) => {
+          setProgress(Math.round(((i + p / 100) / toUpload.length) * 100));
         });
         uploaded.push(url);
       } catch (err) {
+        console.error('Upload error:', err);
         alert(`Failed to upload ${file.name}: ${err.message}`);
       }
     }
@@ -112,12 +187,16 @@ function MultiImageUploader({ images, onAdd, onRemove, maxImages = 10 }) {
   return (
     <div className="space-y-3">
       {images.length > 0 && (
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+        <div className={`grid gap-3 ${singleMode ? 'grid-cols-1' : 'grid-cols-3 sm:grid-cols-4'}`}>
           {images.map((img, i) => (
             <div key={i} className="relative group">
-              <img src={img} alt={`Photo ${i + 1}`} className={`w-full h-24 object-cover rounded-2xl border-2 ${i === 0 ? 'border-cyan-400' : 'border-gray-200'}`} />
-              {i === 0 && <span className="absolute top-1.5 left-1.5 bg-cyan-500 text-white text-xs px-2 py-0.5 rounded-lg font-bold shadow">Main</span>}
-              <button type="button" onClick={() => onRemove(i)} className="absolute top-1.5 right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow">
+              <img src={img} alt={`${label} ${i + 1}`}
+                className={`w-full object-cover rounded-2xl border-2 ${singleMode ? 'h-48' : 'h-24'} ${i === 0 ? 'border-cyan-400' : 'border-gray-200'}`} />
+              {i === 0 && !singleMode && (
+                <span className="absolute top-1.5 left-1.5 bg-cyan-500 text-white text-xs px-2 py-0.5 rounded-lg font-bold shadow">Main</span>
+              )}
+              <button type="button" onClick={() => onRemove(i)}
+                className="absolute top-1.5 right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow">
                 <X size={12} />
               </button>
             </div>
@@ -125,7 +204,9 @@ function MultiImageUploader({ images, onAdd, onRemove, maxImages = 10 }) {
         </div>
       )}
       {images.length < maxImages && (
-        <label className={`flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed rounded-2xl cursor-pointer transition ${uploading ? 'border-cyan-300 bg-cyan-50 opacity-70 pointer-events-none' : 'border-gray-300 hover:border-cyan-400 hover:bg-cyan-50'}`}>
+        <label className={`flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed rounded-2xl cursor-pointer transition ${
+          uploading ? 'border-cyan-300 bg-cyan-50 opacity-70 pointer-events-none' : 'border-gray-300 hover:border-cyan-400 hover:bg-cyan-50'
+        }`}>
           {uploading ? (
             <>
               <div className="w-full max-w-xs bg-gray-200 rounded-full h-2.5">
@@ -139,149 +220,188 @@ function MultiImageUploader({ images, onAdd, onRemove, maxImages = 10 }) {
                 {images.length === 0 ? <Upload size={24} className="text-cyan-600" /> : <Plus size={24} className="text-cyan-600" />}
               </div>
               <div className="text-center">
-                <p className="text-sm font-bold text-cyan-600">{images.length === 0 ? 'Upload Photos' : `Add more (${slotsLeft} left)`}</p>
+                <p className="text-sm font-bold text-cyan-600">
+                  {images.length === 0 ? `Upload ${label}` : `Add more photos (${slotsLeft} left)`}
+                </p>
                 <p className="text-xs text-gray-400 mt-1">PNG, JPG, WEBP · max 10MB each</p>
-                {images.length === 0 && <p className="text-xs text-gray-400">Min 3, max {maxImages} photos</p>}
+                {!singleMode && images.length === 0 && <p className="text-xs text-gray-400">Min 1, max {maxImages} photos</p>}
               </div>
             </>
           )}
-          <input type="file" accept="image/*" multiple disabled={uploading} onChange={handleFiles} className="sr-only" />
+          <input type="file" accept="image/*" multiple={!singleMode} disabled={uploading} onChange={handleFiles} className="sr-only" />
         </label>
       )}
-    </div>
-  );
-}
-
-// ─── Dynamic list builder (What's Included / What to Bring) ───────────────
-
-function ItemListBuilder({ items, onChange, placeholder }) {
-  const [draft, setDraft] = useState('');
-  const addItem = () => {
-    if (!draft.trim()) return;
-    onChange([...items, draft.trim()]);
-    setDraft('');
-  };
-  return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
-        <input
-          type="text" value={draft} onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } }}
-          placeholder={placeholder}
-          className="flex-1 px-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition"
-        />
-        <button type="button" onClick={addItem} className="px-4 py-2.5 bg-cyan-600 text-white rounded-xl font-bold hover:bg-cyan-700 transition">
-          <Plus size={16} />
-        </button>
-      </div>
-      {items.length > 0 && (
-        <div className="space-y-1.5">
-          {items.map((item, i) => (
-            <div key={i} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
-              <span className="text-sm text-gray-700">{item}</span>
-              <button type="button" onClick={() => onChange(items.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+      {images.length >= maxImages && (
+        <div className="text-center py-3 bg-green-50 rounded-xl border border-green-200">
+          <p className="text-sm text-green-600 font-semibold">✅ Maximum {maxImages} photos reached</p>
         </div>
+      )}
+      {!singleMode && images.length > 0 && (
+        <p className="text-xs text-gray-400 flex items-center gap-1.5">
+          <span>ℹ️</span> First photo is the main image shown on cards. Hover to remove.
+        </p>
       )}
     </div>
   );
 }
 
-// ─── Sessions builder ───────────────────────────────────────────────────────
+// ─── Ticket Tier Builder ──────────────────────────────────────────────────────
 
-function SessionsBuilder({ sessions, onChange, errors }) {
-  const addSession = () => {
-    onChange([...sessions, { id: `session_${Date.now()}`, date: '', time: '', totalSpots: '' }]);
+function TicketTierBuilder({ tiers, onChange, errors }) {
+  const addTier = () => {
+    if (tiers.length >= 5) return;
+    onChange([...tiers, { id: `tier_${Date.now()}`, name: '', price: '', benefits: '', quantity: '', saleEndDate: '' }]);
   };
-  const removeSession = (index) => onChange(sessions.filter((_, i) => i !== index));
-  const updateSession = (index, field, value) => onChange(sessions.map((s, i) => i === index ? { ...s, [field]: value } : s));
+  const removeTier = (index) => onChange(tiers.filter((_, i) => i !== index));
+  const updateTier = (index, field, value) => onChange(tiers.map((t, i) => i === index ? { ...t, [field]: value } : t));
+  const applyPreset = (index, preset) => updateTier(index, 'name', preset.name);
 
   return (
-    <div className="space-y-3">
-      {sessions.length === 0 && (
+    <div className="space-y-4">
+      {tiers.length === 0 && (
         <div className="text-center py-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
-          <div className="text-4xl mb-3">📅</div>
-          <p className="text-sm font-bold text-gray-700 mb-1">No sessions yet</p>
-          <p className="text-xs text-gray-400 mb-4">Add at least one date, time, and spot count</p>
-          <button type="button" onClick={addSession}
+          <div className="text-4xl mb-3">🎟️</div>
+          <p className="text-sm font-bold text-gray-700 mb-1">No ticket tiers yet</p>
+          <p className="text-xs text-gray-400 mb-4">Add tiers like Regular, VIP, Early Bird, Table of 5</p>
+          <button type="button" onClick={addTier}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl text-sm font-bold hover:from-cyan-700 hover:to-blue-700 transition shadow-md">
-            <Plus size={16} /> Add First Session
+            <Plus size={16} /> Add First Tier
           </button>
         </div>
       )}
-      {sessions.map((s, index) => (
-        <div key={s.id} className="border-2 border-gray-100 rounded-2xl p-4 bg-white shadow-sm">
-          <div className="flex items-center justify-between mb-3">
+      {tiers.map((tier, index) => (
+        <div key={tier.id} className="border-2 border-gray-100 rounded-2xl p-5 bg-white shadow-sm">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white text-xs font-black">{index + 1}</div>
-              <span className="text-sm font-black text-gray-800">Session {index + 1}</span>
+              <span className="text-sm font-black text-gray-800">{tier.name || `Tier ${index + 1}`}</span>
+              {index === 0 && <span className="text-xs bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded-full font-semibold">Default</span>}
             </div>
-            <button type="button" onClick={() => removeSession(index)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
-              <Trash2 size={15} />
-            </button>
+            {tiers.length > 1 && (
+              <button type="button" onClick={() => removeTier(index)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition">
+                <Trash2 size={15} />
+              </button>
+            )}
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Date</label>
-              <input type="date" value={s.date} onChange={(e) => updateSession(index, 'date', e.target.value)}
-                className={`w-full px-3 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition ${errors?.[`session_${index}_date`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-cyan-500'}`} />
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            {TIER_PRESETS.map(p => (
+              <button key={p.name} type="button" onClick={() => applyPreset(index, p)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                  tier.name === p.name ? 'bg-cyan-600 text-white border-cyan-600' : 'bg-white text-gray-600 border-gray-200 hover:border-cyan-400'
+                }`}>
+                {p.emoji} {p.name}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-700 mb-1">Tier Name <span className="text-red-500">*</span></label>
+              <input type="text" value={tier.name} onChange={(e) => updateTier(index, 'name', e.target.value)}
+                placeholder="e.g. Regular, VIP, Early Bird"
+                className={`w-full px-3 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition ${errors?.[`tier_${index}_name`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-cyan-500'}`} />
+              {errors?.[`tier_${index}_name`] && <p className="text-xs text-red-500 mt-1">{errors[`tier_${index}_name`]}</p>}
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Time</label>
-              <input type="time" value={s.time} onChange={(e) => updateSession(index, 'time', e.target.value)}
-                className={`w-full px-3 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition ${errors?.[`session_${index}_time`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-cyan-500'}`} />
+              <label className="block text-xs font-bold text-gray-700 mb-1">Price (₦) <span className="text-red-500">*</span></label>
+              <input type="number" value={tier.price} onChange={(e) => updateTier(index, 'price', e.target.value)}
+                placeholder="5000" min="0"
+                className={`w-full px-3 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition ${errors?.[`tier_${index}_price`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-cyan-500'}`} />
+              {errors?.[`tier_${index}_price`] && <p className="text-xs text-red-500 mt-1">{errors[`tier_${index}_price`]}</p>}
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">Total Spots</label>
-              <input type="number" min="1" value={s.totalSpots} onChange={(e) => updateSession(index, 'totalSpots', e.target.value)}
-                placeholder="20"
-                className={`w-full px-3 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition ${errors?.[`session_${index}_spots`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-cyan-500'}`} />
+              <label className="block text-xs font-bold text-gray-700 mb-1">Quantity <span className="text-gray-400">(optional)</span></label>
+              <input type="number" value={tier.quantity} onChange={(e) => updateTier(index, 'quantity', e.target.value)}
+                placeholder="e.g. 100" min="1"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-700 mb-1">Benefits / Description <span className="text-gray-400">(optional)</span></label>
+              <input type="text" value={tier.benefits} onChange={(e) => updateTier(index, 'benefits', e.target.value)}
+                placeholder="e.g. General admission + free drink"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-700 mb-1">Sale Ends <span className="text-gray-400">(optional — for Early Bird deadlines)</span></label>
+              <input type="date" value={tier.saleEndDate} onChange={(e) => updateTier(index, 'saleEndDate', e.target.value)}
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-cyan-500 transition" />
             </div>
           </div>
         </div>
       ))}
-      {sessions.length > 0 && (
-        <button type="button" onClick={addSession}
+      {tiers.length > 0 && tiers.length < 5 && (
+        <button type="button" onClick={addTier}
           className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-cyan-300 rounded-2xl text-sm font-bold text-cyan-600 hover:bg-cyan-50 hover:border-cyan-500 transition">
-          <Plus size={16} /> Add Another Session
+          <Plus size={16} /> Add Another Tier ({tiers.length}/5)
+        </button>
+      )}
+      {tiers.length >= 5 && <p className="text-center text-xs text-gray-400 py-2">Maximum 5 tiers reached</p>}
+    </div>
+  );
+}
+
+function GroupCodeBuilder({ groups, onChange, errors }) {
+  const addGroup = () => {
+    if (groups.length >= 50) return;
+    onChange([...groups, { id: `group_${Date.now()}`, groupName: '', maxGuests: 5 }]);
+  };
+  const removeGroup = (index) => onChange(groups.filter((_, i) => i !== index));
+  const updateGroup = (index, field, value) => onChange(groups.map((g, i) => i === index ? { ...g, [field]: value } : g));
+
+  return (
+    <div className="space-y-3">
+      {groups.length === 0 && (
+        <div className="text-center py-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+          <div className="text-4xl mb-3">👨‍👩‍👧‍👦</div>
+          <p className="text-sm font-bold text-gray-700 mb-1">No groups yet</p>
+          <p className="text-xs text-gray-400 mb-4">Add a family, company, or department — each gets its own code and guest limit</p>
+          <button type="button" onClick={addGroup}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl text-sm font-bold hover:from-purple-700 hover:to-pink-700 transition shadow-md">
+            <Plus size={16} /> Add First Group
+          </button>
+        </div>
+      )}
+      {groups.map((group, index) => (
+        <div key={group.id} className="border-2 border-gray-100 rounded-2xl p-4 bg-white shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs font-black flex-shrink-0">{index + 1}</div>
+            <input type="text" value={group.groupName} onChange={(e) => updateGroup(index, 'groupName', e.target.value)}
+              placeholder="e.g. Sarah's Family, Marketing Team"
+              className={`flex-1 px-3 py-2.5 border-2 rounded-xl text-sm focus:outline-none transition ${errors?.[`group_${index}_name`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-purple-500'}`} />
+            <button type="button" onClick={() => removeGroup(index)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition flex-shrink-0">
+              <Trash2 size={15} />
+            </button>
+          </div>
+          <div className="mt-3 pl-11">
+            <label className="text-xs font-bold text-gray-600 mb-1 block">Code <span className="text-gray-400 font-normal">(optional — auto-generated if left blank)</span></label>
+            <input type="text" value={group.customCode || ''} onChange={(e) => updateGroup(index, 'customCode', e.target.value)}
+              placeholder="e.g. SarahFam5, sarah123, SARAH-VIP"
+              maxLength={20}
+              className={`w-full px-3 py-2 border-2 rounded-xl text-sm font-mono tracking-wide focus:outline-none transition ${errors?.[`group_${index}_code`] ? 'border-red-300 bg-red-50' : 'border-gray-200 focus:border-purple-500'}`} />
+            {errors?.[`group_${index}_code`] && <p className="text-xs text-red-500 mt-1">{errors[`group_${index}_code`]}</p>}
+          </div>
+          <div className="flex items-center gap-3 mt-3 pl-11">
+            <label className="text-xs font-bold text-gray-600 flex-shrink-0">Max guests</label>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => updateGroup(index, 'maxGuests', Math.max(1, (group.maxGuests || 1) - 1))}
+                className="w-7 h-7 rounded-lg border-2 border-gray-200 text-gray-600 font-bold hover:border-purple-400 transition">−</button>
+              <span className="w-8 text-center text-sm font-black text-gray-800">{group.maxGuests || 1}</span>
+              <button type="button" onClick={() => updateGroup(index, 'maxGuests', Math.min(100, (group.maxGuests || 1) + 1))}
+                className="w-7 h-7 rounded-lg border-2 border-gray-200 text-gray-600 font-bold hover:border-purple-400 transition">+</button>
+            </div>
+          </div>
+          {errors?.[`group_${index}_name`] && <p className="text-xs text-red-500 mt-1.5 pl-11">{errors[`group_${index}_name`]}</p>}
+        </div>
+      ))}
+      {groups.length > 0 && groups.length < 50 && (
+        <button type="button" onClick={addGroup}
+          className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-purple-300 rounded-2xl text-sm font-bold text-purple-600 hover:bg-purple-50 hover:border-purple-500 transition">
+          <Plus size={16} /> Add Another Group ({groups.length})
         </button>
       )}
     </div>
   );
 }
 
-// ─── Reusable UI (same look as SubmitEventPage) ────────────────────────────
-
-function ToggleButton({ selected, onClick, children }) {
-  return (
-    <button type="button" onClick={onClick}
-      className={`px-4 py-3 rounded-xl border-2 text-sm font-bold transition-all duration-200 ${selected ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-600 shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-cyan-400'}`}>
-      {children}
-    </button>
-  );
-}
-function FormField({ label, required, error, hint, children }) {
-  return (
-    <div>
-      <label className="block text-sm font-bold text-gray-800 mb-1.5">{label} {required && <span className="text-red-500">*</span>}</label>
-      {children}
-      {hint && !error && <p className="text-xs text-gray-400 mt-1.5">{hint}</p>}
-      {error && <p className="text-xs text-red-500 mt-1.5 font-semibold">{error}</p>}
-    </div>
-  );
-}
-function StyledInput({ error, className = '', ...props }) {
-  return <input {...props} className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none transition-colors ${error ? 'border-red-300 focus:border-red-500 bg-red-50' : 'border-gray-200 focus:border-cyan-500'} ${className}`} />;
-}
-function StyledSelect({ error, children, ...props }) {
-  return <select {...props} className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none transition-colors appearance-none bg-white ${error ? 'border-red-300 focus:border-red-500 bg-red-50' : 'border-gray-200 focus:border-cyan-500'}`}>{children}</select>;
-}
-function StyledTextarea({ error, ...props }) {
-  return <textarea {...props} className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none transition-colors resize-none ${error ? 'border-red-300 focus:border-red-500 bg-red-50' : 'border-gray-200 focus:border-cyan-500'}`} />;
-}
 function ProgressBar({ current, total }) {
   const pct = Math.round((current / total) * 100);
   return (
@@ -296,10 +416,65 @@ function ProgressBar({ current, total }) {
     </div>
   );
 }
+
+function ToggleButton({ selected, onClick, children }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`px-4 py-3 rounded-xl border-2 text-sm font-bold transition-all duration-200 ${
+        selected ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white border-cyan-600 shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-cyan-400'
+      }`}>
+      {children}
+    </button>
+  );
+}
+
+function FormField({ label, required, error, hint, children }) {
+  return (
+    <div>
+      <label className="block text-sm font-bold text-gray-800 mb-1.5">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      {children}
+      {hint && !error && <p className="text-xs text-gray-400 mt-1.5">{hint}</p>}
+      {error && <p className="text-xs text-red-500 mt-1.5 font-semibold">{error}</p>}
+    </div>
+  );
+}
+
+function StyledInput({ error, className = '', ...props }) {
+  return (
+    <input {...props}
+      className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none transition-colors ${
+        error ? 'border-red-300 focus:border-red-500 bg-red-50' : 'border-gray-200 focus:border-cyan-500'
+      } ${className}`} />
+  );
+}
+
+function StyledSelect({ error, children, ...props }) {
+  return (
+    <select {...props}
+      className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none transition-colors appearance-none bg-white ${
+        error ? 'border-red-300 focus:border-red-500 bg-red-50' : 'border-gray-200 focus:border-cyan-500'
+      }`}>
+      {children}
+    </select>
+  );
+}
+
+function StyledTextarea({ error, ...props }) {
+  return (
+    <textarea {...props}
+      className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none transition-colors resize-none ${
+        error ? 'border-red-300 focus:border-red-500 bg-red-50' : 'border-gray-200 focus:border-cyan-500'
+      }`} />
+  );
+}
+
 function NavButtons({ onBack, onNext, nextLabel = 'Continue', isSubmitting = false }) {
   return (
     <div className="flex gap-3 mt-8">
-      <button type="button" onClick={onBack} className="flex items-center gap-2 px-6 py-3.5 border-2 border-gray-200 rounded-2xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition">
+      <button type="button" onClick={onBack}
+        className="flex items-center gap-2 px-6 py-3.5 border-2 border-gray-200 rounded-2xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition">
         <ChevronLeft size={16} /> Back
       </button>
       <button type="button" onClick={onNext} disabled={isSubmitting}
@@ -312,222 +487,379 @@ function NavButtons({ onBack, onNext, nextLabel = 'Continue', isSubmitting = fal
             </svg>
             Submitting...
           </>
-        ) : (<>{nextLabel} <ChevronRight size={16} /></>)}
+        ) : (
+          <>{nextLabel} <ChevronRight size={16} /></>
+        )}
       </button>
     </div>
   );
 }
 
-// ─── Main Component ─────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
-const STEPS = { info: 1, details: 2, pricing: 3, sessions: 4, location: 5, booking: 6, photos: 7, review: 8 };
-const TOTAL_STEPS = 8;
-const STEP_NAMES = {
-  1: 'Your Info', 2: 'Experience Details', 3: 'Pricing', 4: 'Sessions',
-  5: 'Location', 6: 'Booking Method', 7: 'Photos', 8: 'Review & Submit',
-};
-
-export default function SubmitExperiencePage() {
+const SubmitEventPage = () => {
   const topRef = useRef(null);
-  const navigate = useNavigate();
-  const { currentUser, userProfile } = useAuth();
-  const [step, setStep] = useState(1);
+  const location = useLocation();
+  const { currentUser } = useAuth();
+  const [listingType, setListingType] = useState('');
+  const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [images, setImages] = useState([]);
-  const [included, setIncluded] = useState([]);
-  const [toBring, setToBring] = useState([]);
-  const [sessions, setSessions] = useState([]);
+  const [universities, setUniversities] = useState([]);
+  const [showTerms, setShowTerms] = useState(false);
+  const [eventImages, setEventImages] = useState([]);
+  const [vendorImages, setVendorImages] = useState([]);
+  const [schoolIdImage, setSchoolIdImage] = useState([]);
+  const [ticketTiers, setTicketTiers] = useState([]);
+  const [maxGroupSize, setMaxGroupSize] = useState(1);
+  const [customQuestions, setCustomQuestions] = useState([]);
+  const [groupCodes, setGroupCodes] = useState([]);
+  const [submittedGroupCodes, setSubmittedGroupCodes] = useState([]);
 
-  // Experiences belong to an "Experience Host" business, the same way a
-  // Shortlet listing belongs to a Shortlet agency — this links a
-  // submission back to that business (agencyId) so it shows up under
-  // "My Experiences" on the OSB dashboard.
-  const [loadingAgency, setLoadingAgency] = useState(true);
-  const [experienceBusinesses, setExperienceBusinesses] = useState([]);
-  const [selectedAgencyId, setSelectedAgencyId] = useState('');
+  useEffect(() => {
+    const path = location.pathname;
+    let preselected = '';
+    if (path === '/create-event') preselected = 'event';
+    else if (path === '/create-place') preselected = 'place';
+    else if (path === '/list-vendor') preselected = 'vendor';
+
+    if (preselected) {
+      setListingType(preselected);
+      setEventImages([]); setVendorImages([]);
+      setSchoolIdImage([]); setTicketTiers([]);
+      setMaxGroupSize(1); setCustomQuestions([]); setGroupCodes([]); setSubmittedGroupCodes([]);
+      setStep(preselected === 'event' ? -1 : 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [form, setForm] = useState({
-    organizerName: userProfile?.name || currentUser?.displayName || '',
-    organizerEmail: currentUser?.email || '',
-    organizerPhone: '',
-    organizationName: '',
-    title: '', category: '', description: '',
-    pricePerPerson: '', minGuests: '1', maxGuests: '10',
-    recurring: false, recurringPattern: '',
-    city: '', customCity: '', address: '', mapsLink: '',
-    bookingMethod: 'outingstation', // 'outingstation' | 'contact'
+    organizerName: '', organizerEmail: '', organizerPhone: '',
+    organizationName: '', referralCode: '',
+    eventTitle: '', eventCategory: '', customCategory: '',
+    eventType: 'physical', eventDescription: '',
+    isUniversityEvent: false, universityName: '',
+    campusEventCategory: '', campusSubCategory: '',
+    startDate: '', startTime: '', endDate: '', endTime: '',
+    operatingHours: '', alwaysOpen: false,
+    city: '', customCity: '', venueName: '', address: '', mapsLink: '',
+    platform: '', webinarLink: '',
+    isFree: 'yes', ticketPrice: '',
+    wantOutingstationTicketing: 'no', externalTicketLink: '',
+    useTicketTiers: false,
+    useFreeRegistration: false, ticketsAvailable: '',
     accountName: '', accountNumber: '', bankName: '',
-    agreedToTerms: false,
+    additionalInfo: '', agreedToTerms: false,
+    shopName: '', vendorCategory: '',
+    vendorUniversity: '', vendorUniversityOther: '',
+    vendorDescription: '', whatsappNumber: '',
+    visibility: 'public',
+    privacyMode: 'invite_only',
+    inviteEmailsText: '',
   });
+
+  useEffect(() => {
+    getDocs(collection(db, 'universities'))
+      .then(snap => {
+        const unis = snap.docs.map(d => d.data().name).filter(Boolean);
+        setUniversities(unis.length ? unis : DEFAULT_UNIS);
+      })
+      .catch(() => setUniversities(DEFAULT_UNIS));
+  }, []);
 
   const set = (key, val) => {
     setForm(p => ({ ...p, [key]: val }));
     if (errors[key]) setErrors(p => ({ ...p, [key]: '' }));
   };
+
   const handle = (e) => {
     const { name, value, type, checked } = e.target;
     set(name, type === 'checkbox' ? checked : value);
   };
+
   const scrollTop = () => topRef.current?.scrollIntoView({ behavior: 'smooth' });
 
-  useEffect(() => {
-    if (!currentUser) { setLoadingAgency(false); return; }
-    (async () => {
-      try {
-        const snap = await getDocs(query(
-          collection(db, 'businesses'),
-          where('ownerId', '==', currentUser.uid),
-          where('businessType', '==', 'Experience Host'),
-        ));
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setExperienceBusinesses(list);
-        const approved = list.find(b => b.status === 'approved');
-        if (approved) setSelectedAgencyId(approved.id);
-      } catch (err) {
-        console.error('Error loading Experience Host businesses:', err);
-      }
-      setLoadingAgency(false);
-    })();
-  }, [currentUser]);
+  const isVendor = listingType === 'vendor';
+  const isEvent  = listingType === 'event';
+  const isPlace  = listingType === 'place';
+  const isPureVirtual = isEvent && form.eventType === 'webinar';
+  const isHybrid      = isEvent && form.eventType === 'hybrid';
+  const isVirtual     = isPureVirtual || isHybrid;
+  const isPhysical    = isPlace || (isEvent && (form.eventType === 'physical' || isHybrid));
+  const isPrivateEvent = isEvent && form.visibility === 'private' && !isVirtual;
 
-  // OSB requires login
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="max-w-sm w-full bg-white rounded-3xl shadow-xl p-8 text-center">
-          <div className="text-4xl mb-3">🔒</div>
-          <h2 className="text-xl font-black text-gray-900 mb-2">Login Required</h2>
-          <p className="text-sm text-gray-500 mb-6">List an experience through OutingStation Business — please log in first.</p>
-          <button onClick={() => navigate('/login')} className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3 rounded-2xl font-bold">Log In</button>
-        </div>
-      </div>
-    );
-  }
+  const S = (() => {
+    if (isVendor) return { info:1, shop:2, uniId:3, photos:4, review:5, total:5 };
+    if (isPlace)  return { info:1, details:2, hours:3, location:4, ticket:5, photos:6, review:7, total:7 };
+    if (isPureVirtual) return { info:1, details:2, datetime:3, virtual:4, ticket:5, photos:6, review:7, total:7 };
+    if (isHybrid) return { info:1, details:2, datetime:3, location:4, virtual:5, ticket:6, photos:7, review:8, total:8 };
+    if (isPrivateEvent) return { info:1, details:2, datetime:3, location:4, privacy:5, ticket:6, photos:7, review:8, total:8 };
+    return { info:1, details:2, datetime:3, location:4, ticket:5, photos:6, review:7, total:7 };
+  })();
 
-  if (loadingAgency) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500" />
-      </div>
-    );
-  }
+  const totalSteps = S.total;
 
-  const approvedAgency = experienceBusinesses.find(b => b.id === selectedAgencyId);
-  const hasPendingAgency = !approvedAgency && experienceBusinesses.some(b => b.status === 'pending');
-
-  // No "Experience Host" business yet — same gate Shortlet listings sit
-  // behind: register the business first, then come back here to add
-  // sessions. Keeps every experience owned by a business, so it slots
-  // into the OSB dashboard's business-switcher like everything else.
-  if (!approvedAgency) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4 py-16">
-        <div className="max-w-sm w-full bg-white rounded-3xl shadow-xl p-8 text-center">
-          <div className="text-4xl mb-3">✨</div>
-          <h2 className="text-xl font-black text-gray-900 mb-2">
-            {hasPendingAgency ? 'Business Under Review' : 'Register as an Experience Host'}
-          </h2>
-          <p className="text-sm text-gray-500 mb-6">
-            {hasPendingAgency
-              ? "You've registered as an Experience Host — we'll email you once it's approved (usually 24–48 hours), then you can add experiences."
-              : 'Experiences are listed under an Experience Host business on OutingStation Business (OSB). Register one first — it only takes a minute.'}
-          </p>
-          {!hasPendingAgency && (
-            <button onClick={() => navigate('/business/register')} className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3 rounded-2xl font-bold hover:from-cyan-700 hover:to-blue-700 transition">
-              Register as Experience Host
-            </button>
-          )}
-          <button onClick={() => navigate('/business')} className="block mx-auto mt-4 text-sm text-gray-400 hover:text-gray-600 transition">← Back to OSB Dashboard</button>
-        </div>
-      </div>
-    );
-  }
+  const stepNames = (() => {
+    if (isVendor) return { 1:'Your Info', 2:'Shop Details', 3:'University & ID', 4:'Shop Photos', 5:'Review & Submit' };
+    if (isPlace)  return { 1:'Your Info', 2:'Place Details', 3:'Operating Hours', 4:'Location', 5:'Entry Fee', 6:'Photos', 7:'Review & Submit' };
+    if (isPureVirtual) return { 1:'Your Info', 2:'Event Details', 3:'Date & Time', 4:'Virtual Details', 5:'Ticketing', 6:'Photos', 7:'Review & Submit' };
+    if (isHybrid) return { 1:'Your Info', 2:'Event Details', 3:'Date & Time', 4:'Location', 5:'Virtual Details', 6:'Ticketing', 7:'Photos', 8:'Review & Submit' };
+    if (isPrivateEvent) return { 1:'Your Info', 2:'Event Details', 3:'Date & Time', 4:'Location', 5:'Privacy & Access', 6:'Ticketing', 7:'Photos', 8:'Review & Submit' };
+    return { 1:'Your Info', 2:'Event Details', 3:'Date & Time', 4:'Location', 5:'Ticketing', 6:'Photos', 7:'Review & Submit' };
+  })();
 
   const validateStep = (s) => {
     const e = {};
-    if (s === STEPS.info) {
+    if (s === S.info) {
       if (!form.organizerName.trim()) e.organizerName = 'Your name is required';
       if (!form.organizerEmail.trim()) e.organizerEmail = 'Email is required';
       else if (!/\S+@\S+\.\S+/.test(form.organizerEmail)) e.organizerEmail = 'Enter a valid email';
       if (!form.organizerPhone.trim()) e.organizerPhone = 'Phone number is required';
     }
-    if (s === STEPS.details) {
-      if (!form.title.trim()) e.title = 'Experience title is required';
-      if (!form.category) e.category = 'Select a category';
-      if (form.description.trim().length < 30) e.description = 'At least 30 characters required';
+    if (isVendor && s === S.shop) {
+      if (!form.shopName.trim()) e.shopName = 'Shop name is required';
+      if (!form.vendorCategory) e.vendorCategory = 'Select a category';
+      if (!form.vendorDescription.trim()) e.vendorDescription = 'Description is required';
+      if (form.vendorDescription.trim().length < 20) e.vendorDescription = 'At least 20 characters required';
+      if (!form.whatsappNumber.trim()) e.whatsappNumber = 'WhatsApp number is required';
     }
-    if (s === STEPS.pricing) {
-      if (!form.pricePerPerson || parseFloat(form.pricePerPerson) <= 0) e.pricePerPerson = 'Enter a valid price';
-      if (!form.minGuests || parseInt(form.minGuests) < 1) e.minGuests = 'Minimum 1 guest';
-      if (!form.maxGuests || parseInt(form.maxGuests) < parseInt(form.minGuests || 1)) e.maxGuests = 'Max must be ≥ min guests';
+    if (isVendor && s === S.uniId) {
+      if (!form.vendorUniversity) e.vendorUniversity = 'Select your university';
+      if (form.vendorUniversity === 'Other' && !form.vendorUniversityOther.trim()) e.vendorUniversityOther = 'Enter your university name';
+      if (schoolIdImage.length === 0) e.schoolId = 'School ID / matric card photo is required';
     }
-    if (s === STEPS.sessions) {
-      if (sessions.length === 0) e.sessions = 'Add at least one session';
-      sessions.forEach((sess, i) => {
-        if (!sess.date) e[`session_${i}_date`] = 'Date required';
-        if (!sess.time) e[`session_${i}_time`] = 'Time required';
-        if (!sess.totalSpots || parseInt(sess.totalSpots) < 1) e[`session_${i}_spots`] = 'Spots required';
-      });
-      if (form.recurring && !form.recurringPattern.trim()) e.recurringPattern = 'Describe the recurring pattern';
+    if (isVendor && s === S.photos) {
+      if (vendorImages.length === 0) e.vendorImage = 'At least 1 shop photo is required';
     }
-    if (s === STEPS.location) {
-      if (!form.city) e.city = 'City is required';
-      if (form.city === 'Others' && !form.customCity.trim()) e.customCity = 'Enter your city';
-      if (!form.address.trim()) e.address = 'Address is required';
+    if (!isVendor && s === S.details) {
+      if (!form.eventTitle.trim()) e.eventTitle = isPlace ? 'Place name is required' : 'Event title is required';
+      if (!isPrivateEvent) {
+        if (!form.eventCategory) e.eventCategory = 'Select a category';
+        if (form.eventCategory === 'Other' && !form.customCategory.trim()) e.customCategory = 'Please specify your category';
+        if (form.eventDescription.length < 100) e.eventDescription = 'At least 100 characters required';
+      } else {
+        if (!form.eventDescription.trim()) e.eventDescription = 'A short description is required';
+      }
+      if ((isEvent || isPlace) && form.isUniversityEvent && !form.universityName.trim()) e.universityName = 'Enter the university name';
     }
-    if (s === STEPS.booking) {
-      if (form.bookingMethod === 'outingstation') {
-        if (!form.accountName.trim()) e.accountName = 'Account name is required';
-        if (!form.accountNumber.trim()) e.accountNumber = 'Account number is required';
-        else if (!/^\d{10}$/.test(form.accountNumber.trim())) e.accountNumber = 'Enter a valid 10-digit account number';
-        if (!form.bankName) e.bankName = 'Select your bank';
+    if (isEvent && s === S.datetime) {
+      if (!form.startDate) e.startDate = 'Start date is required';
+      if (!form.startTime) e.startTime = 'Start time is required';
+      if (form.endDate && form.startDate) {
+        const start = new Date(`${form.startDate}T${form.startTime || '00:00'}`);
+        const end   = new Date(`${form.endDate}T${form.endTime || '23:59'}`);
+        if (end < start) e.endDate = 'End date cannot be before start date';
       }
     }
-    if (s === STEPS.photos) {
-      if (images.length < 3) e.images = 'At least 3 photos are required';
+    if (isPlace && s === S.hours) {
+      if (!form.alwaysOpen && !form.operatingHours.trim()) e.operatingHours = 'Enter operating hours or check "Always Open"';
     }
-    if (s === STEPS.review) {
+    if (!isVendor && S.location && s === S.location) {
+      if (!form.city) e.city = 'City is required';
+      if (form.city === 'Others' && !form.customCity.trim()) e.customCity = 'Enter your city';
+      if (!form.venueName.trim()) e.venueName = isPlace ? 'Place name is required' : 'Venue name is required';
+      if (!form.address.trim()) e.address = 'Address is required';
+    }
+    if (isVirtual && S.virtual && s === S.virtual) {
+      if (!form.platform) e.platform = 'Select a platform';
+      if (!form.webinarLink.trim()) e.webinarLink = 'Registration link is required';
+    }
+    if (isPrivateEvent && S.privacy && s === S.privacy) {
+      if (!form.privacyMode) e.privacyMode = 'Select how guests will access this event';
+      if (form.privacyMode === 'invite_only') {
+        const emails = parseEmailList(form.inviteEmailsText);
+        if (emails.length === 0) e.inviteEmailsText = 'Add at least one guest email';
+      }
+      if (form.privacyMode === 'code_gated') {
+        if (groupCodes.length === 0) {
+          e.groupCodes = 'Add at least one group';
+        } else {
+          groupCodes.forEach((g, i) => {
+            if (!g.groupName?.trim()) e[`group_${i}_name`] = 'Group name is required';
+          });
+          const normalizedCodes = groupCodes.map(g =>
+            (g.customCode || '').trim().toUpperCase()
+          );
+          normalizedCodes.forEach((code, i) => {
+            if (!code) return;
+            const firstIndex = normalizedCodes.findIndex(c => c === code);
+            if (firstIndex !== i) {
+              e[`group_${i}_code`] = 'This code is already used by another group above';
+            }
+          });
+        }
+      }
+    }
+    if (!isVendor && s === S.ticket) {
+      if (isEvent && form.isFree === 'yes' && form.useFreeRegistration) {
+        if (!form.ticketsAvailable || parseInt(form.ticketsAvailable) <= 0) {
+          e.ticketsAvailable = 'Enter number of spots available';
+        }
+        customQuestions.forEach((q, i) => {
+          if (!q.label?.trim()) e[`question_${i}_label`] = 'Question text is required';
+          if (q.type === 'select' && (!q.options || q.options.filter(o => o.trim()).length === 0)) e[`question_${i}_options`] = 'Add at least one option';
+        });
+      } else if (form.isFree === 'no') {
+        if (isEvent && form.wantOutingstationTicketing === 'yes') {
+          if (!form.accountName.trim()) e.accountName = 'Account name is required';
+          if (!form.accountNumber.trim()) e.accountNumber = 'Account number is required';
+          else if (!/^\d{10}$/.test(form.accountNumber.trim())) e.accountNumber = 'Enter a valid 10-digit account number';
+          if (!form.bankName) e.bankName = 'Select your bank';
+          if (form.useTicketTiers) {
+            if (ticketTiers.length === 0) {
+              e.ticketTiers = 'Add at least 1 ticket tier';
+            } else {
+              ticketTiers.forEach((tier, i) => {
+                if (!tier.name.trim()) e[`tier_${i}_name`] = 'Tier name is required';
+                if (!tier.price || isNaN(tier.price) || Number(tier.price) < 0) e[`tier_${i}_price`] = 'Valid price is required';
+              });
+            }
+          } else {
+            if (!form.ticketPrice.trim()) e.ticketPrice = 'Enter ticket price';
+          }
+        } else {
+          if (!form.ticketPrice.trim()) e.ticketPrice = isPlace ? 'Enter the entry fee' : 'Enter ticket price';
+          if (isEvent && form.wantOutingstationTicketing === 'no' && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
+          if (isPlace && !form.externalTicketLink.trim()) e.externalTicketLink = 'Ticket link is required';
+        }
+      }
+      if (isPrivateEvent) {
+        customQuestions.forEach((q, i) => {
+          if (!q.label?.trim()) e[`question_${i}_label`] = 'Question text is required';
+          if (q.type === 'select' && (!q.options || q.options.filter(o => o.trim()).length === 0)) e[`question_${i}_options`] = 'Add at least one option';
+        });
+      }
+    }
+    if (!isVendor && s === S.photos) {
+      if (!isPrivateEvent && eventImages.length === 0) e.eventImage = 'At least 1 image is required';
+    }
+    if (s === S.review) {
       if (!form.agreedToTerms) e.agreedToTerms = 'Please agree to the terms to submit';
     }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const next = () => { if (!validateStep(step)) { scrollTop(); return; } setStep(s => s + 1); scrollTop(); };
-  const back = () => { setErrors({}); setStep(s => Math.max(1, s - 1)); scrollTop(); };
+  const next = () => {
+    if (!validateStep(step)) { scrollTop(); return; }
+    setStep(s => s + 1);
+    scrollTop();
+  };
+
+  const back = () => {
+    setErrors({});
+    if (step === 1 && isEvent) { setStep(-1); }
+    else if (step === -1 || step === 1) { setStep(0); setListingType(''); }
+    else setStep(s => s - 1);
+    scrollTop();
+  };
 
   const handleSubmit = async () => {
     if (!validateStep(step)) { scrollTop(); return; }
     setIsSubmitting(true);
     try {
-      const finalCity = form.city === 'Others' && form.customCity.trim() ? form.customCity.trim() : form.city;
-      await addDoc(collection(db, 'experience_submissions'), {
-        organizerName: form.organizerName, organizerEmail: form.organizerEmail,
-        organizerPhone: form.organizerPhone, organizationName: form.organizationName || null,
-        title: form.title, category: form.category, description: form.description,
-        included, toBring,
-        pricePerPerson: parseFloat(form.pricePerPerson) || 0,
-        minGuests: parseInt(form.minGuests) || 1,
-        maxGuests: parseInt(form.maxGuests) || 1,
-        sessions: sessions.map((s, i) => ({ id: s.id || `session_${i + 1}`, date: s.date, time: s.time, totalSpots: parseInt(s.totalSpots) || 0 })),
-        recurring: form.recurring, recurringPattern: form.recurring ? form.recurringPattern.trim() : null,
-        city: finalCity, address: form.address, mapsLink: form.mapsLink || null,
-        bookingMethod: form.bookingMethod,
-        bankAccount: form.bookingMethod === 'outingstation' ? {
-          accountName: form.accountName.trim(), accountNumber: form.accountNumber.trim(), bankName: form.bankName,
-        } : null,
-        imageUrl: images[0] || '', images: images.slice(1),
-        status: 'pending', submittedAt: serverTimestamp(),
-        ownerId: currentUser?.uid || null,
-        // Links this experience back to the Experience Host business —
-        // same pattern as a Shortlet listing's agencyId/agencyName —
-        // so it shows up under "My Experiences" on that business's OSB
-        // dashboard once approved.
-        agencyId: approvedAgency.id,
-        agencyName: approvedAgency.businessName,
-      });
+      if (isVendor) {
+        const [imageUrl = '', ...additionalImages] = vendorImages;
+        const finalUniversity = form.vendorUniversity === 'Other' ? form.vendorUniversityOther : form.vendorUniversity;
+        await addDoc(collection(db, 'vendor_submissions'), {
+          organizerName: form.organizerName, organizerEmail: form.organizerEmail,
+          organizerPhone: form.organizerPhone, shopName: form.shopName,
+          category: form.vendorCategory, university: finalUniversity,
+          description: form.vendorDescription, whatsappNumber: form.whatsappNumber,
+          imageUrl, images: additionalImages, schoolIdImageUrl: schoolIdImage[0] || '',
+          referralCode: form.referralCode.trim().toUpperCase() || null,
+          ownerId: currentUser?.uid || null,
+          status: 'pending', submittedAt: serverTimestamp(),
+        });
+      } else {
+        const [imageUrl = '', ...additionalImages] = eventImages;
+        const finalCategory = isPrivateEvent
+          ? 'Private Event'
+          : (form.eventCategory === 'Other' && form.customCategory.trim() ? form.customCategory.trim() : form.eventCategory);
+        const finalCity = form.city === 'Others' && form.customCity.trim() ? form.customCity.trim() : form.city;
+        const hasTiers = isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers && ticketTiers.length > 0;
+        const tiersData = hasTiers ? ticketTiers.map((t, i) => ({
+          id: `tier_${i + 1}`, name: t.name.trim(), price: parseFloat(t.price) || 0,
+          benefits: t.benefits.trim() || null, quantity: t.quantity ? parseInt(t.quantity) : null,
+          sold: 0, saleEndDate: t.saleEndDate || null,
+        })) : [];
+
+        const isFreeRegistration = isEvent && form.isFree === 'yes' && form.useFreeRegistration;
+        const questionsApply = isFreeRegistration || isPrivateEvent;
+        const questionsData = questionsApply ? customQuestions.map((q, i) => ({
+          id: q.id || `q_${i + 1}`, label: q.label.trim(), type: q.type,
+          options: (q.options || []).map(o => o.trim()).filter(Boolean), required: !!q.required,
+        })) : [];
+
+        const resolvedTicketingOption = isFreeRegistration
+          ? 'free_registration'
+          : (isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes'
+              ? 'outingstation'
+              : (isEvent && form.isFree === 'no' ? 'external' : 'none'));
+
+        const inviteEmails = isPrivateEvent && form.privacyMode === 'invite_only'
+          ? parseEmailList(form.inviteEmailsText)
+          : [];
+
+        await addDoc(collection(db, 'event_submissions'), {
+          organizerName: form.organizerName, organizerEmail: form.organizerEmail,
+          organizerPhone: form.organizerPhone, organizationName: form.organizationName || null,
+          referralCode: form.referralCode.trim().toUpperCase() || null,
+          listingType, subCategory: isPlace ? 'places' : (form.isUniversityEvent ? 'campus' : 'events'),
+          eventTitle: form.eventTitle, eventCategory: finalCategory,
+          eventType: isEvent ? form.eventType : 'physical',
+          eventDescription: form.eventDescription,
+          startDate: isEvent ? form.startDate : null, startTime: isEvent ? form.startTime : null,
+          endDate: isEvent ? (form.endDate || form.startDate) : null,
+          endTime: isEvent ? (form.endTime || form.startTime) : null,
+          operatingHours: isPlace ? (form.alwaysOpen ? 'Always Open' : form.operatingHours) : null,
+          alwaysOpen: isPlace ? form.alwaysOpen : false,
+          city: finalCity, venueName: form.venueName, address: form.address, mapsLink: form.mapsLink || null,
+          platform: form.platform || null, webinarLink: form.webinarLink || null,
+          isFree: form.isFree === 'yes',
+          ticketingOption: resolvedTicketingOption,
+          ticketPrice: hasTiers ? Math.min(...tiersData.map(t => t.price)) : (form.isFree === 'yes' ? 0 : parseFloat(form.ticketPrice) || 0),
+          wantOutingstationTicketing: form.wantOutingstationTicketing === 'yes',
+          externalTicketLink: form.externalTicketLink || null,
+          ticketTiers: tiersData, hasTicketTiers: hasTiers,
+          ticketsAvailable: isFreeRegistration ? (parseInt(form.ticketsAvailable) || 0) : null,
+          maxGroupSize: isFreeRegistration ? maxGroupSize : null,
+          customQuestions: questionsData,
+          bankAccount: form.wantOutingstationTicketing === 'yes' && form.isFree === 'no' ? {
+            accountName: form.accountName.trim(),
+            accountNumber: form.accountNumber.trim(),
+            bankName: form.bankName,
+          } : null,
+          imageUrl, images: additionalImages,
+          additionalInfo: form.additionalInfo || null,
+          isUniversityEvent: form.isUniversityEvent || false, universityName: form.universityName || null,
+          campusEventCategory: isEvent && form.isUniversityEvent ? (form.campusEventCategory || '') : null,
+          campusSubCategory: isPlace && form.isUniversityEvent ? (form.campusSubCategory || '') : null,
+          status: 'pending', submittedAt: serverTimestamp(),
+          slug: form.eventTitle ? form.eventTitle.toLowerCase().trim()
+            .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') : null,
+          userId: currentUser?.uid || null,
+          visibility: isEvent ? form.visibility : 'public',
+          privacyMode: isPrivateEvent ? form.privacyMode : null,
+          inviteEmails,
+          groupCodes: (() => {
+            if (!(isPrivateEvent && form.privacyMode === 'code_gated')) return [];
+            const generated = groupCodes.map(g => {
+              const customTrimmed = (g.customCode || '').trim();
+              return {
+                id: g.id,
+                code: customTrimmed || generateGroupCode(g.groupName),
+                groupName: g.groupName.trim(),
+                maxGuests: g.maxGuests || 1,
+                usedGuests: 0,
+              };
+            });
+            setSubmittedGroupCodes(generated);
+            return generated;
+          })(),
+        });
+      }
       setSubmitSuccess(true);
       scrollTop();
     } catch (err) {
@@ -538,48 +870,207 @@ export default function SubmitExperiencePage() {
     }
   };
 
+  // ─── Success screen ───────────────────────────────────────────────────────
+
   if (submitSuccess) {
+    const title = isVendor ? form.shopName : form.eventTitle;
+    const type  = isVendor ? 'Vendor' : isPlace ? 'Place' : 'Event';
+    const isFreeRegistration = isEvent && form.isFree === 'yes' && form.useFreeRegistration;
     return (
       <div className="min-h-screen bg-gradient-to-br from-cyan-50 to-blue-50 flex items-center justify-center px-4 py-16">
         <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 text-center">
           <div className="w-20 h-20 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg">
             <Check size={36} className="text-white" />
           </div>
-          <h2 className="text-2xl font-black text-gray-900 mb-2">Experience Submitted! 🎉</h2>
-          <p className="text-gray-500 text-sm mb-1"><span className="font-bold text-gray-800">"{form.title}"</span> is under review</p>
+          <h2 className="text-2xl font-black text-gray-900 mb-2">{type} Submitted! 🎉</h2>
+          <p className="text-gray-500 text-sm mb-1"><span className="font-bold text-gray-800">"{title}"</span> is under review</p>
           <p className="text-xs text-gray-400 mb-8">We'll email you at <strong>{form.organizerEmail}</strong> within 24–48 hours</p>
+          <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-5 mb-8 text-left space-y-3">
+            {[
+              '✅ Our team reviews within 24–48 hours',
+              "📧 You'll get an email update on approval",
+              form.referralCode ? '💰 Earn ₦100 credits when approved!' : null,
+              '🚀 Once approved, you go live immediately',
+              isPrivateEvent
+                ? '🔒 This event is private — it won\'t appear in search, browse, or AI recommendations. Only people you invite (or with the link/code) can access it.'
+                : null,
+              isPrivateEvent && form.privacyMode === 'invite_only'
+                ? `📩 Your ${parseEmailList(form.inviteEmailsText).length} invited guest(s) will get their ticket by email as soon as this is approved`
+                : null,
+              isPrivateEvent && form.privacyMode === 'code_gated'
+                ? `🔑 ${submittedGroupCodes.length} group code(s) generated — share each one with the right group once approved`
+                : null,
+              isFreeRegistration ? '🎟️ Attendees will register and check in on OutingStation — no payment involved' : null,
+              form.wantOutingstationTicketing === 'yes' && form.isFree === 'no'
+                ? `💳 Ticket sales remitted to ${form.bankName} (${form.accountNumber}) within 48hrs after event` : null,
+            ].filter(Boolean).map((item, i) => (
+              <p key={i} className="text-sm text-gray-700">{item}</p>
+            ))}
+          </div>
+
+          {isPrivateEvent && form.privacyMode === 'code_gated' && submittedGroupCodes.length > 0 && (
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-5 mb-8 text-left">
+              <p className="text-sm font-black text-purple-800 mb-3">🔑 Your Group Codes</p>
+              <div className="space-y-2">
+                {submittedGroupCodes.map((g, i) => (
+                  <div key={i} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 border border-purple-100">
+                    <div>
+                      <p className="text-sm font-bold text-gray-800">{g.groupName}</p>
+                      <p className="text-xs text-gray-400">up to {g.maxGuests} guests</p>
+                    </div>
+                    <span className="font-mono font-black text-purple-600 text-sm tracking-wider">{g.code}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-purple-600 mt-3">Share each code only with that specific group. You can add more groups or raise limits anytime from Manage Event.</p>
+            </div>
+          )}
           <div className="space-y-3">
-            <a href="/business" className="block w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-4 rounded-2xl font-black text-base hover:from-cyan-700 hover:to-blue-700 transition shadow-lg">
-              Back to OSB Dashboard
+            <a href="/" className="block w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-4 rounded-2xl font-black text-base hover:from-cyan-700 hover:to-blue-700 transition shadow-lg">
+              Back to Home
             </a>
+            <button onClick={() => {
+              setSubmitSuccess(false); setStep(0); setListingType('');
+              setEventImages([]); setVendorImages([]); setSchoolIdImage([]); setTicketTiers([]);
+              setMaxGroupSize(1); setCustomQuestions([]); setGroupCodes([]); setSubmittedGroupCodes([]);
+              setForm(f => ({ ...f, agreedToTerms: false, useTicketTiers: false, useFreeRegistration: false, ticketsAvailable: '', accountName: '', accountNumber: '', bankName: '', visibility: 'public', privacyMode: 'invite_only', inviteEmailsText: '' }));
+            }} className="w-full border-2 border-gray-200 text-gray-700 py-4 rounded-2xl font-bold hover:bg-gray-50 transition">
+              Submit Another {type}
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mt-6">Questions? <a href="mailto:admin@outingstation.com" className="text-cyan-600 hover:underline">admin@outingstation.com</a></p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Step 0: Type picker ──────────────────────────────────────────────────
+
+  if (step === 0) {
+    return (
+      <div ref={topRef} className="min-h-screen bg-gradient-to-br from-gray-50 to-cyan-50 py-12 px-4">
+        <div className="max-w-lg mx-auto">
+          <div className="text-center mb-10">
+            <h1 className="text-4xl md:text-5xl font-black text-gray-900 mb-3 leading-tight">
+              List on<br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 to-blue-600">OutingStation</span>
+            </h1>
+            <p className="text-gray-500 text-base">What would you like to list today?</p>
+          </div>
+          <div className="space-y-4 mb-10">
+            {[
+              { value: 'event', icon: '🎉', title: 'Event', desc: 'Concert, festival, workshop, conference, party', color: 'from-cyan-500 to-blue-600' },
+              { value: 'place', icon: '🏛️', title: 'Place or Venue', desc: 'Museum, restaurant, cinema, park, spa, mall', color: 'from-purple-500 to-pink-500' },
+              { value: 'vendor', icon: '🛒', title: 'Campus Vendor', desc: 'Food stall, fashion, accessories, gadgets on campus', color: 'from-emerald-500 to-cyan-500' },
+            ].map(item => (
+              <button key={item.value} type="button" onClick={() => {
+                setListingType(item.value); setEventImages([]); setVendorImages([]);
+                setSchoolIdImage([]); setTicketTiers([]);
+                setMaxGroupSize(1); setCustomQuestions([]); setGroupCodes([]); setSubmittedGroupCodes([]);
+                setStep(item.value === 'event' ? -1 : 1); scrollTop();
+              }} className="w-full flex items-center gap-5 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-cyan-400 hover:shadow-lg transition-all text-left group">
+                <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${item.color} flex items-center justify-center text-2xl flex-shrink-0 shadow-md`}>{item.icon}</div>
+                <div className="flex-1">
+                  <p className="font-black text-gray-900 text-base">{item.title}</p>
+                  <p className="text-sm text-gray-500 mt-0.5">{item.desc}</p>
+                </div>
+                <ChevronRight size={20} className="text-gray-300 group-hover:text-cyan-500 transition" />
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            {[
+              { icon: '📱', label: 'Massive Reach', sub: 'Thousands daily' },
+              { icon: '💰', label: '100% Free', sub: 'Zero fees' },
+              { icon: '⚡', label: 'Fast Review', sub: '24–48 hours' },
+            ].map((b, i) => (
+              <div key={i} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                <div className="text-2xl mb-1">{b.icon}</div>
+                <p className="text-xs font-bold text-gray-800">{b.label}</p>
+                <p className="text-xs text-gray-400">{b.sub}</p>
+              </div>
+            ))}
           </div>
         </div>
       </div>
     );
   }
 
-  const isLastStep = step === TOTAL_STEPS;
+  // ─── Step -1: Public / Private picker (events only) ───────────────────────
+
+  if (step === -1) {
+    return (
+      <div ref={topRef} className="min-h-screen bg-gradient-to-br from-gray-50 to-cyan-50 py-12 px-4">
+        <div className="max-w-lg mx-auto">
+          <button onClick={() => { setStep(0); setListingType(''); }}
+            className="w-10 h-10 rounded-xl bg-white border-2 border-gray-200 flex items-center justify-center hover:border-cyan-400 transition mb-8 shadow-sm">
+            <ChevronLeft size={18} className="text-gray-600" />
+          </button>
+          <div className="text-center mb-10">
+            <h1 className="text-3xl md:text-4xl font-black text-gray-900 mb-3 leading-tight">
+              Is this a<br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 to-blue-600">public or private</span> event?
+            </h1>
+            <p className="text-gray-500 text-base">This decides who can find and register for it</p>
+          </div>
+          <div className="space-y-4">
+            <button type="button" onClick={() => { set('visibility', 'public'); setStep(1); scrollTop(); }}
+              className="w-full flex items-center gap-5 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-cyan-400 hover:shadow-lg transition-all text-left group">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                <Globe size={26} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="font-black text-gray-900 text-base">Public</p>
+                <p className="text-sm text-gray-500 mt-0.5">Discoverable in search, browse, and AI recommendations</p>
+              </div>
+              <ChevronRight size={20} className="text-gray-300 group-hover:text-cyan-500 transition" />
+            </button>
+            <button type="button" onClick={() => { set('visibility', 'private'); setStep(1); scrollTop(); }}
+              className="w-full flex items-center gap-5 p-5 bg-white rounded-2xl border-2 border-gray-100 hover:border-cyan-400 hover:shadow-lg transition-all text-left group">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-md">
+                <Lock size={24} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="font-black text-gray-900 text-base">Private</p>
+                <p className="text-sm text-gray-500 mt-0.5">Invite-only, unlisted, or code-gated — hidden from public listings. Perfect for weddings, birthdays, or any invite-only gathering.</p>
+              </div>
+              <ChevronRight size={20} className="text-gray-300 group-hover:text-cyan-500 transition" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Form wizard ──────────────────────────────────────────────────────────
+
+  const isLastStep = step === totalSteps;
+  const typeLabel = isVendor ? '🛒 Campus Vendor' : isEvent ? (isPrivateEvent ? '🔒 Private Event' : '🎉 Event') : '🏛️ Place/Venue';
+  const currentStepName = stepNames[step] || '';
 
   return (
     <div ref={topRef} className="min-h-screen bg-gradient-to-br from-gray-50 to-cyan-50 py-10 px-4">
       <div className="max-w-xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => step === 1 ? navigate('/business') : back()} className="w-10 h-10 rounded-xl bg-white border-2 border-gray-200 flex items-center justify-center hover:border-cyan-400 transition flex-shrink-0 shadow-sm">
+          <button onClick={back} className="w-10 h-10 rounded-xl bg-white border-2 border-gray-200 flex items-center justify-center hover:border-cyan-400 transition flex-shrink-0 shadow-sm">
             <ChevronLeft size={18} className="text-gray-600" />
           </button>
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-cyan-600 font-bold uppercase tracking-wider">✨ Experience</p>
-            <p className="text-lg font-black text-gray-900 truncate">{STEP_NAMES[step]}</p>
+            <p className="text-xs text-cyan-600 font-bold uppercase tracking-wider">{typeLabel}</p>
+            <p className="text-lg font-black text-gray-900 truncate">{currentStepName}</p>
           </div>
         </div>
 
-        <ProgressBar current={step} total={TOTAL_STEPS} />
+        <ProgressBar current={step} total={totalSteps} />
 
         <div className="bg-white rounded-3xl border-2 border-gray-100 shadow-xl p-6 sm:p-8">
 
-          {step === STEPS.info && (
+          {step === S.info && (
             <div className="space-y-5">
-              <div className="mb-2"><h2 className="text-xl font-black text-gray-900">Your Information</h2><p className="text-sm text-gray-400 mt-1">We'll use this to contact you about your listing</p></div>
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Your Information</h2>
+                <p className="text-sm text-gray-400 mt-1">We'll use this to contact you about your listing</p>
+              </div>
               <FormField label="Full Name" required error={errors.organizerName}>
                 <StyledInput name="organizerName" value={form.organizerName} onChange={handle} error={errors.organizerName} placeholder="John Doe" />
               </FormField>
@@ -589,79 +1080,217 @@ export default function SubmitExperiencePage() {
               <FormField label="Phone Number" required error={errors.organizerPhone}>
                 <StyledInput type="tel" name="organizerPhone" value={form.organizerPhone} onChange={handle} error={errors.organizerPhone} placeholder="+234 801 234 5678" />
               </FormField>
-              <FormField label="Organization Name" hint="Optional — company or brand name">
-                <StyledInput name="organizationName" value={form.organizationName} onChange={handle} placeholder="Company Ltd (optional)" />
+              {!isVendor && (
+                <FormField label="Organization Name" hint="Optional — company, school, or group name">
+                  <StyledInput name="organizationName" value={form.organizationName} onChange={handle} placeholder="Company Ltd (optional)" />
+                </FormField>
+              )}
+              <FormField label="Referral Code" hint="💰 Have a code? Earn ₦100 credits when your listing is approved!">
+                <div className="relative">
+                  <Gift className="absolute left-3.5 top-1/2 -translate-y-1/2 text-purple-400" size={16} />
+                  <StyledInput name="referralCode" value={form.referralCode} onChange={handle} placeholder="JOHN2024" maxLength={12} className="!pl-10 uppercase tracking-widest" />
+                </div>
               </FormField>
             </div>
           )}
 
-          {step === STEPS.details && (
+          {isVendor && step === S.shop && (
             <div className="space-y-5">
-              <div className="mb-2"><h2 className="text-xl font-black text-gray-900">Experience Details</h2><p className="text-sm text-gray-400 mt-1">Tell people what this experience is about</p></div>
-              <FormField label="Experience Title" required error={errors.title}>
-                <StyledInput name="title" value={form.title} onChange={handle} error={errors.title} placeholder="e.g. Paint & Sip Lagos" />
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Shop Details</h2>
+                <p className="text-sm text-gray-400 mt-1">Tell students what your campus shop is about</p>
+              </div>
+              <FormField label="Shop Name" required error={errors.shopName}>
+                <StyledInput name="shopName" value={form.shopName} onChange={handle} error={errors.shopName} placeholder="e.g. Mama Tee Kitchen, Jay Accessories" />
               </FormField>
-              <FormField label="Category" required error={errors.category}>
-                <StyledSelect name="category" value={form.category} onChange={handle} error={errors.category}>
+              <FormField label="Category" required error={errors.vendorCategory}>
+                <StyledSelect name="vendorCategory" value={form.vendorCategory} onChange={handle} error={errors.vendorCategory}>
                   <option value="">Select a category</option>
-                  {EXPERIENCE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.emoji} {c.value}</option>)}
+                  {VENDOR_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.emoji} {c.value}</option>)}
                 </StyledSelect>
               </FormField>
-              <FormField label="Description" required error={errors.description} hint={`${form.description.length} / 30 characters minimum`}>
-                <StyledTextarea name="description" value={form.description} onChange={handle} error={errors.description} rows={4} placeholder="What happens during this experience, who it's for..." />
+              <FormField label="Description" required error={errors.vendorDescription} hint={`${form.vendorDescription.length} / 20 characters minimum`}>
+                <StyledTextarea name="vendorDescription" value={form.vendorDescription} onChange={handle} error={errors.vendorDescription} rows={3} placeholder="What do you sell? e.g. Best jollof rice on campus, affordable and tasty meals daily" />
               </FormField>
-              <FormField label="What's Included" hint="Optional — add items one at a time (e.g. All materials, 1 drink, instructor)">
-                <ItemListBuilder items={included} onChange={setIncluded} placeholder="e.g. All painting materials" />
-              </FormField>
-              <FormField label="What to Bring" hint="Optional — add items one at a time (e.g. Comfortable shoes)">
-                <ItemListBuilder items={toBring} onChange={setToBring} placeholder="e.g. Comfortable clothing" />
+              <FormField label="WhatsApp Number" required error={errors.whatsappNumber} hint="Students will contact you directly on WhatsApp">
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-base leading-none">📱</span>
+                  <StyledInput type="tel" name="whatsappNumber" value={form.whatsappNumber} onChange={handle} error={errors.whatsappNumber} placeholder="+234 800 000 0000" className="!pl-10" />
+                </div>
               </FormField>
             </div>
           )}
 
-          {step === STEPS.pricing && (
+          {isVendor && step === S.uniId && (
             <div className="space-y-5">
-              <div className="mb-2"><h2 className="text-xl font-black text-gray-900">Pricing</h2><p className="text-sm text-gray-400 mt-1">How much per person, and group size limits</p></div>
-              <FormField label="Price per Person (₦)" required error={errors.pricePerPerson}>
-                <StyledInput type="number" name="pricePerPerson" value={form.pricePerPerson} onChange={handle} error={errors.pricePerPerson} placeholder="8500" />
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">University & Verification</h2>
+                <p className="text-sm text-gray-400 mt-1">We verify all vendors are active campus members</p>
+              </div>
+              <FormField label="Your University / Campus" required error={errors.vendorUniversity}>
+                <StyledSelect name="vendorUniversity" value={form.vendorUniversity} onChange={handle} error={errors.vendorUniversity}>
+                  <option value="">Select your university</option>
+                  {universities.map(u => <option key={u} value={u}>{u}</option>)}
+                  <option value="Other">Other (not listed)</option>
+                </StyledSelect>
               </FormField>
+              {form.vendorUniversity === 'Other' && (
+                <FormField label="University Name" required error={errors.vendorUniversityOther}>
+                  <StyledInput name="vendorUniversityOther" value={form.vendorUniversityOther} onChange={handle} error={errors.vendorUniversityOther} placeholder="Enter your university name" />
+                </FormField>
+              )}
+              <div>
+                <label className="block text-sm font-bold text-gray-800 mb-1.5">School ID / Matric Card <span className="text-red-500">*</span></label>
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 mb-3">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">🪪</span>
+                    <div>
+                      <p className="text-sm font-bold text-amber-800">Why we need this</p>
+                      <p className="text-xs text-amber-700 mt-1 leading-relaxed">To protect students, we verify all campus vendors are active students or authorized campus traders. Your ID is kept private and only used for verification — it will never be shown publicly.</p>
+                    </div>
+                  </div>
+                </div>
+                <MultiImageUploader images={schoolIdImage} onAdd={(urls) => setSchoolIdImage([urls[0]])} onRemove={() => setSchoolIdImage([])} maxImages={1} folder="school-ids" label="School ID" singleMode />
+                {errors.schoolId && <p className="text-xs text-red-500 mt-1.5 font-semibold">{errors.schoolId}</p>}
+              </div>
+            </div>
+          )}
+
+          {isVendor && step === S.photos && (
+            <div className="space-y-5">
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Shop Photos</h2>
+                <p className="text-sm text-gray-400 mt-1">Show your products, menu or shop interior. More photos = more trust from students!</p>
+              </div>
+              <MultiImageUploader images={vendorImages} onAdd={(urls) => setVendorImages(p => [...p, ...urls].slice(0, 10))} onRemove={(i) => setVendorImages(p => p.filter((_, idx) => idx !== i))} maxImages={10} folder="vendors" label="Shop photos" />
+              {errors.vendorImage && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.vendorImage}</p>}
+            </div>
+          )}
+
+          {!isVendor && step === S.details && (
+            <div className="space-y-5">
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">{isPlace ? 'Place Details' : 'Event Details'}</h2>
+                <p className="text-sm text-gray-400 mt-1">
+                  {isPrivateEvent ? 'Keep it short — this won\'t be shown publicly' : `Tell people what this ${isPlace ? 'place' : 'event'} is about`}
+                </p>
+              </div>
+              <FormField label={isPlace ? 'Place Name' : 'Event Title'} required error={errors.eventTitle}>
+                <StyledInput name="eventTitle" value={form.eventTitle} onChange={handle} error={errors.eventTitle} placeholder={isPlace ? 'National Museum Lagos' : (isPrivateEvent ? "Sarah & John's Wedding" : 'Lagos Music Festival 2026')} />
+              </FormField>
+              {!isPrivateEvent && (
+                <FormField label="Category" required error={errors.eventCategory}>
+                  <StyledSelect name="eventCategory" value={form.eventCategory} onChange={handle} error={errors.eventCategory}>
+                    <option value="">Select a category</option>
+                    {(isPlace ? PLACE_CATEGORIES : EVENT_CATEGORIES).map(c => <option key={c} value={c}>{c}</option>)}
+                  </StyledSelect>
+                </FormField>
+              )}
+              {!isPrivateEvent && form.eventCategory === 'Other' && (
+                <FormField label="Specify Category" required error={errors.customCategory}>
+                  <StyledInput name="customCategory" value={form.customCategory} onChange={handle} error={errors.customCategory} placeholder="e.g. Wellness & Yoga" />
+                </FormField>
+              )}
+              {isEvent && !isPrivateEvent && (
+                <FormField label="Event Type" required>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[{ value: 'physical', label: '📍 Physical' }, { value: 'webinar', label: '💻 Virtual' }, { value: 'hybrid', label: '🔀 Hybrid' }].map(t => (
+                      <ToggleButton key={t.value} selected={form.eventType === t.value} onClick={() => set('eventType', t.value)}>{t.label}</ToggleButton>
+                    ))}
+                  </div>
+                  {isPureVirtual && <p className="text-xs text-blue-500 mt-2 font-medium">💡 Virtual events skip the location step</p>}
+                </FormField>
+              )}
+              {(isEvent || isPlace) && !isPrivateEvent && (
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-4">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="isUniversityEvent" checked={form.isUniversityEvent} onChange={handle} className="mt-0.5 h-4 w-4 rounded text-blue-600" />
+                    <div>
+                      <p className="text-sm font-bold text-gray-800">🎓 This is a University/Campus {isPlace ? 'Place' : 'Event'}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Check if this {isPlace ? 'place' : 'event'} is located at a university campus</p>
+                    </div>
+                  </label>
+                  {form.isUniversityEvent && (
+                    <div className="mt-3 space-y-3">
+                      <StyledSelect name="universityName" value={form.universityName} onChange={handle} error={errors.universityName}>
+                        <option value="">Select your university</option>
+                        {universities.map(u => <option key={u} value={u}>{u}</option>)}
+                      </StyledSelect>
+                      {errors.universityName && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.universityName}</p>}
+
+                      {isEvent && (
+                        <StyledSelect name="campusEventCategory" value={form.campusEventCategory} onChange={handle}>
+                          <option value="">Select campus event category (optional)</option>
+                          {CAMPUS_EVENT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </StyledSelect>
+                      )}
+
+                      {isPlace && (
+                        <StyledSelect name="campusSubCategory" value={form.campusSubCategory} onChange={handle}>
+                          <option value="">Select place type (optional)</option>
+                          {CAMPUS_PLACE_SUBCATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </StyledSelect>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              <FormField label="Description" required error={errors.eventDescription} hint={isPrivateEvent ? 'A line or two is fine' : `${form.eventDescription.length} / 100 characters minimum`}>
+                <StyledTextarea name="eventDescription" value={form.eventDescription} onChange={handle} error={errors.eventDescription} rows={isPrivateEvent ? 2 : 5} placeholder={isPlace ? 'Describe what visitors can expect...' : (isPrivateEvent ? 'e.g. Join us to celebrate our wedding reception' : 'Describe your event — what happens, who should attend, what to expect...')} />
+              </FormField>
+            </div>
+          )}
+
+          {isEvent && step === S.datetime && (
+            <div className="space-y-5">
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Date & Time</h2>
+                <p className="text-sm text-gray-400 mt-1">When does your event take place?</p>
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                <FormField label="Min Guests / Booking" required error={errors.minGuests}>
-                  <StyledInput type="number" min="1" name="minGuests" value={form.minGuests} onChange={handle} error={errors.minGuests} />
+                <FormField label="Start Date" required error={errors.startDate}>
+                  <StyledInput type="date" name="startDate" value={form.startDate} onChange={handle} error={errors.startDate} />
                 </FormField>
-                <FormField label="Max Guests / Booking" required error={errors.maxGuests}>
-                  <StyledInput type="number" min="1" name="maxGuests" value={form.maxGuests} onChange={handle} error={errors.maxGuests} />
+                <FormField label="Start Time" required error={errors.startTime}>
+                  <StyledInput type="time" name="startTime" value={form.startTime} onChange={handle} error={errors.startTime} />
+                </FormField>
+                <FormField label="End Date" hint="Optional">
+                  <StyledInput type="date" name="endDate" value={form.endDate} onChange={handle} error={errors.endDate} />
+                  {errors.endDate && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.endDate}</p>}
+                </FormField>
+                <FormField label="End Time" hint="Optional">
+                  <StyledInput type="time" name="endTime" value={form.endTime} onChange={handle} />
                 </FormField>
               </div>
             </div>
           )}
 
-          {step === STEPS.sessions && (
+          {isPlace && step === S.hours && (
             <div className="space-y-5">
-              <div className="mb-2"><h2 className="text-xl font-black text-gray-900">Sessions</h2><p className="text-sm text-gray-400 mt-1">When can people book this experience?</p></div>
-              <SessionsBuilder sessions={sessions} onChange={setSessions} errors={errors} />
-              {errors.sessions && <p className="text-xs text-red-500 font-semibold">{errors.sessions}</p>}
-              <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-4">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" name="recurring" checked={form.recurring} onChange={handle} className="mt-0.5 h-4 w-4 rounded text-blue-600" />
-                  <div>
-                    <p className="text-sm font-bold text-gray-800 flex items-center gap-1.5"><Repeat size={14} /> This experience repeats regularly</p>
-                    <p className="text-xs text-gray-500 mt-0.5">e.g. "Every Friday 7PM" — helps guests know it's ongoing. You'll still add individual sessions above (and more later from your dashboard).</p>
-                  </div>
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Operating Hours</h2>
+                <p className="text-sm text-gray-400 mt-1">When is this place open to visitors?</p>
+              </div>
+              <div className="bg-gray-50 border-2 border-gray-200 rounded-2xl p-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" name="alwaysOpen" checked={form.alwaysOpen} onChange={handle} className="h-5 w-5 rounded text-cyan-600" />
+                  <span className="text-sm font-bold text-gray-800">This place is always open (24/7)</span>
                 </label>
-                {form.recurring && (
-                  <div className="mt-3">
-                    <StyledInput name="recurringPattern" value={form.recurringPattern} onChange={handle} error={errors.recurringPattern} placeholder="e.g. Every Friday 7PM" />
-                    {errors.recurringPattern && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.recurringPattern}</p>}
-                  </div>
-                )}
               </div>
+              {!form.alwaysOpen && (
+                <FormField label="Operating Hours" required error={errors.operatingHours} hint="e.g. Mon–Fri: 9AM–5PM, Sat–Sun: 10AM–8PM">
+                  <StyledTextarea name="operatingHours" value={form.operatingHours} onChange={handle} error={errors.operatingHours} rows={3} placeholder={'Mon–Fri: 9AM–5PM\nSat–Sun: 10AM–8PM'} />
+                </FormField>
+              )}
             </div>
           )}
 
-          {step === STEPS.location && (
+          {!isVendor && S.location && step === S.location && (
             <div className="space-y-5">
-              <div className="mb-2"><h2 className="text-xl font-black text-gray-900">Location</h2><p className="text-sm text-gray-400 mt-1">Where does this experience take place?</p></div>
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Location</h2>
+                <p className="text-sm text-gray-400 mt-1">Where is this {isPlace ? 'place' : 'event'}?</p>
+              </div>
               <FormField label="City" required error={errors.city}>
                 <StyledSelect name="city" value={form.city} onChange={handle} error={errors.city}>
                   <option value="">Select a city</option>
@@ -673,6 +1302,9 @@ export default function SubmitExperiencePage() {
                   <StyledInput name="customCity" value={form.customCity} onChange={handle} error={errors.customCity} placeholder="Enter city name" />
                 </FormField>
               )}
+              <FormField label={isPlace ? 'Place Name' : 'Venue Name'} required error={errors.venueName}>
+                <StyledInput name="venueName" value={form.venueName} onChange={handle} error={errors.venueName} placeholder={isPlace ? 'National Museum' : 'Eko Hotel & Suites'} />
+              </FormField>
               <FormField label="Full Address" required error={errors.address}>
                 <StyledInput name="address" value={form.address} onChange={handle} error={errors.address} placeholder="123 Main Street, Victoria Island, Lagos" />
               </FormField>
@@ -682,73 +1314,288 @@ export default function SubmitExperiencePage() {
             </div>
           )}
 
-          {step === STEPS.booking && (
+          {isVirtual && S.virtual && step === S.virtual && (
             <div className="space-y-5">
-              <div className="mb-2"><h2 className="text-xl font-black text-gray-900">Booking Method</h2><p className="text-sm text-gray-400 mt-1">How will guests book a session?</p></div>
-              <div className="grid grid-cols-1 gap-3">
-                <ToggleButton selected={form.bookingMethod === 'outingstation'} onClick={() => set('bookingMethod', 'outingstation')}>
-                  <div className="flex items-center gap-2"><Ticket size={16} /> OutingStation Booking — we handle payment via Paystack, QR check-in, and payout to you</div>
-                </ToggleButton>
-                <ToggleButton selected={form.bookingMethod === 'contact'} onClick={() => set('bookingMethod', 'contact')}>
-                  <div className="flex items-center gap-2"><Phone size={16} /> Contact Host — guests reach you directly, no online payment</div>
-                </ToggleButton>
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Virtual Event Details</h2>
+                <p className="text-sm text-gray-400 mt-1">Where will people join your event online?</p>
               </div>
+              <FormField label="Platform" required error={errors.platform}>
+                <StyledSelect name="platform" value={form.platform} onChange={handle} error={errors.platform}>
+                  <option value="">Select a platform</option>
+                  {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+                </StyledSelect>
+              </FormField>
+              <FormField label="Registration / Join Link" required error={errors.webinarLink}>
+                <StyledInput type="url" name="webinarLink" value={form.webinarLink} onChange={handle} error={errors.webinarLink} placeholder="https://zoom.us/webinar/..." />
+              </FormField>
+            </div>
+          )}
 
-              {form.bookingMethod === 'outingstation' && (
-                <div className="border-2 border-emerald-100 rounded-2xl p-5 bg-gradient-to-br from-emerald-50/50 to-cyan-50/50 space-y-4">
+          {isPrivateEvent && S.privacy && step === S.privacy && (
+            <div className="space-y-5">
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Privacy & Access</h2>
+                <p className="text-sm text-gray-400 mt-1">How will guests get in?</p>
+              </div>
+              <FormField label="Access Method" required error={errors.privacyMode}>
+                <div className="grid grid-cols-1 gap-3">
+                  <ToggleButton selected={form.privacyMode === 'invite_only'} onClick={() => set('privacyMode', 'invite_only')}>
+                    📩 Invite-only — I'll add guest emails, they get a ticket automatically
+                  </ToggleButton>
+                  <ToggleButton selected={form.privacyMode === 'code_gated'} onClick={() => set('privacyMode', 'code_gated')}>
+                    🔑 Group codes — each family/group gets a code with a guest limit
+                  </ToggleButton>
+                  <ToggleButton selected={form.privacyMode === 'unlisted'} onClick={() => set('privacyMode', 'unlisted')}>
+                    🔗 Unlisted — hidden from search, but the link works for anyone
+                  </ToggleButton>
+                </div>
+              </FormField>
+
+              {form.privacyMode === 'invite_only' && (
+                <FormField label="Guest Emails" required error={errors.inviteEmailsText}
+                  hint="One per line or comma-separated. Each guest gets a scannable ticket by email as soon as this is approved. You can add more later from your event dashboard.">
+                  <StyledTextarea name="inviteEmailsText" value={form.inviteEmailsText} onChange={handle} error={errors.inviteEmailsText}
+                    rows={6} placeholder={'guest1@gmail.com\nguest2@gmail.com\nguest3@gmail.com'} />
+                  {form.inviteEmailsText.trim() && (
+                    <p className="text-xs text-cyan-600 font-semibold mt-1.5">
+                      {parseEmailList(form.inviteEmailsText).length} valid email(s) detected
+                    </p>
+                  )}
+                </FormField>
+              )}
+
+              {form.privacyMode === 'code_gated' && (
+                <FormField label="Groups" required error={errors.groupCodes}
+                  hint="Each group gets its own code and guest limit. Codes are generated automatically — you'll see and can share them after submitting. You can add more groups or raise limits later from your event dashboard.">
+                  <GroupCodeBuilder groups={groupCodes} onChange={setGroupCodes} errors={errors} />
+                </FormField>
+              )}
+
+              {form.privacyMode === 'unlisted' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <p className="text-sm text-blue-700">Anyone with the direct link to this event can view and register — it just won't show up in search, browse, or AI recommendations.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isVendor && step === S.ticket && (
+            <div className="space-y-5">
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">{isPlace ? 'Entry Fee' : 'Ticketing'}</h2>
+                <p className="text-sm text-gray-400 mt-1">How much does it cost to {isPlace ? 'enter' : 'attend'}?</p>
+              </div>
+              <FormField label={isPlace ? 'Is entry free?' : 'Is this event free?'} required>
+                <div className="grid grid-cols-2 gap-3">
+                  <ToggleButton selected={form.isFree === 'yes'} onClick={() => set('isFree', 'yes')}>✅ Free</ToggleButton>
+                  <ToggleButton selected={form.isFree === 'no'} onClick={() => set('isFree', 'no')}>💳 {isPlace ? 'Paid Entry' : 'Paid Event'}</ToggleButton>
+                </div>
+              </FormField>
+
+              {form.isFree === 'yes' && isEvent && !isPrivateEvent && (
+                <FormField label="Want to track attendees?" hint="Optional — lets you cap spots, require registration, and check people in">
+                  <div className="grid grid-cols-2 gap-3">
+                    <ToggleButton selected={!form.useFreeRegistration} onClick={() => set('useFreeRegistration', false)}>
+                      🎉 Just show up
+                    </ToggleButton>
+                    <ToggleButton selected={form.useFreeRegistration} onClick={() => set('useFreeRegistration', true)}>
+                      🎟️ Free Registration
+                    </ToggleButton>
+                  </div>
+                </FormField>
+              )}
+
+              {form.isFree === 'yes' && isEvent && !isPrivateEvent && form.useFreeRegistration && (
+                <div className="border-2 border-cyan-100 rounded-2xl p-5 bg-gradient-to-br from-cyan-50/50 to-blue-50/50 space-y-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <Building2 size={18} className="text-emerald-600" />
+                    <UserPlus size={18} className="text-cyan-600" />
                     <div>
-                      <p className="text-sm font-black text-gray-900">Remittance Account</p>
-                      <p className="text-xs text-gray-500">Where we'll send your payout within 48hrs after each session</p>
+                      <p className="text-sm font-black text-gray-900">Free Registration Setup</p>
+                      <p className="text-xs text-gray-500">Attendees will register on OutingStation — no payment involved</p>
                     </div>
                   </div>
-                  <FormField label="Account Name" required error={errors.accountName}>
-                    <StyledInput name="accountName" value={form.accountName} onChange={handle} error={errors.accountName} placeholder="John Doe" />
+                  <FormField label="Spots Available" required error={errors.ticketsAvailable}>
+                    <StyledInput type="number" name="ticketsAvailable" value={form.ticketsAvailable}
+                      onChange={handle} error={errors.ticketsAvailable} placeholder="e.g. 100" />
                   </FormField>
-                  <FormField label="Account Number" required error={errors.accountNumber}>
-                    <StyledInput name="accountNumber" value={form.accountNumber} onChange={handle} error={errors.accountNumber} placeholder="0123456789" maxLength={10} inputMode="numeric" />
+                  <FormField label="Max people per registration" hint="1 = no plus-ones. Higher allows groups (must arrive together).">
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5, 6].map(n => (
+                        <button key={n} type="button" onClick={() => setMaxGroupSize(n)}
+                          className={`flex-1 py-2 rounded-lg border-2 text-sm font-bold transition ${
+                            maxGroupSize === n ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-600'
+                          }`}>
+                          {n}
+                        </button>
+                      ))}
+                    </div>
                   </FormField>
-                  <FormField label="Bank Name" required error={errors.bankName}>
-                    <StyledSelect name="bankName" value={form.bankName} onChange={handle} error={errors.bankName}>
-                      <option value="">Select your bank</option>
-                      {NIGERIAN_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
-                    </StyledSelect>
+                  <FormField label="Custom Questions" hint="Optional — ask attendees anything extra you need to know">
+                    <CustomQuestionBuilder questions={customQuestions} onChange={setCustomQuestions} />
                   </FormField>
                 </div>
               )}
 
-              {form.bookingMethod === 'contact' && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                  <p className="text-sm text-blue-700">Guests will see your phone number and can reach out directly to book. No online payment or QR check-in for this experience.</p>
+              {isPrivateEvent && (
+                <div className="border-2 border-purple-100 rounded-2xl p-5 bg-gradient-to-br from-purple-50/50 to-pink-50/50 space-y-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Lock size={18} className="text-purple-600" />
+                    <div>
+                      <p className="text-sm font-black text-gray-900">Guest Questions</p>
+                      <p className="text-xs text-gray-500">Optional — dietary restrictions, plus-one name, dress code confirmation, anything you need to know</p>
+                    </div>
+                  </div>
+                  <CustomQuestionBuilder questions={customQuestions} onChange={setCustomQuestions} />
                 </div>
+              )}
+
+              {form.isFree === 'no' && (
+                <>
+                  {isEvent && (
+                    <FormField label="Should OutingStation handle ticketing?">
+                      <div className="grid grid-cols-2 gap-3">
+                        <ToggleButton selected={form.wantOutingstationTicketing === 'yes'} onClick={() => set('wantOutingstationTicketing', 'yes')}>🎫 Yes please!</ToggleButton>
+                        <ToggleButton selected={form.wantOutingstationTicketing === 'no'} onClick={() => set('wantOutingstationTicketing', 'no')}>🔗 I have my own</ToggleButton>
+                      </div>
+                    </FormField>
+                  )}
+
+                  {isEvent && form.wantOutingstationTicketing === 'yes' && (
+                    <div className="border-2 border-emerald-100 rounded-2xl p-5 bg-gradient-to-br from-emerald-50/50 to-cyan-50/50 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Building2 size={18} className="text-emerald-600" />
+                        <div>
+                          <p className="text-sm font-black text-gray-900">Remittance Account</p>
+                          <p className="text-xs text-gray-500">Where we'll send your ticket sales after the event</p>
+                        </div>
+                      </div>
+                      <FormField label="Account Name" required error={errors.accountName}>
+                        <StyledInput name="accountName" value={form.accountName} onChange={handle} error={errors.accountName} placeholder="John Doe" />
+                      </FormField>
+                      <FormField label="Account Number" required error={errors.accountNumber}>
+                        <StyledInput name="accountNumber" value={form.accountNumber} onChange={handle} error={errors.accountNumber} placeholder="0123456789" maxLength={10} inputMode="numeric" />
+                      </FormField>
+                      <FormField label="Bank Name" required error={errors.bankName}>
+                        <StyledSelect name="bankName" value={form.bankName} onChange={handle} error={errors.bankName}>
+                          <option value="">Select your bank</option>
+                          {NIGERIAN_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                        </StyledSelect>
+                      </FormField>
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                        <p className="text-xs text-amber-700 leading-relaxed">
+                          💳 Ticket sales will be remitted to this account within <strong>48 hours</strong> after your event ends. Ensure account details are accurate — OutingStation is not liable for incorrect information.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {isEvent && form.wantOutingstationTicketing === 'yes' && (
+                    <div className="border-2 border-cyan-100 rounded-2xl p-5 bg-gradient-to-br from-cyan-50/50 to-blue-50/50">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <Ticket size={18} className="text-cyan-600" />
+                          <div>
+                            <p className="text-sm font-black text-gray-900">Multiple Ticket Tiers</p>
+                            <p className="text-xs text-gray-500">Regular, VIP, Early Bird, Table of 5...</p>
+                          </div>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" checked={form.useTicketTiers} onChange={(e) => {
+                            set('useTicketTiers', e.target.checked);
+                            if (e.target.checked && ticketTiers.length === 0) {
+                              setTicketTiers([{ id: `tier_${Date.now()}`, name: 'Regular', price: '', benefits: '', quantity: '', saleEndDate: '' }]);
+                            }
+                          }} className="sr-only peer" />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                        </label>
+                      </div>
+                      {form.useTicketTiers ? (
+                        <>
+                          <TicketTierBuilder tiers={ticketTiers} onChange={setTicketTiers} errors={errors} />
+                          {errors.ticketTiers && <p className="text-xs text-red-500 mt-2 font-semibold">{errors.ticketTiers}</p>}
+                        </>
+                      ) : (
+                        <FormField label="Ticket Price (₦)" required error={errors.ticketPrice}>
+                          <StyledInput type="number" name="ticketPrice" value={form.ticketPrice} onChange={handle} error={errors.ticketPrice} placeholder="5000" />
+                        </FormField>
+                      )}
+                    </div>
+                  )}
+
+                  {isEvent && form.wantOutingstationTicketing === 'yes' && (
+                    <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl p-3">
+                      <span className="text-blue-500 mt-0.5">ℹ️</span>
+                      <p className="text-xs text-blue-700 leading-relaxed">Paid events using OutingStation ticketing may require identity verification before going live. We'll contact you if needed.</p>
+                    </div>
+                  )}
+
+                  {(!isEvent || form.wantOutingstationTicketing === 'no') && (
+                    <FormField label={isPlace ? 'Entry Fee (₦)' : 'Ticket Price (₦)'} required error={errors.ticketPrice}>
+                      <StyledInput type="number" name="ticketPrice" value={form.ticketPrice} onChange={handle} error={errors.ticketPrice} placeholder="5000" />
+                    </FormField>
+                  )}
+
+                  {(isEvent ? form.wantOutingstationTicketing === 'no' : true) && (
+                    <FormField label="External Ticket Link" required error={errors.externalTicketLink}>
+                      <StyledInput type="url" name="externalTicketLink" value={form.externalTicketLink} onChange={handle} error={errors.externalTicketLink} placeholder="https://eventbrite.com/..." />
+                    </FormField>
+                  )}
+                </>
               )}
             </div>
           )}
 
-          {step === STEPS.photos && (
+          {!isVendor && step === S.photos && (
             <div className="space-y-5">
-              <div className="mb-2"><h2 className="text-xl font-black text-gray-900">Photos</h2><p className="text-sm text-gray-400 mt-1">Add 3–10 photos. Users can swipe through all of them.</p></div>
-              <MultiImageUploader images={images} onAdd={(urls) => setImages(p => [...p, ...urls].slice(0, 10))} onRemove={(i) => setImages(p => p.filter((_, idx) => idx !== i))} maxImages={10} />
-              {errors.images && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.images}</p>}
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">{isPlace ? 'Place' : 'Event'} Photos</h2>
+                <p className="text-sm text-gray-400 mt-1">
+                  {isPrivateEvent ? 'Optional — add a photo if you\'d like, but not required for a private event' : 'Add up to 10 photos. Users can swipe through all of them.'}
+                </p>
+              </div>
+              <MultiImageUploader images={eventImages} onAdd={(urls) => setEventImages(p => [...p, ...urls].slice(0, 10))} onRemove={(i) => setEventImages(p => p.filter((_, idx) => idx !== i))} maxImages={10} folder={isPlace ? 'places' : 'events'} label={isPlace ? 'Place photos' : 'Event photos'} />
+              {errors.eventImage && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.eventImage}</p>}
+              <FormField label="Anything else we should know?" hint="Dress code, parking, accessibility... (optional)">
+                <StyledTextarea name="additionalInfo" value={form.additionalInfo} onChange={handle} rows={3} placeholder={isPlace ? 'Accessibility info, parking details...' : 'Dress code, parking, special requirements...'} />
+              </FormField>
             </div>
           )}
 
-          {step === STEPS.review && (
+          {step === S.review && (
             <div className="space-y-5">
-              <div className="mb-2"><h2 className="text-xl font-black text-gray-900">Review & Submit</h2><p className="text-sm text-gray-400 mt-1">Check your details and agree to our terms</p></div>
+              <div className="mb-2">
+                <h2 className="text-xl font-black text-gray-900">Review & Submit</h2>
+                <p className="text-sm text-gray-400 mt-1">Check your details and agree to our terms</p>
+              </div>
               <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-5 space-y-3 border border-cyan-100">
                 {[
                   { label: '👤 Name', value: form.organizerName },
-                  { label: '✨ Title', value: form.title },
-                  { label: '📂 Category', value: form.category },
-                  { label: '💰 Price', value: `₦${Number(form.pricePerPerson || 0).toLocaleString()} / person` },
-                  { label: '👥 Group Size', value: `${form.minGuests}–${form.maxGuests} guests` },
-                  { label: '📅 Sessions', value: `${sessions.length} session${sessions.length !== 1 ? 's' : ''}` },
-                  { label: '🏙️ City', value: form.city === 'Others' ? form.customCity : form.city },
-                  { label: '🎟️ Booking', value: form.bookingMethod === 'outingstation' ? 'OutingStation Booking' : 'Contact Host' },
-                  { label: '📸 Photos', value: `${images.length} photo${images.length !== 1 ? 's' : ''}` },
-                ].map(({ label, value }, i) => (
+                  { label: '📧 Email', value: form.organizerEmail },
+                  { label: '📞 Phone', value: form.organizerPhone },
+                  isVendor ? { label: '🛒 Shop', value: form.shopName } : { label: isPlace ? '🏛️ Place' : '🎉 Event', value: form.eventTitle },
+                  !isPrivateEvent ? { label: '📂 Category', value: isVendor ? form.vendorCategory : form.eventCategory } : null,
+                  isVendor ? { label: '🎓 University', value: form.vendorUniversity === 'Other' ? form.vendorUniversityOther : form.vendorUniversity }
+                    : { label: '🏙️ City', value: form.city === 'Others' ? form.customCity : form.city },
+                  { label: '📸 Photos', value: isVendor ? `${vendorImages.length} shop photo${vendorImages.length !== 1 ? 's' : ''}` : `${eventImages.length} photo${eventImages.length !== 1 ? 's' : ''}` },
+                  !isVendor && form.isUniversityEvent && isEvent && form.campusEventCategory
+                    ? { label: '🎓 Campus Category', value: form.campusEventCategory } : null,
+                  !isVendor && form.isUniversityEvent && isPlace && form.campusSubCategory
+                    ? { label: '🎓 Place Type', value: form.campusSubCategory } : null,
+                  isPrivateEvent
+                    ? { label: '🔒 Privacy', value: form.privacyMode === 'invite_only' ? `Invite-only · ${parseEmailList(form.inviteEmailsText).length} guest(s)` : form.privacyMode === 'code_gated' ? `Group codes · ${groupCodes.length} group(s), ${groupCodes.reduce((sum, g) => sum + (g.maxGuests || 0), 0)} total guests` : 'Unlisted' }
+                    : null,
+                  isEvent && form.isFree === 'yes' && form.useFreeRegistration
+                    ? { label: '🎟️ Free Registration', value: `${form.ticketsAvailable || 0} spots · max ${maxGroupSize}/registration` } : null,
+                  isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes' && form.useTicketTiers && ticketTiers.length > 0
+                    ? { label: '🎟️ Ticket Tiers', value: `${ticketTiers.length} tier${ticketTiers.length !== 1 ? 's' : ''}: ${ticketTiers.map(t => t.name).join(', ')}` }
+                    : isEvent && form.isFree === 'no' && form.ticketPrice
+                    ? { label: '💰 Ticket Price', value: `₦${Number(form.ticketPrice).toLocaleString()}` } : null,
+                  isEvent && form.isFree === 'no' && form.wantOutingstationTicketing === 'yes' && form.accountNumber
+                    ? { label: '🏦 Bank Account', value: `${form.bankName} · ${form.accountNumber} (${form.accountName})` } : null,
+                  isVendor && schoolIdImage.length > 0 ? { label: '🪪 School ID', value: 'Uploaded ✅' } : null,
+                  form.referralCode ? { label: '🎁 Referral', value: form.referralCode.toUpperCase() } : null,
+                ].filter(Boolean).map(({ label, value }, i) => (
                   <div key={i} className="flex items-start justify-between gap-4 text-sm">
                     <span className="text-gray-500 flex-shrink-0">{label}</span>
                     <span className="font-bold text-gray-900 text-right">{value || '—'}</span>
@@ -756,27 +1603,145 @@ export default function SubmitExperiencePage() {
                 ))}
               </div>
 
+              {isPrivateEvent && form.privacyMode === 'invite_only' && parseEmailList(form.inviteEmailsText).length > 0 && (
+                <div className="border-2 border-purple-100 rounded-2xl p-4">
+                  <p className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                    <Lock size={16} className="text-purple-600" /> Invited Guests ({parseEmailList(form.inviteEmailsText).length})
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {parseEmailList(form.inviteEmailsText).map((email, i) => (
+                      <span key={i} className="text-xs bg-gray-50 text-gray-700 px-2.5 py-1 rounded-lg">{email}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {isPrivateEvent && form.privacyMode === 'code_gated' && groupCodes.length > 0 && (
+                <div className="border-2 border-purple-100 rounded-2xl p-4">
+                  <p className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                    <Lock size={16} className="text-purple-600" /> Groups ({groupCodes.length})
+                  </p>
+                  <div className="space-y-2">
+                    {groupCodes.map((g, i) => (
+                      <div key={i} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-xl">
+                        <span className="text-sm font-bold text-gray-800">{g.groupName || `Group ${i + 1}`}</span>
+                        <span className="text-xs text-purple-600 font-semibold">up to {g.maxGuests || 1} guests</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">Shareable codes are generated once you submit — you'll see them on the confirmation screen.</p>
+                </div>
+              )}
+
+              {(isPrivateEvent || (isEvent && form.isFree === 'yes' && form.useFreeRegistration)) && customQuestions.length > 0 && (
+                <div className="border-2 border-cyan-100 rounded-2xl p-4">
+                  <p className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                    <UserPlus size={16} className="text-cyan-600" /> {isPrivateEvent ? 'Guest Questions' : 'Custom Questions'}
+                  </p>
+                  <div className="space-y-2">
+                    {customQuestions.map((q, i) => (
+                      <div key={i} className="py-2 px-3 bg-gray-50 rounded-xl">
+                        <p className="text-sm font-bold text-gray-800">{q.label} {q.required && <span className="text-red-500">*</span>}</p>
+                        <p className="text-xs text-gray-500">{q.type === 'select' ? `Options: ${q.options.join(', ')}` : q.type === 'yes_no' ? 'Yes / No' : 'Short text'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {isEvent && form.isFree === 'no' && form.useTicketTiers && ticketTiers.length > 0 && (
+                <div className="border-2 border-cyan-100 rounded-2xl p-4">
+                  <p className="text-sm font-black text-gray-800 mb-3 flex items-center gap-2">
+                    <Ticket size={16} className="text-cyan-600" /> Ticket Tiers
+                  </p>
+                  <div className="space-y-2">
+                    {ticketTiers.map((tier, i) => (
+                      <div key={i} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-xl">
+                        <div>
+                          <p className="text-sm font-bold text-gray-800">{tier.name}</p>
+                          {tier.benefits && <p className="text-xs text-gray-500">{tier.benefits}</p>}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black text-cyan-600">₦{Number(tier.price).toLocaleString()}</p>
+                          {tier.quantity && <p className="text-xs text-gray-400">{tier.quantity} available</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className={`border-2 rounded-2xl p-4 transition ${errors.agreedToTerms ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}>
                 <label className="flex items-start gap-3 cursor-pointer" onClick={() => set('agreedToTerms', !form.agreedToTerms)}>
                   <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${form.agreedToTerms ? 'bg-gradient-to-br from-cyan-600 to-blue-600 border-cyan-600' : 'border-gray-300'}`}>
                     {form.agreedToTerms && <Check size={11} className="text-white" />}
                   </div>
                   <span className="text-sm text-gray-600 leading-relaxed">
-                    I confirm all information is accurate and I agree to OutingStation's Terms & Conditions.
+                    I confirm all information is accurate and I agree to OutingStation's{' '}
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setShowTerms(true); }} className="text-cyan-600 font-bold underline">Terms & Conditions</button>.
+                    {isVendor && ' My school ID is genuine and I am authorized to operate on campus.'}
                   </span>
                 </label>
                 {errors.agreedToTerms && <p className="text-xs text-red-500 mt-2 font-semibold">{errors.agreedToTerms}</p>}
               </div>
+
+              {((isVendor && vendorImages.length > 0) || (!isVendor && eventImages.length > 0)) && (
+                <div className="flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
+                  <span className="text-xl">📸</span>
+                  <p className="text-sm text-green-700 font-bold">
+                    {isVendor ? vendorImages.length : eventImages.length} photo{(isVendor ? vendorImages.length : eventImages.length) !== 1 ? 's' : ''} ready to submit
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
         </div>
 
         <NavButtons onBack={back} onNext={isLastStep ? handleSubmit : next}
-          nextLabel={isLastStep ? '🚀 Submit Experience' : 'Continue'} isSubmitting={isSubmitting} />
+          nextLabel={isLastStep ? `🚀 Submit ${isVendor ? 'Vendor' : isPlace ? 'Place' : 'Event'}` : 'Continue'}
+          isSubmitting={isSubmitting} />
 
-        <p className="text-center text-xs text-gray-400 mt-4">Step {step} of {TOTAL_STEPS} · Review within 24–48 hours</p>
+        <p className="text-center text-xs text-gray-400 mt-4">Step {step} of {totalSteps} · Review within 24–48 hours</p>
       </div>
+
+      {showTerms && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowTerms(false)}>
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[80vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b-2 border-gray-100 px-8 py-5 flex justify-between items-center rounded-t-3xl">
+              <h2 className="text-xl font-black text-gray-900">Terms & Conditions</h2>
+              <button onClick={() => setShowTerms(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition"><X size={16} /></button>
+            </div>
+            <div className="px-8 py-6 space-y-6 text-gray-700">
+              {[
+                { title: '1. Submission Guidelines', items: ['All information provided must be accurate and truthful', 'You must have the legal right to use all images and content submitted', 'Events, places, and vendor listings must be real and verifiable', 'Submissions may be rejected if they violate our community standards'] },
+                { title: '2. Review Process', items: ['All submissions are reviewed within 24–48 hours', 'OutingStation reserves the right to approve, reject, or request modifications', 'We may contact you for verification or additional information', 'Approved listings will be published on our platform'] },
+                { title: '3. Ticketing & Remittance', items: ['Ticket sales are collected and held by OutingStation on behalf of the organizer', 'Remittance is made within 48 hours after the event ends', 'OutingStation is not liable for losses due to incorrect bank account details provided', 'Organizers must ensure account details are accurate before submission', 'OutingStation reserves the right to withhold remittance in cases of fraud or policy violations'] },
+                { title: '4. Vendor Specific Terms', items: ['Vendors must be active students or authorized campus traders', 'School ID is required and kept strictly private for verification only', 'WhatsApp number must be active and reachable', 'Vendor listings are free — OutingStation takes no commission', 'OutingStation is not liable for any transactions between vendors and students'] },
+                { title: '5. Content Ownership', items: ['You retain ownership of all content you submit', 'By submitting, you grant OutingStation a non-exclusive license to display your content', 'You can request removal of your listing at any time'] },
+              ].map((section, i) => (
+                <section key={i}>
+                  <h3 className="font-black text-gray-900 mb-3">{section.title}</h3>
+                  <ul className="space-y-2">
+                    {section.items.map((item, j) => (
+                      <li key={j} className="flex items-start gap-2 text-sm">
+                        <span className="text-cyan-500 font-bold mt-0.5">•</span>
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+              <p className="text-sm">Questions? <a href="mailto:admin@outingstation.com" className="text-cyan-600 hover:underline font-bold">admin@outingstation.com</a></p>
+            </div>
+            <div className="sticky bottom-0 bg-white border-t-2 border-gray-100 px-8 py-5 rounded-b-3xl">
+              <button onClick={() => setShowTerms(false)} className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3.5 rounded-2xl font-black hover:from-cyan-700 hover:to-blue-700 transition">Got it, close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
+
+export default SubmitEventPage;
