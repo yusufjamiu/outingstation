@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Menu, Store, CheckCircle, XCircle, Clock, Phone, MapPin, DollarSign } from 'lucide-react';
+import { Menu, Store, CheckCircle, XCircle, Clock, Phone, MapPin, DollarSign, Landmark } from 'lucide-react';
 import { AdminSidebar } from '../../components/AdminSidebar';
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -79,6 +79,18 @@ async function cleanupOrphanedBusinessOutings(existingOwnerIds) {
     await batch.commit();
   }
   return orphaned.length;
+}
+
+// ✅ NEW — masks a bank account number down to the last 4 digits for
+// on-screen display, same convention used on OSBProfileScreen's payout
+// display and the registration wizard's review step. Admin still needs
+// to SEE the account exists and matches a plausible NUBAN length before
+// approving — full digits aren't needed for that judgment call, and
+// there's no reason for the complete number to sit rendered in the DOM
+// any longer than it has to.
+function maskAccountNumber(number) {
+  if (!number || number.length < 4) return number || '';
+  return `•••• ${number.slice(-4)}`;
 }
 
 export default function AdminBusinesses() {
@@ -302,6 +314,33 @@ export default function AdminBusinesses() {
                           {biz.pricingInfo && <span className="flex items-center gap-1"><DollarSign size={12} /> {biz.pricingInfo}</span>}
                           <span className="text-gray-400">{biz.ownerEmail}</span>
                         </div>
+
+                        {/* ✅ NEW — Payout details. Only Shortlet and Ride
+                            Provider agencies have these fields at all (per
+                            the registration wizard's Bank & Verification
+                            step) — every other business type simply won't
+                            render this block. Account number is masked to
+                            its last 4 digits; the admin's job here is to
+                            sanity-check that a bank/account actually exists
+                            and looks legitimate before approving, not to
+                            re-key the full number anywhere. */}
+                        {biz.bankAccountNumber && (
+                          <div className="mt-4 pt-4 border-t border-gray-100">
+                            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                              <Landmark size={12} /> Payout Details
+                            </p>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                              <span><span className="text-gray-400">Bank:</span> {biz.bankName || 'Unknown bank'}</span>
+                              <span><span className="text-gray-400">Account:</span> {maskAccountNumber(biz.bankAccountNumber)}</span>
+                              {biz.accountName && <span><span className="text-gray-400">Name on account:</span> {biz.accountName}</span>}
+                            </div>
+                            {!biz.recipientCode && biz.status === 'approved' && (
+                              <p className="text-[11px] text-amber-600 mt-1.5">
+                                ⚠️ No Paystack transfer recipient on file yet — payouts to this business will fail until that's set up.
+                              </p>
+                            )}
+                          </div>
+                        )}
 
                         {(biz.govIdUrl || biz.cacUrl) && (
                           <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">

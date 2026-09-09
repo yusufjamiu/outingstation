@@ -20,6 +20,17 @@ const GROUPS = [
       { icon: Sparkles, label: 'Experiences', path: '/admin/experiences' },
       { icon: ShoppingBag, label: 'Vendors', path: '/admin/vendors' },
       { icon: Store, label: 'Businesses', path: '/admin/businesses' },
+      // ✅ NEW — Tier 2 of the ride approval model. Sits right after
+      // Businesses since a Ride Provider agency's vehicles are the thing
+      // that actually needs review after the agency itself is approved
+      // there — same relationship as Businesses → Place Claims below.
+  // ✅ REMOVED — Vehicle Verification (Car icon) no longer applies. Ride
+  // Provider vehicles have no per-vehicle admin review anymore — drivers
+  // aren't attached to a vehicle listing at all (assigned per booking
+  // instead, see bookings/ in firestore.rules), and the agency itself is
+  // the actual trust boundary, already covered by Businesses above.
+  // AdminRideVerification.jsx is now dead code — safe to delete that
+  // file entirely once this route reference is removed.
       { icon: BadgeCheck, label: 'Place Claims', path: '/admin/place-claims' },
       { icon: FileText, label: 'Event Submissions', path: '/admin/event-submissions' },
       { icon: FileText, label: 'Experience Submissions', path: '/admin/experience-submissions' },

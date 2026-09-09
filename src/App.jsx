@@ -127,6 +127,12 @@ const AdminCreditRequests = lazy(() => import('./pages/admin/AdminCreditRequests
 const AdminAmbassadorApplications = lazy(() => import('./pages/admin/AdminAmbassadorApplications'));
 const AdminAmbassadorPayouts = lazy(() => import('./pages/admin/AdminAmbassadorPayouts'));
 const AdminExperienceBookings = lazy(() => import('./pages/admin/AdminExperienceBookings'));
+// ✅ REMOVED — AdminRideVerification is no longer used. Ride Provider
+// vehicles have no per-vehicle admin review anymore — drivers aren't
+// attached to a vehicle listing at all (assigned per booking instead),
+// and the agency itself is the trust boundary, already covered by
+// AdminBusinesses. The file can be deleted; this import and its route
+// below are gone.
 
 // ✅ NEW — minimal loading fallback shown while a route's chunk downloads.
 // Deliberately lightweight (no image/icon assets) so IT doesn't add to

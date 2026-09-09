@@ -829,6 +829,100 @@ function generateExperienceBookingEmail(bookingData, experienceData) {
 </html>`;
 }
 
+// ✅ NEW — confirmation email for both shortlet_booking and ride_booking
+// purchase types. Shared by both since the content that actually differs
+// (a check-in date range vs a trip/hour price) is small enough to
+// interpolate inline rather than justifying two near-duplicate templates.
+// Booking ID doubles as a QR-verifiable reference, same pattern as
+// experience bookings and tickets — points at the same /verify-ticket/
+// route, which already looks up any doc by id regardless of collection
+// pattern used elsewhere in this codebase.
+function generateBookingConfirmationEmail(bookingData, listingData, type) {
+  const isShortlet = type === 'shortlet';
+  const accentColor = isShortlet ? '#b45309' : '#1d4ed8';
+  const accentBg = isShortlet ? '#fffbeb' : '#eff6ff';
+  const label = isShortlet ? 'Shortlet' : 'Ride';
+
+  const detailsRows = isShortlet
+    ? `<tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">📅&nbsp;&nbsp;Check-in: ${bookingData.checkInDateFormatted}</td></tr>
+       <tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">📅&nbsp;&nbsp;Check-out: ${bookingData.checkOutDateFormatted}</td></tr>
+       <tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">🌙&nbsp;&nbsp;${bookingData.nights} night${bookingData.nights === 1 ? '' : 's'}</td></tr>`
+    : `<tr><td style="padding: 3px 0; font-size: 14px; color: #475569;">🚗&nbsp;&nbsp;${listingData.vehicleType || 'Vehicle'}</td></tr>`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your OutingStation ${label} Booking</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: ${accentBg};">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: ${accentBg}; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.12);">
+
+          <tr>
+            <td style="background: ${accentColor}; padding: 44px 36px; text-align: center;">
+              <p style="color: rgba(255,255,255,0.75); margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">OutingStation</p>
+              <h1 style="color: #ffffff; margin: 0 0 8px; font-size: 30px; font-weight: 900;">✅ Payment Received!</h1>
+              <p style="color: #ffffff; opacity: 0.9; margin: 0; font-size: 15px;">Your payment is held securely until your ${isShortlet ? 'stay' : 'trip'} is confirmed</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 28px 36px 16px;">
+              <h2 style="margin: 0 0 12px; color: #0f172a; font-size: 22px; font-weight: 800; line-height: 1.3;">${bookingData.listingTitle}</h2>
+              <p style="margin: 0 0 12px; font-size: 13px; color: #64748b;">${bookingData.agencyName || ''}</p>
+              <table cellpadding="0" cellspacing="0">
+                ${detailsRows}
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 36px;">
+              <div style="border-top: 2px dashed ${accentColor}55;"></div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 24px 36px;">
+              <div style="background: ${accentBg}; border: 2px dashed ${accentColor}; border-radius: 14px; padding: 16px 20px; margin-bottom: 16px;">
+                <p style="margin: 0 0 4px; font-size: 10px; color: ${accentColor}; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px;">Booking Reference</p>
+                <p style="margin: 0; font-size: 18px; font-weight: 900; color: ${accentColor}; font-family: 'Courier New', monospace; letter-spacing: 1px;">${bookingData.paymentReference}</p>
+              </div>
+              <table cellpadding="0" cellspacing="0" width="100%">
+                <tr><td style="padding-bottom: 10px;">
+                  <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Amount Paid</p>
+                  <p style="margin: 0; font-size: 22px; color: ${accentColor}; font-weight: 900;">₦${Number(bookingData.amount || 0).toLocaleString()}</p>
+                </td></tr>
+              </table>
+              <p style="margin: 16px 0 0; font-size: 12px; color: #64748b; line-height: 1.6;">
+                ${isShortlet
+                  ? "The property's full address will be shared once your booking is confirmed. You'll be asked to confirm check-in 24 hours after your check-in date."
+                  : "Your driver's details will be shared once the agency assigns one for your trip. You'll be asked to confirm your trip is complete afterward."}
+              </p>
+              <p style="margin: 12px 0 0; font-size: 12px; color: #64748b; line-height: 1.6;">
+                Track this booking anytime under <strong>Settings → My Bookings</strong> in the app.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background: #f8fafc; padding: 20px 36px; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">Questions? Reply to this email or reach us in the app.</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -981,6 +1075,127 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ success: true, purchaseType: 'experience_booking', bookingId });
+    }
+
+    // ─── SHORTLET / RIDE BOOKING branch ────────────────────────────────────
+    // Placed BEFORE the generic `if (!metadata.eventId)` guard below, same
+    // reasoning as experience_booking above — bookings key off bookingId,
+    // not eventId, so they'd always fail that check if this branch came
+    // after it.
+    //
+    // Structurally this follows the VENDOR STAND pattern, not the
+    // experience_booking one: the bookings/ doc already exists BEFORE
+    // payment (created client-side in shortlet_booking_screen.dart /
+    // rent_a_ride_screen.dart's future booking screen, with
+    // paymentStatus: 'pending', escrowStatus: 'none' — exactly what the
+    // bookings/ Firestore create rule requires). This webhook only ever
+    // CONFIRMS payment on that pre-created doc, moving it into escrow —
+    // it never creates the booking itself. That matters because a
+    // booking needs to exist and be identifiable (so a guest can see
+    // "pending payment" in My Bookings, and so the checkout reference can
+    // point at something) even before Paystack confirms anything.
+    //
+    // Money is held in escrow here (escrowStatus: 'held'), NOT released
+    // to the owner — release happens later, from the guest's check-in/
+    // trip-complete confirmation, a 48hr auto-release cron, or an admin
+    // resolving a dispute in the owner's favor. None of those exist yet;
+    // this webhook branch is only step one (payment confirmed → escrow
+    // held), matching exactly what the bookings/ Firestore rule already
+    // scopes this route to (paymentStatus, escrowStatus, amountPaid,
+    // platformFee, ownerPayout, paymentReference, paidAt — and NOT
+    // confirmationStatus, which only the guest can set).
+    if (metadata.purchaseType === 'shortlet_booking' || metadata.purchaseType === 'ride_booking') {
+      if (!metadata.bookingId) {
+        console.error('❌ CRITICAL: bookingId missing from booking payment metadata!');
+        return res.status(400).json({ error: 'Missing bookingId in metadata' });
+      }
+
+      const bookingRef = doc(db, 'bookings', metadata.bookingId);
+      const bookingSnap = await getDoc(bookingRef);
+      if (!bookingSnap.exists()) {
+        console.error('❌ Booking not found:', metadata.bookingId);
+        return res.status(404).json({ error: 'Booking not found' });
+      }
+      const bookingData = bookingSnap.data();
+
+      // Idempotency — don't double-process the same payment. Checked
+      // against the doc's own paymentStatus, same as vendor_stand does,
+      // rather than a separate collection query — cheaper, and the doc
+      // is already fetched above.
+      if (bookingData.paymentStatus === 'paid') {
+        console.log('⚠️ This booking was already marked paid');
+        return res.status(200).json({ success: true, message: 'Already processed' });
+      }
+
+      const isShortlet = metadata.purchaseType === 'shortlet_booking';
+      const listingCollection = isShortlet ? 'shortlets' : 'rides';
+
+      // amountPaid trusted from what Paystack actually charged (kobo →
+      // naira), not from the booking doc's own 'amount' field — same
+      // "trust the payment processor over the client-supplied number"
+      // instinct as every other branch in this file.
+      const amountPaid = Math.round(paymentData.amount / 100);
+
+      // Same 10% platform fee as vendor stands — OutingStation takes a
+      // cut, the rest is what's owed to the agency once escrow releases.
+      // Computed off amountPaid (what Paystack actually charged) minus
+      // the subtotal-only portion the booking doc already worked out
+      // client-side, so this stays correct even if amountPaid differs
+      // slightly from what the client calculated (e.g. a stale price
+      // between page load and checkout).
+      const PLATFORM_FEE_PERCENTAGE = 0.10;
+      const subtotal = bookingData.subtotal ?? Math.round(amountPaid / (1 + PLATFORM_FEE_PERCENTAGE));
+      const platformFee = Math.round(subtotal * PLATFORM_FEE_PERCENTAGE);
+      const ownerPayout = amountPaid - platformFee;
+
+      await updateDoc(bookingRef, {
+        paymentStatus: 'paid',
+        escrowStatus: 'held',
+        amountPaid,
+        platformFee,
+        ownerPayout,
+        paymentReference: paymentData.reference,
+        paidAt: serverTimestamp(),
+      });
+      console.log(`✅ Booking ${metadata.bookingId} marked paid — escrow held, agency owed ₦${ownerPayout} once released, platform fee ₦${platformFee}`);
+
+      // Confirmation email — fetch the listing for its title/agency
+      // (already denormalized onto the booking doc at creation time, but
+      // re-fetching keeps this consistent with how every other branch in
+      // this file re-fetches its parent doc rather than trusting a
+      // client-supplied snapshot for anything shown in an email).
+      try {
+        const listingDoc = await getDoc(doc(db, listingCollection, bookingData.listingId));
+        const listingData = listingDoc.exists() ? listingDoc.data() : {};
+
+        const emailBookingData = {
+          ...bookingData,
+          amount: amountPaid,
+          paymentReference: paymentData.reference,
+          checkInDateFormatted: bookingData.checkInDate ? formatEventDate({ date: bookingData.checkInDate }) : null,
+          checkOutDateFormatted: bookingData.checkOutDate ? formatEventDate({ date: bookingData.checkOutDate }) : null,
+        };
+
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+        });
+        await transporter.sendMail({
+          from: `"OutingStation" <${process.env.GMAIL_USER}>`,
+          to: paymentData.customer.email,
+          subject: `✅ Payment Confirmed — ${bookingData.listingTitle}`,
+          html: generateBookingConfirmationEmail(emailBookingData, listingData, isShortlet ? 'shortlet' : 'ride')
+        });
+        console.log(`📧 Booking confirmation sent to: ${paymentData.customer.email}`);
+      } catch (emailErr) {
+        console.error('❌ Failed to send booking confirmation email:', emailErr);
+      }
+
+      // Note: booking payments do not generate ambassador commission —
+      // same explicit design choice as vendor stands above, not an
+      // oversight; revisit if that changes.
+
+      return res.status(200).json({ success: true, purchaseType: metadata.purchaseType, bookingId: metadata.bookingId });
     }
 
     if (!metadata.eventId) {

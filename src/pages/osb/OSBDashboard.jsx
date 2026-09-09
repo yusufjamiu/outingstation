@@ -10,6 +10,7 @@ import {
   Store, Clock, Tag, CheckCircle2, Clock as ClockIcon, XCircle, Inbox, MapPin,
   Upload, Plus, Trash2, LayoutDashboard, User, ClipboardList, MessageSquare,
   Ticket, Star, Wallet, Settings, Tent, FileCheck, Menu, BadgeCheck, Lock,
+  Car,
 } from 'lucide-react';
 
 const HOURLY_TYPES = ['DJ', 'MC', 'Musician', 'Photographer'];
@@ -57,7 +58,7 @@ const EVENT_VENDOR_NAV = [
 ];
 
 // Shortlet is registered as businessCategory: 'Service Provider'
-// (same as DJ/Caterer), so without its own nav it would silently fall
+// (same as DJ/Caterer/Baker), so without its own nav it would silently fall
 // into SERVICE_PROVIDER_NAV — Requests/Open Offers/My Quotes, a
 // marketplace-quote flow that makes no sense for a shortlet agency.
 // "My Listings" replaces that with the actual job: adding and managing
@@ -70,20 +71,96 @@ const SHORTLET_NAV = [
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
+// ✅ NEW — Ride Provider gets the same treatment Shortlet already has:
+// without its own nav it would silently fall into SERVICE_PROVIDER_NAV
+// (Requests/Open Offers/My Quotes), the exact wrong marketplace-quote
+// flow flagged as a bug earlier. "My Vehicles" replaces that with the
+// actual job here: adding vehicles and tracking each one's verification
+// status. Unlike Shortlet, there's no separate per-listing "available"
+// toggle exposed as the primary action — availability is gated by
+// admin-controlled `status` first (see the three-state pill in the
+// listings section below), matching osb_ride_manage_screen.dart on mobile.
+const RIDE_NAV = [
+  { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { key: 'vehicles', label: 'My Vehicles', icon: Car },
+  { key: 'verification', label: 'Verification', icon: FileCheck },
+  { key: 'settings', label: 'Settings', icon: Settings },
+];
+
 // fixed checklist, matching osb_shortlet_manage_screen.dart on
 // mobile exactly, so a listing added on one platform shows identical
 // amenities on the other.
 const SHORTLET_AMENITIES = [
-  'Kitchen', 'Washing Machine', 'WiFi', 'AC', 'Generator', 'Pool',
-  'Parking', 'TV / Netflix', 'Security', 'Water Heater', 'Pet Friendly', 'Workspace',
+  'WiFi', 'AC', 'Kitchen', 'Washing Machine', 'Netflix/TV', 'Generator',
+  'Parking', 'Security', 'Swimming Pool', 'Gym',
 ];
 
+// ✅ NEW — matches the mobile form's property-type chips exactly, so a
+// listing created here shows the same value there and vice versa.
+const SHORTLET_PROPERTY_TYPES = [
+  'Studio', '1 Bedroom', '2 Bedroom', '3 Bedroom', 'Self Contain', 'Duplex', 'Villa',
+];
+
+// ✅ NEW — matches osb_ride_manage_screen.dart's constants exactly, so a
+// vehicle added on one platform shows identically on the other.
+const RIDE_VEHICLE_TYPES = ['Car', 'SUV', 'Bus (mini)', 'Bus (full)', 'Van', 'Jet'];
+const RIDE_FEATURES = ['AC', 'Music system', 'Clean interior', 'Luggage space', 'Reclining seats', 'USB charging', 'WiFi'];
+const RIDE_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const RIDE_INSURANCE_STATUSES = ['Fully insured', 'Third-party only', 'Not insured'];
+
+const EMPTY_RIDE_FORM = {
+  title: '', vehicleType: 'Car', year: '', capacity: '', color: '',
+  images: [], videoUrl: null,
+  description: '', features: [],
+  priceType: 'trip', pricePerTrip: '', pricePerHour: '', minHours: '',
+  city: '', customCity: '', areasCovered: '', availableDays: [], availableStartTime: '', availableEndTime: '',
+  plateNumber: '', insuranceStatus: RIDE_INSURANCE_STATUSES[0],
+  available: true,
+};
+
+// ✅ FIXED — priceType removed. The mobile form (osb_shortlet_manage_screen.dart)
+// no longer writes priceType/price at all — every listing is priced per
+// night via a single pricePerNight field, since that's all the spec
+// calls for. This form previously wrote the old fields; left as-is, any
+// listing created HERE (on web) would show ₦0 on both browse screens
+// (ShortletsPage.jsx, shortlets_screen.dart) now that they read
+// pricePerNight instead. propertyType added to match the mobile form's
+// Step 1 field, which this web form didn't have at all before.
+//
+// ⚠️ STILL MISSING relative to the mobile form's full 7-step spec:
+// minNights, houseRules/checkInTime/checkOutTime, cancellationPolicy,
+// fullAddress (separate hidden field)/landmark, and video upload. This
+// patch only fixes the pricing field mismatch so nothing breaks — full
+// parity with the mobile form's other new fields is a separate,
+// larger follow-up for this web form specifically.
 const EMPTY_LISTING_FORM = {
-  title: '', description: '', images: [],
-  priceType: 'night', price: '', minHours: '',
+  title: '', propertyType: '', description: '', images: [], videoUrl: null,
+  pricePerNight: '',
   bedrooms: '', bathrooms: '', maxGuests: '',
   amenities: [], city: '', customCity: '', area: '',
   mapsLink: '', whatsappNumber: '', available: true,
+};
+
+// ✅ NEW — video upload, mirroring uploadToCloudinary below but posting
+// to Cloudinary's /video/upload endpoint (no compression step — that's
+// an image-only concern). Used for the Ride vehicle walkthrough video;
+// no equivalent existed on web before since this modal had no video
+// upload UI at all until now.
+const uploadVideoToCloudinary = async (file, folder) => {
+  const data = new FormData();
+  data.append('file', file);
+  data.append('upload_preset', import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+  data.append('folder', folder);
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://api.cloudinary.com/v1_1/' + import.meta.env.VITE_CLOUDINARY_CLOUD_NAME + '/video/upload');
+    xhr.onload = function () {
+      if (xhr.status === 200) resolve(JSON.parse(xhr.responseText).secure_url);
+      else reject(new Error('Video upload failed: ' + xhr.statusText));
+    };
+    xhr.onerror = function () { reject(new Error('Video upload failed')); };
+    xhr.send(data);
+  });
 };
 
 const uploadToCloudinary = async (file, folder, onProgress) => {
@@ -146,10 +223,10 @@ function ImageUploadSlot({ imageUrl, onUploaded, folder }) {
   );
 }
 
-// multi-image uploader for Shortlet listing galleries.
-// ImageUploadSlot above only replaces a single image; a listing needs
-// several photos, so this appends to an array instead and renders one
-// removable thumbnail per image plus a trailing add-slot.
+// multi-image uploader for Shortlet listing galleries / Ride vehicle
+// galleries. ImageUploadSlot above only replaces a single image; a
+// listing needs several photos, so this appends to an array instead and
+// renders one removable thumbnail per image plus a trailing add-slot.
 function GalleryUploadRow({ images, onChange, folder }) {
   const [uploading, setUploading] = useState(false);
   const handleFile = async (e) => {
@@ -181,6 +258,58 @@ function GalleryUploadRow({ images, onChange, folder }) {
   );
 }
 
+// ✅ NEW — single walkthrough-video upload box, shared by both Shortlet
+// (Max 2 min/50MB) and Ride (Max 1 min/30MB) — maxBytes is a prop so
+// each caller enforces its own spec limit rather than one hardcoded
+// value silently applying to both.
+const RIDE_MAX_VIDEO_BYTES = 30 * 1024 * 1024;
+
+function VideoUploadBox({ url, onChange, folder, maxBytes = RIDE_MAX_VIDEO_BYTES }) {
+  const [uploading, setUploading] = useState(false);
+  const maxMb = Math.round(maxBytes / (1024 * 1024));
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !file.type.startsWith('video/')) return;
+    if (file.size > maxBytes) {
+      alert(`Video must be under ${maxMb}MB. Please choose a shorter or lower-quality clip.`);
+      e.target.value = '';
+      return;
+    }
+    setUploading(true);
+    try {
+      const uploadedUrl = await uploadVideoToCloudinary(file, folder);
+      onChange(uploadedUrl);
+    } catch (err) {
+      console.error(err);
+      alert('Video upload failed. Please try again.');
+    }
+    setUploading(false);
+    e.target.value = '';
+  };
+  return (
+    <label className="block w-full border-2 border-dashed border-cyan-300 rounded-2xl py-6 px-4 text-center cursor-pointer hover:border-cyan-400 transition">
+      {uploading ? (
+        <div className="flex flex-col items-center gap-2">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-cyan-500" />
+          <span className="text-xs text-gray-500">Uploading...</span>
+        </div>
+      ) : url ? (
+        <div className="flex flex-col items-center gap-2">
+          <CheckCircle2 size={22} className="text-emerald-500" />
+          <span className="text-xs font-bold text-emerald-600">Video added</span>
+          <button type="button" onClick={(e) => { e.preventDefault(); onChange(null); }} className="text-xs text-red-500 hover:text-red-600 font-medium">Remove</button>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-1.5">
+          <Upload size={22} className="text-gray-400" />
+          <span className="text-xs font-bold text-cyan-600">Upload video</span>
+        </div>
+      )}
+      <input type="file" accept="video/*" onChange={handleFile} disabled={uploading} className="sr-only" />
+    </label>
+  );
+}
+
 function ComingSoon({ label }) {
   return (
     <div className="bg-white rounded-3xl border-2 border-gray-100 p-10 text-center">
@@ -201,6 +330,27 @@ function VerifyStatusPill({ status }) {
     rejected: { label: 'Rejected', color: 'bg-red-100 text-red-600' },
   }[status] || { label: 'Not Uploaded', color: 'bg-gray-100 text-gray-500' };
   return <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${config.color}`}>{config.label}</span>;
+}
+
+// ✅ NEW — three-state pill for a ride listing, matching
+// osb_ride_manage_screen.dart's mobile equivalent exactly: pending
+// admin review, approved+live, approved+hidden, or rejected (with a
+// reason shown underneath if admin left one). Owner never controls this
+// directly — it only ever reflects what AdminRideVerification.jsx set.
+// ✅ SIMPLIFIED — no more three-state verification pill. Drivers aren't
+// attached to a vehicle at all anymore (picked per booking, not tied to
+// a listing), so there's no per-vehicle admin review left to reflect —
+// a ride listing now behaves exactly like a Shortlet listing: just
+// Available or Hidden, owner-controlled, no admin gate.
+function RideAvailabilityPill({ available }) {
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
+      available ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+    }`}>
+      {available ? <CheckCircle2 size={11} /> : <ClockIcon size={11} />}
+      {available ? 'Available' : 'Hidden'}
+    </span>
+  );
 }
 
 function StatCard({ label, value, icon: Icon }) {
@@ -262,6 +412,15 @@ export default function OSBDashboard() {
   const [editingListingId, setEditingListingId] = useState(null);
   const [listingForm, setListingForm] = useState(EMPTY_LISTING_FORM);
   const [savingListing, setSavingListing] = useState(false);
+
+  // ✅ NEW — Ride Provider "My Vehicles", mirroring the Shortlet state
+  // shape immediately above.
+  const [rideListings, setRideListings] = useState([]);
+  const [loadingRides, setLoadingRides] = useState(false);
+  const [rideModalOpen, setRideModalOpen] = useState(false);
+  const [editingRideId, setEditingRideId] = useState(null);
+  const [rideForm, setRideForm] = useState(EMPTY_RIDE_FORM);
+  const [savingRide, setSavingRide] = useState(false);
 
   useEffect(() => {
     if (!currentUser) { navigate('/login'); return; }
@@ -343,14 +502,21 @@ export default function OSBDashboard() {
   // Shortlet carries businessCategory: 'Service Provider' too, so
   // it needs its own check ahead of the generic marketplace nav/loaders.
   const isShortletAgency = selectedBusiness?.businessType === 'Shortlet';
-  const isEventVendor = selectedBusiness && !isServiceProvider && !isShortletAgency;
+  // ✅ NEW — same reasoning as isShortletAgency above: Ride Provider ALSO
+  // carries businessCategory: 'Service Provider' (it lives in the same
+  // type grid as DJ/Caterer/Baker), so it needs its own check ahead of
+  // the generic marketplace nav/loaders too, or it silently falls into
+  // the wrong Requests/Open Offers/My Quotes flow.
+  const isRideAgency = selectedBusiness?.businessType === 'Ride Provider';
+  const isEventVendor = selectedBusiness && !isServiceProvider && !isShortletAgency && !isRideAgency;
   const isHourly = selectedBusiness && HOURLY_TYPES.includes(selectedBusiness.businessType);
   const NAV_ITEMS = isShortletAgency ? SHORTLET_NAV
+    : isRideAgency ? RIDE_NAV
     : isServiceProvider ? SERVICE_PROVIDER_NAV
     : EVENT_VENDOR_NAV;
 
   useEffect(() => {
-    if (selectedBusiness && selectedBusiness.status === 'approved' && isServiceProvider && !isShortletAgency) {
+    if (selectedBusiness && selectedBusiness.status === 'approved' && isServiceProvider && !isShortletAgency && !isRideAgency) {
       loadDirectRequests(selectedBusiness);
       loadOpenOffers(selectedBusiness);
       loadMyQuotes(selectedBusiness);
@@ -365,6 +531,14 @@ export default function OSBDashboard() {
       loadShortletListings(selectedBusiness);
     } else {
       setShortletListings([]);
+    }
+    // Same pattern as Shortlet: vehicles load once the AGENCY is
+    // approved. No per-vehicle status to distinguish anymore — vehicles
+    // go live immediately, same as Shortlet listings.
+    if (selectedBusiness && selectedBusiness.status === 'approved' && isRideAgency) {
+      loadRideListings(selectedBusiness);
+    } else {
+      setRideListings([]);
     }
   }, [selectedId, businesses]);
 
@@ -489,8 +663,12 @@ export default function OSBDashboard() {
     setEditingListingId(listing.id);
     const knownCity = NIGERIAN_STATES.includes(listing.city);
     setListingForm({
-      title: listing.title || '', description: listing.description || '', images: listing.images || [],
-      priceType: listing.priceType || 'night', price: listing.price ?? '', minHours: listing.minHours ?? '',
+      title: listing.title || '', propertyType: listing.propertyType || '', description: listing.description || '', images: listing.images || [],
+      videoUrl: listing.videoUrl || null,
+      // ✅ FIXED — was priceType/price/minHours. Reads pricePerNight now;
+      // a listing saved before this change (still on the old schema)
+      // will show an empty price field here until re-saved.
+      pricePerNight: listing.pricePerNight ?? '',
       bedrooms: listing.bedrooms ?? '', bathrooms: listing.bathrooms ?? '', maxGuests: listing.maxGuests ?? '',
       amenities: listing.amenities || [],
       city: knownCity ? listing.city : (listing.city ? 'Others' : ''),
@@ -510,8 +688,9 @@ export default function OSBDashboard() {
     }));
   };
 
+  // ✅ FIXED — checks pricePerNight !== '' instead of the removed price field.
   const listingFormValid = listingForm.title.trim() && listingForm.description.trim().length >= 20 &&
-    listingForm.price !== '' && listingForm.city && listingForm.whatsappNumber.trim() && listingForm.images.length >= 2;
+    listingForm.pricePerNight !== '' && listingForm.city && listingForm.whatsappNumber.trim() && listingForm.images.length >= 2;
 
   const saveListing = async () => {
     if (!selectedBusiness || !listingFormValid) return;
@@ -523,11 +702,13 @@ export default function OSBDashboard() {
         agencyName: selectedBusiness.businessName,
         ownerId: currentUser.uid,
         title: listingForm.title.trim(),
+        propertyType: listingForm.propertyType || null,
         description: listingForm.description.trim(),
         images: listingForm.images,
-        priceType: listingForm.priceType,
-        price: Number(listingForm.price) || 0,
-        minHours: listingForm.priceType === 'hour' && listingForm.minHours ? Number(listingForm.minHours) : null,
+        videoUrl: listingForm.videoUrl,
+        // ✅ FIXED — was priceType/price/minHours. Single pricePerNight
+        // field now, matching the mobile form's rebuilt schema exactly.
+        pricePerNight: Number(listingForm.pricePerNight) || 0,
         bedrooms: listingForm.bedrooms !== '' ? Number(listingForm.bedrooms) : null,
         bathrooms: listingForm.bathrooms !== '' ? Number(listingForm.bathrooms) : null,
         maxGuests: listingForm.maxGuests !== '' ? Number(listingForm.maxGuests) : null,
@@ -572,6 +753,148 @@ export default function OSBDashboard() {
     } catch (err) {
       console.error(err);
       alert('Failed to delete listing. Please try again.');
+    }
+  };
+
+  // ─── Ride Provider "My Vehicles" ─────────────────────────────────────
+  // ✅ SIMPLIFIED — behaves exactly like the Shortlet listings block
+  // immediately above now: agency approved once, then every vehicle
+  // added goes live instantly, no per-vehicle admin review. Earlier
+  // drafts forced a new vehicle into status: 'pending_verification' /
+  // available: false pending a driver's-license check — that gate was
+  // removed since drivers aren't attached to a vehicle listing at all
+  // anymore (assigned per booking instead, see bookings/ in
+  // firestore.rules), and OutingStation's actual liability boundary is
+  // the agency itself, not each individual driver.
+  const loadRideListings = async (business) => {
+    setLoadingRides(true);
+    try {
+      const snap = await getDocs(query(collection(db, 'rides'), where('agencyId', '==', business.id)));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setRideListings(list);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoadingRides(false);
+  };
+
+  const openAddRide = () => {
+    setEditingRideId(null);
+    setRideForm(EMPTY_RIDE_FORM);
+    setRideModalOpen(true);
+  };
+
+  const openEditRide = (ride) => {
+    setEditingRideId(ride.id);
+    const knownCity = NIGERIAN_STATES.includes(ride.city);
+    setRideForm({
+      title: ride.title || '', vehicleType: ride.vehicleType || 'Car', year: ride.year ?? '', capacity: ride.capacity ?? '', color: ride.color || '',
+      images: ride.images || [], videoUrl: ride.videoUrl || null,
+      description: ride.description || '', features: ride.features || [],
+      priceType: ride.priceType || 'trip',
+      pricePerTrip: ride.pricePerTrip ?? '', pricePerHour: ride.pricePerHour ?? '', minHours: ride.minHours ?? '',
+      city: knownCity ? ride.city : (ride.city ? 'Others' : ''),
+      customCity: knownCity ? '' : (ride.city || ''),
+      areasCovered: ride.areasCovered || '', availableDays: ride.availableDays || [],
+      availableStartTime: ride.availableStartTime || '', availableEndTime: ride.availableEndTime || '',
+      plateNumber: ride.plateNumber || '', insuranceStatus: ride.insuranceStatus || RIDE_INSURANCE_STATUSES[0],
+      available: ride.available !== false,
+      available: ride.available !== false,
+    });
+    setRideModalOpen(true);
+  };
+
+  const closeRideModal = () => { setRideModalOpen(false); setEditingRideId(null); };
+
+  const toggleRideFeature = (f) => {
+    setRideForm(p => ({
+      ...p,
+      features: p.features.includes(f) ? p.features.filter(x => x !== f) : [...p.features, f],
+    }));
+  };
+
+  const toggleRideDay = (d) => {
+    setRideForm(p => ({
+      ...p,
+      availableDays: p.availableDays.includes(d) ? p.availableDays.filter(x => x !== d) : [...p.availableDays, d],
+    }));
+  };
+
+  const rideFormValid = rideForm.title.trim() &&
+    rideForm.description.trim().length >= 20 &&
+    rideForm.capacity !== '' &&
+    (rideForm.priceType !== 'trip' || rideForm.pricePerTrip !== '') &&
+    (rideForm.priceType !== 'hour' || rideForm.pricePerHour !== '') &&
+    (rideForm.priceType !== 'both' || (rideForm.pricePerTrip !== '' && rideForm.pricePerHour !== '')) &&
+    rideForm.city &&
+    rideForm.images.length >= 3 &&
+    rideForm.plateNumber.trim();
+
+  const saveRide = async () => {
+    if (!selectedBusiness || !rideFormValid) return;
+    setSavingRide(true);
+    try {
+      const resolvedCity = rideForm.city === 'Others' ? (rideForm.customCity || '').trim() : rideForm.city;
+      const payload = {
+        agencyId: selectedBusiness.id,
+        agencyName: selectedBusiness.businessName,
+        ownerId: currentUser.uid,
+        title: rideForm.title.trim(),
+        vehicleType: rideForm.vehicleType,
+        year: rideForm.year !== '' ? Number(rideForm.year) : null,
+        capacity: Number(rideForm.capacity) || 0,
+        color: rideForm.color.trim() || null,
+        images: rideForm.images,
+        videoUrl: rideForm.videoUrl,
+        description: rideForm.description.trim(),
+        features: rideForm.features,
+        priceType: rideForm.priceType,
+        pricePerTrip: (rideForm.priceType === 'trip' || rideForm.priceType === 'both') ? (Number(rideForm.pricePerTrip) || 0) : null,
+        pricePerHour: (rideForm.priceType === 'hour' || rideForm.priceType === 'both') ? (Number(rideForm.pricePerHour) || 0) : null,
+        minHours: (rideForm.priceType === 'hour' || rideForm.priceType === 'both') && rideForm.minHours !== '' ? Number(rideForm.minHours) : null,
+        city: resolvedCity,
+        areasCovered: rideForm.areasCovered.trim() || null,
+        availableDays: rideForm.availableDays,
+        availableStartTime: rideForm.availableStartTime.trim() || null,
+        availableEndTime: rideForm.availableEndTime.trim() || null,
+        plateNumber: rideForm.plateNumber.trim(),
+        insuranceStatus: rideForm.insuranceStatus,
+        available: rideForm.available,
+      };
+
+      // ✅ SIMPLIFIED — no more forced status: 'pending_verification' /
+      // available: false on create. Drivers aren't tied to a vehicle
+      // listing at all anymore (assigned per booking instead — see
+      // bookings/ in firestore.rules), so there's no per-vehicle admin
+      // check left to gate on. A new vehicle now goes live the moment
+      // it's saved, exactly like a Shortlet listing.
+      if (editingRideId) {
+        await updateDoc(doc(db, 'rides', editingRideId), payload);
+        setRideListings(prev => prev.map(r => r.id === editingRideId ? { ...r, ...payload } : r));
+      } else {
+        const docRef = await addDoc(collection(db, 'rides'), {
+          ...payload,
+          createdAt: serverTimestamp(),
+        });
+        setRideListings(prev => [{ id: docRef.id, ...payload }, ...prev]);
+      }
+      closeRideModal();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to save vehicle. Please try again.');
+    }
+    setSavingRide(false);
+  };
+
+  const deleteRide = async (ride) => {
+    if (!window.confirm(`Delete "${ride.title}"? This can't be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, 'rides', ride.id));
+      setRideListings(prev => prev.filter(r => r.id !== ride.id));
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete vehicle. Please try again.');
     }
   };
 
@@ -771,6 +1094,15 @@ export default function OSBDashboard() {
                       <StatCard label="Available Now" value={shortletListings.filter(l => l.available !== false).length} icon={CheckCircle2} />
                       <StatCard label="Hidden" value={shortletListings.filter(l => l.available === false).length} icon={Clock} />
                     </div>
+                  ) : isRideAgency ? (
+                    // ✅ SIMPLIFIED — same shape as Shortlet's Overview
+                    // stats now, since a ride listing has no verification
+                    // stage left to distinguish — just Vehicles/Available/Hidden.
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      <StatCard label="Vehicles" value={rideListings.length} icon={Car} />
+                      <StatCard label="Available Now" value={rideListings.filter(r => r.available !== false).length} icon={CheckCircle2} />
+                      <StatCard label="Hidden" value={rideListings.filter(r => r.available === false).length} icon={Clock} />
+                    </div>
                   ) : isServiceProvider ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                       <StatCard label="Pricing Packages" value={isHourly ? hourlyPackages.length : pricingTiers.length} icon={Tag} />
@@ -812,7 +1144,6 @@ export default function OSBDashboard() {
                     <div className="grid sm:grid-cols-2 gap-4">
                       {shortletListings.map(listing => {
                         const available = listing.available !== false;
-                        const priceSuffix = listing.priceType === 'hour' ? '/hour' : listing.priceType === 'day' ? '/day' : '/night';
                         return (
                           <div key={listing.id} className="bg-white rounded-2xl border-2 border-gray-100 overflow-hidden">
                             <div className="flex gap-3 p-3">
@@ -823,7 +1154,13 @@ export default function OSBDashboard() {
                               />
                               <div className="flex-1 min-w-0">
                                 <p className="font-bold text-gray-900 text-sm truncate">{listing.title}</p>
-                                <p className="text-xs text-gray-500 mt-0.5">₦{Number(listing.price || 0).toLocaleString()}{priceSuffix} · {listing.city}</p>
+                                {/* ✅ FIXED — was ₦{price}{priceSuffix}. Single
+                                    pricePerNight field now; propertyType shown
+                                    alongside since the form now collects it. */}
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  ₦{Number(listing.pricePerNight || 0).toLocaleString()}/night
+                                  {listing.propertyType ? ` · ${listing.propertyType}` : ''} · {listing.city}
+                                </p>
                                 <button onClick={() => toggleListingAvailable(listing)}
                                   className={`mt-2 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
                                     available ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
@@ -837,6 +1174,70 @@ export default function OSBDashboard() {
                               <button onClick={() => openEditListing(listing)}
                                 className="flex-1 py-2.5 text-xs font-bold text-cyan-600 hover:bg-cyan-50 transition">Edit</button>
                               <button onClick={() => deleteListing(listing)}
+                                className="flex-1 py-2.5 text-xs font-bold text-red-500 hover:bg-red-50 transition border-l border-gray-100">Delete</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ✅ NEW — "My Vehicles" section, mirroring the Shortlet
+                  "My Listings" block above but with the three-state
+                  status pill instead of a simple toggle, and the
+                  rejection reason surfaced when present. Unlike Shortlet,
+                  the owner has no "hide/show" action here at all — that's
+                  entirely admin-controlled via `available`. */}
+              {activeSection === 'vehicles' && isRideAgency && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-gray-800 text-lg">My Vehicles</h3>
+                    <button onClick={openAddRide}
+                      className="flex items-center gap-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white px-4 py-2.5 rounded-2xl font-bold text-sm hover:from-cyan-700 hover:to-blue-700 transition">
+                      <Plus size={16} /> Add Vehicle
+                    </button>
+                  </div>
+
+                  {loadingRides ? (
+                    <p className="text-sm text-gray-400">Loading...</p>
+                  ) : rideListings.length === 0 ? (
+                    <div className="bg-white rounded-3xl border-2 border-gray-100 p-10 text-center">
+                      <div className="w-14 h-14 bg-cyan-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <Car size={22} className="text-cyan-400" />
+                      </div>
+                      <h4 className="font-bold text-gray-800 mb-1">No vehicles yet</h4>
+                      <p className="text-sm text-gray-400">Add your first vehicle to start getting bookings. Each one goes through a quick verification before it's bookable.</p>
+                    </div>
+                  ) : (
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      {rideListings.map(ride => {
+                        const priceLine = ride.priceType === 'both'
+                          ? `₦${Number(ride.pricePerTrip || 0).toLocaleString()}/trip · ₦${Number(ride.pricePerHour || 0).toLocaleString()}/hour`
+                          : ride.priceType === 'hour'
+                          ? `₦${Number(ride.pricePerHour || 0).toLocaleString()}/hour`
+                          : `₦${Number(ride.pricePerTrip || 0).toLocaleString()}/trip`;
+                        return (
+                          <div key={ride.id} className="bg-white rounded-2xl border-2 border-gray-100 overflow-hidden">
+                            <div className="flex gap-3 p-3">
+                              <img
+                                src={(ride.images || [])[0] || 'https://images.unsplash.com/photo-1502877338535-766e1452684a?w=200&h=200&fit=crop'}
+                                alt={ride.title}
+                                className="w-20 h-20 rounded-xl object-cover flex-shrink-0"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-gray-900 text-sm truncate">{ride.title}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{priceLine} · {ride.city}</p>
+                                <div className="mt-2">
+                                  <RideAvailabilityPill available={ride.available !== false} />
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex border-t border-gray-100">
+                              <button onClick={() => openEditRide(ride)}
+                                className="flex-1 py-2.5 text-xs font-bold text-cyan-600 hover:bg-cyan-50 transition">Edit</button>
+                              <button onClick={() => deleteRide(ride)}
                                 className="flex-1 py-2.5 text-xs font-bold text-red-500 hover:bg-red-50 transition border-l border-gray-100">Delete</button>
                             </div>
                           </div>
@@ -885,22 +1286,6 @@ export default function OSBDashboard() {
                               <input type="text" placeholder="What's included" value={tier.description} onChange={e => updateTier(tier.id, 'description', e.target.value)} className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                               <button onClick={() => removeTier(tier.id)} className="p-2 text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
                             </div>
-                            {selectedBusiness.businessType === 'Ride Provider' && (
-                              <div className="flex gap-2 mt-2">
-                                {['With Driver', 'Self-Drive'].map(opt => (
-                                  <button
-                                    key={opt}
-                                    type="button"
-                                    onClick={() => updateTier(tier.id, 'withDriver', opt === 'With Driver')}
-                                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition ${
-                                      tier.withDriver === (opt === 'With Driver') ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-500'
-                                    }`}
-                                  >
-                                    {opt}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
                           </div>
                         ))}
                       </div>
@@ -1296,9 +1681,35 @@ export default function OSBDashboard() {
                   placeholder="e.g. Cozy 2BR in Lekki Phase 1" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
 
+              {/* ✅ NEW — property type, matching the mobile form's Step 1 field */}
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-2">Property Type</label>
+                <div className="flex flex-wrap gap-2">
+                  {SHORTLET_PROPERTY_TYPES.map(t => (
+                    <button key={t} type="button" onClick={() => setListingForm(p => ({ ...p, propertyType: t }))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition ${
+                        listingForm.propertyType === t ? 'border-cyan-500 bg-cyan-500 text-white' : 'border-gray-200 text-gray-600'
+                      }`}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-1">Photos (min. 2) *</label>
                 <GalleryUploadRow images={listingForm.images} onChange={imgs => setListingForm(p => ({ ...p, images: imgs }))} folder="shortlets" />
+              </div>
+
+              {/* ✅ NEW — was missing on web entirely; already existed on
+                  the mobile form (Step 7 — Media). Matches the spec's
+                  "Video (optional): Walkthrough video, Max 2 minutes,
+                  50MB" — the more generous limit for Shortlet vs Ride's
+                  tighter 1 min/30MB interior-only clip. */}
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1.5">Walkthrough Video (optional)</label>
+                <p className="text-[11px] text-gray-400 mb-2">Max 2 minutes, 50MB</p>
+                <VideoUploadBox url={listingForm.videoUrl} onChange={url => setListingForm(p => ({ ...p, videoUrl: url }))} folder="shortlets" maxBytes={50 * 1024 * 1024} />
               </div>
 
               <div>
@@ -1308,33 +1719,13 @@ export default function OSBDashboard() {
                 <p className="text-xs text-gray-400 mt-1">{listingForm.description.length} / 20 characters minimum</p>
               </div>
 
+              {/* ✅ FIXED — was a 3-button Per Night/Per Hour/Per Day
+                  toggle plus separate price+minHours fields. Single price
+                  field now, since every listing is per-night only. */}
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">How is this property priced? *</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[['night', 'Per Night'], ['hour', 'Per Hour'], ['day', 'Per Day']].map(([value, label]) => (
-                    <button key={value} type="button" onClick={() => setListingForm(p => ({ ...p, priceType: value }))}
-                      className={`py-2.5 rounded-xl text-sm font-bold border-2 transition ${
-                        listingForm.priceType === value ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-500'
-                      }`}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-gray-600 mb-1">Price (₦) *</label>
-                  <input type="number" value={listingForm.price} onChange={e => setListingForm(p => ({ ...p, price: e.target.value }))}
-                    placeholder="35000" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                </div>
-                {listingForm.priceType === 'hour' && (
-                  <div>
-                    <label className="block text-xs font-bold text-gray-600 mb-1">Min. hours</label>
-                    <input type="number" value={listingForm.minHours} onChange={e => setListingForm(p => ({ ...p, minHours: e.target.value }))}
-                      placeholder="2" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                  </div>
-                )}
+                <label className="block text-xs font-bold text-gray-600 mb-1">Price per Night (₦) *</label>
+                <input type="number" value={listingForm.pricePerNight} onChange={e => setListingForm(p => ({ ...p, pricePerNight: e.target.value }))}
+                  placeholder="35000" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -1411,6 +1802,207 @@ export default function OSBDashboard() {
               <button onClick={saveListing} disabled={!listingFormValid || savingListing}
                 className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3.5 rounded-2xl font-black hover:from-cyan-700 hover:to-blue-700 transition disabled:opacity-50">
                 {savingListing ? 'Saving...' : (editingListingId ? 'Save Changes' : 'Publish Listing')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NEW — Add/Edit Ride Vehicle modal, mirroring the Shortlet
+          modal above's structure but with vehicle + driver + pricing
+          fields matching osb_ride_manage_screen.dart exactly. */}
+      {rideModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeRideModal}>
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-black text-lg text-gray-900">{editingRideId ? 'Edit Vehicle' : 'New Vehicle'}</h3>
+              <button onClick={closeRideModal} className="p-2 hover:bg-gray-100 rounded-full">
+                <XCircle size={20} className="text-gray-400" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Vehicle Name / Model *</label>
+                <input type="text" value={rideForm.title} onChange={e => setRideForm(p => ({ ...p, title: e.target.value }))}
+                  placeholder="e.g. Toyota Hiace Bus" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-2">Vehicle Type *</label>
+                <div className="flex flex-wrap gap-2">
+                  {RIDE_VEHICLE_TYPES.map(t => (
+                    <button key={t} type="button" onClick={() => setRideForm(p => ({ ...p, vehicleType: t }))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition ${
+                        rideForm.vehicleType === t ? 'border-cyan-500 bg-cyan-500 text-white' : 'border-gray-200 text-gray-600'
+                      }`}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Year</label>
+                  <input type="number" value={rideForm.year} onChange={e => setRideForm(p => ({ ...p, year: e.target.value }))}
+                    placeholder="2020" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Capacity *</label>
+                  <input type="number" value={rideForm.capacity} onChange={e => setRideForm(p => ({ ...p, capacity: e.target.value }))}
+                    placeholder="14" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Color</label>
+                  <input type="text" value={rideForm.color} onChange={e => setRideForm(p => ({ ...p, color: e.target.value }))}
+                    placeholder="White" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Photos (min. 3 — front, interior, back) *</label>
+                <GalleryUploadRow images={rideForm.images} onChange={imgs => setRideForm(p => ({ ...p, images: imgs }))} folder="rides" />
+              </div>
+
+              {/* ✅ NEW — walkthrough video, matching the vehicle spec's
+                  Media step. Placed right after Photos, same as the
+                  mobile form's ordering. */}
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1.5">Interior Walkthrough Video (optional)</label>
+                <p className="text-[11px] text-gray-400 mb-2">Max 1 minute, 30MB</p>
+                <VideoUploadBox url={rideForm.videoUrl} onChange={url => setRideForm(p => ({ ...p, videoUrl: url }))} folder="rides" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Description *</label>
+                <textarea rows={3} value={rideForm.description} onChange={e => setRideForm(p => ({ ...p, description: e.target.value }))}
+                  placeholder="What makes this vehicle a good pick?" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none" />
+                <p className="text-xs text-gray-400 mt-1">{rideForm.description.length} / 20 characters minimum</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-2">Features</label>
+                <div className="flex flex-wrap gap-2">
+                  {RIDE_FEATURES.map(f => (
+                    <button key={f} type="button" onClick={() => toggleRideFeature(f)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition ${
+                        rideForm.features.includes(f) ? 'border-cyan-500 bg-cyan-500 text-white' : 'border-gray-200 text-gray-600'
+                      }`}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-2">How is this vehicle priced? *</label>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {[['trip', 'Per Trip'], ['hour', 'Per Hour'], ['both', 'Both']].map(([value, label]) => (
+                    <button key={value} type="button" onClick={() => setRideForm(p => ({ ...p, priceType: value }))}
+                      className={`py-2 rounded-xl text-xs font-bold border-2 transition ${
+                        rideForm.priceType === value ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-gray-200 text-gray-500'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {(rideForm.priceType === 'trip' || rideForm.priceType === 'both') && (
+                  <div className="mb-3">
+                    <label className="block text-xs font-bold text-gray-600 mb-1">Price per Trip (₦) *</label>
+                    <input type="number" value={rideForm.pricePerTrip} onChange={e => setRideForm(p => ({ ...p, pricePerTrip: e.target.value }))}
+                      placeholder="45000" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                )}
+                {(rideForm.priceType === 'hour' || rideForm.priceType === 'both') && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-600 mb-1">Price per Hour (₦) *</label>
+                      <input type="number" value={rideForm.pricePerHour} onChange={e => setRideForm(p => ({ ...p, pricePerHour: e.target.value }))}
+                        placeholder="10000" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-600 mb-1">Min. Hours</label>
+                      <input type="number" value={rideForm.minHours} onChange={e => setRideForm(p => ({ ...p, minHours: e.target.value }))}
+                        placeholder="3" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">State *</label>
+                <select value={rideForm.city} onChange={e => setRideForm(p => ({ ...p, city: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  <option value="">Select a state</option>
+                  {NIGERIAN_STATES.map(s => <option key={s}>{s}</option>)}
+                </select>
+                {rideForm.city === 'Others' && (
+                  <input type="text" value={rideForm.customCity} onChange={e => setRideForm(p => ({ ...p, customCity: e.target.value }))}
+                    placeholder="Enter your state" className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">Areas Covered</label>
+                <input type="text" value={rideForm.areasCovered} onChange={e => setRideForm(p => ({ ...p, areasCovered: e.target.value }))}
+                  placeholder="e.g. Lekki, Ikeja, Airport runs" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-2">Available Days</label>
+                <div className="flex flex-wrap gap-2">
+                  {RIDE_DAYS.map(d => (
+                    <button key={d} type="button" onClick={() => toggleRideDay(d)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold border-2 transition ${
+                        rideForm.availableDays.includes(d) ? 'border-cyan-500 bg-cyan-500 text-white' : 'border-gray-200 text-gray-600'
+                      }`}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Available From</label>
+                  <input type="text" value={rideForm.availableStartTime} onChange={e => setRideForm(p => ({ ...p, availableStartTime: e.target.value }))}
+                    placeholder="6:00 AM" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Available Until</label>
+                  <input type="text" value={rideForm.availableEndTime} onChange={e => setRideForm(p => ({ ...p, availableEndTime: e.target.value }))}
+                    placeholder="10:00 PM" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              </div>
+
+              <div className="border-t border-gray-100 pt-4 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Plate Number *</label>
+                  <input type="text" value={rideForm.plateNumber} onChange={e => setRideForm(p => ({ ...p, plateNumber: e.target.value }))}
+                    placeholder="ABC-123-XY" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  <p className="text-xs text-gray-400 mt-1">Hidden from guests until they book</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Insurance Status *</label>
+                  <select value={rideForm.insuranceStatus} onChange={e => setRideForm(p => ({ ...p, insuranceStatus: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                    {RIDE_INSURANCE_STATUSES.map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={rideForm.available} onChange={e => setRideForm(p => ({ ...p, available: e.target.checked }))}
+                  className="w-4 h-4 accent-cyan-500" />
+                <span className="text-sm font-bold text-gray-800">Available for booking</span>
+              </label>
+              <p className="text-xs text-gray-400 -mt-3">Turn off to hide this listing without deleting it — e.g. undergoing maintenance.</p>
+
+              <button onClick={saveRide} disabled={!rideFormValid || savingRide}
+                className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-3.5 rounded-2xl font-black hover:from-cyan-700 hover:to-blue-700 transition disabled:opacity-50">
+                {savingRide ? 'Saving...' : (editingRideId ? 'Save Changes' : 'Publish Listing')}
               </button>
             </div>
           </div>
