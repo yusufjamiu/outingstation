@@ -966,6 +966,89 @@ export default async function handler(req, res) {
 
     const event = req.body;
 
+    // ─── REFUND EVENTS ──────────────────────────────────────────────────────
+    // ✅ NEW — refund.js only ever INITIATES a refund (Paystack refunds are
+    // async, same as transfers). This is what confirms whether it actually
+    // completed. Placed before the charge.success gate below, which would
+    // otherwise ignore these event types entirely.
+    //
+    // Looked up by paymentReference via a query, not a direct doc lookup —
+    // Paystack's refund webhook payload identifies the refund by the
+    // original TRANSACTION reference, not by our Firestore booking ID,
+    // so there's no bookingId to look up directly the way the
+    // charge.success branches below can.
+    if (event.event === 'refund.processed' || event.event === 'refund.failed') {
+      const refundData = event.data;
+      const transactionReference = refundData.transaction?.reference;
+
+      if (!transactionReference) {
+        console.error('❌ Refund webhook missing transaction reference');
+        return res.status(200).json({ message: 'Missing transaction reference' });
+      }
+
+      const bookingsSnap = await getDocs(query(
+        collection(db, 'bookings'),
+        where('paymentReference', '==', transactionReference)
+      ));
+
+      if (bookingsSnap.empty) {
+        console.error(`❌ No booking found for refunded transaction: ${transactionReference}`);
+        return res.status(200).json({ message: 'Booking not found' });
+      }
+
+      const bookingDoc = bookingsSnap.docs[0];
+      const booking = bookingDoc.data();
+      const isSuccess = event.event === 'refund.processed';
+
+      await updateDoc(doc(db, 'bookings', bookingDoc.id), {
+        refundStatus: isSuccess ? 'refunded' : 'failed',
+        // Escrow can never be released to the owner once refunded — this
+        // is the terminal state transfer.js (once built) needs to check
+        // against, so a refunded booking can never ALSO be paid out.
+        escrowStatus: isSuccess ? 'refunded' : booking.escrowStatus,
+      });
+      console.log(`${isSuccess ? '✅' : '❌'} Refund ${event.event} for booking ${bookingDoc.id}`);
+
+      // Only email the guest once the refund actually completes — a
+      // failed refund gets surfaced to admin instead (see below), not
+      // the guest, since a failure needs a human to investigate before
+      // anyone commits to a promise about when money will arrive.
+      if (isSuccess) {
+        try {
+          const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+          });
+          await transporter.sendMail({
+            from: `"OutingStation" <${process.env.GMAIL_USER}>`,
+            to: booking.guestEmail,
+            subject: `✅ Refund completed — ${booking.listingTitle}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+                <div style="background: #EFF6FF; border-radius: 16px; padding: 24px;">
+                  <h2 style="margin: 0 0 12px; color: #0F172A; font-size: 18px;">${booking.listingTitle}</h2>
+                  <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.6;">
+                    Your refund of ₦${Number(booking.refundAmount || 0).toLocaleString()} has been processed and should reflect in your account shortly.
+                  </p>
+                </div>
+              </div>
+            `,
+          });
+          console.log(`📧 Refund confirmation sent to: ${booking.guestEmail}`);
+        } catch (emailErr) {
+          console.error('❌ Failed to send refund confirmation email:', emailErr);
+        }
+      } else {
+        console.error(`⚠️ ADMIN ATTENTION — refund failed for booking ${bookingDoc.id}, guest ${booking.guestEmail}. Needs manual review.`);
+        // Note: no automated admin email for this yet — same shape as
+        // notify-dispute.js could be reused here later, flagged rather
+        // than silently built as a guess at what admin actually wants
+        // for this specific failure case.
+      }
+
+      return res.status(200).json({ success: true, event: event.event });
+    }
+
     if (event.event !== 'charge.success') {
       return res.status(200).json({ message: 'Event ignored' });
     }

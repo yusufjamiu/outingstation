@@ -818,7 +818,6 @@ export default function OSBDashboard() {
       availableStartTime: ride.availableStartTime || '', availableEndTime: ride.availableEndTime || '',
       plateNumber: ride.plateNumber || '', insuranceStatus: ride.insuranceStatus || RIDE_INSURANCE_STATUSES[0],
       available: ride.available !== false,
-      available: ride.available !== false,
     });
     setRideModalOpen(true);
   };
@@ -1373,7 +1372,12 @@ export default function OSBDashboard() {
                               <div className="min-w-0">
                                 <p className="font-bold text-gray-900 text-sm truncate">{b.listingTitle}</p>
                                 <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
-                                <p className="text-xs text-gray-400 mt-0.5">{b.guestEmail}</p>
+                                {/* ✅ FIXED — was only ever showing
+                                    guestEmail, with no way for an owner
+                                    to actually call/WhatsApp the guest. */}
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                  {[b.guestName, b.guestPhone, b.guestEmail].filter(Boolean).join(' · ')}
+                                </p>
                               </div>
                               <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${statusConfig.color}`}>{statusConfig.label}</span>
                             </div>

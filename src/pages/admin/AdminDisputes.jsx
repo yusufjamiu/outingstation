@@ -71,6 +71,23 @@ export default function AdminDisputes() {
           }),
         }).catch(err => console.error('notify-dispute-resolved failed:', err));
       }
+
+      // ✅ FIXED — this button previously only ever recorded the
+      // decision in Firestore; nothing here actually moved any money.
+      // Now, siding with the guest triggers refund.js with
+      // source: 'admin_dispute', which refunds the FULL subtotal (not a
+      // cancellation-policy percentage — a dispute isn't a timing
+      // calculation, it's admin's judgment that the guest is owed it
+      // back). refund.js independently re-verifies the booking's
+      // disputeStatus is actually 'resolved_refund_guest' before doing
+      // anything — this call is just the trigger, not the authority.
+      if (decision === 'resolved_refund_guest') {
+        fetch('https://www.outingstation.com/api/refund', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bookingId, source: 'admin_dispute' }),
+        }).catch(err => console.error('refund trigger failed:', err));
+      }
     } catch (err) {
       console.error(err);
       alert('Failed to update dispute. Please try again.');

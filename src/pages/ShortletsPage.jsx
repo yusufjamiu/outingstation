@@ -202,13 +202,17 @@ function ShortletBookingModal({ shortlet: s, onClose }) {
   const [checkOut, setCheckOut] = useState('');
   const [creating, setCreating] = useState(false);
   const [pendingBooking, setPendingBooking] = useState(null); // { id, reference } once created, ready for PaystackButton
+  // ✅ NEW — same fix as the mobile booking screens: the booking doc
+  // previously only ever captured guestEmail, leaving the agency with no
+  // reliable way to reach the guest.
+  const [phone, setPhone] = useState('');
 
   const minNights = s.minNights || 1;
   const nights = (checkIn && checkOut) ? Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000) : 0;
   const subtotal = nights > 0 ? nights * (s.pricePerNight || 0) : 0;
   const platformFee = Math.round(subtotal * PLATFORM_FEE_RATE);
   const total = subtotal + platformFee;
-  const canProceed = checkIn && checkOut && nights >= minNights;
+  const canProceed = checkIn && checkOut && nights >= minNights && phone.trim().length >= 7;
 
   const todayStr = new Date().toISOString().split('T')[0];
   const minCheckOut = checkIn
@@ -234,6 +238,8 @@ function ShortletBookingModal({ shortlet: s, onClose }) {
         agencyName: s.agencyName || null,
         guestId: currentUser.uid,
         guestEmail: currentUser.email || '',
+        guestName: currentUser.displayName || '',
+        guestPhone: phone.trim(),
         listingTitle: s.title,
         listingImage: (s.images || [])[0] || null,
         checkInDate: new Date(checkIn),
@@ -293,6 +299,15 @@ function ShortletBookingModal({ shortlet: s, onClose }) {
               <p className="text-xs text-amber-600 font-bold">₦{Number(s.pricePerNight || 0).toLocaleString()}/night</p>
             </div>
           </div>
+
+          <label className="block text-xs font-bold text-gray-600 mb-1">Contact Phone Number *</label>
+          <input
+            type="tel"
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
+            placeholder="+234 800 000 0000"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4"
+          />
 
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Select your dates</p>
           <p className="text-xs text-gray-400 mb-3">Minimum stay: {minNights} night{minNights === 1 ? '' : 's'}</p>

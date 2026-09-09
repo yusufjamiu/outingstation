@@ -283,6 +283,17 @@ export default function Navbar() {
                         <span className="font-semibold text-gray-900 truncate">{displayName}</span>
                       </Link>
 
+                      {/* ✅ NEW — was completely missing on web; only
+                          Flutter's My Bookings screen existed until now. */}
+                      <Link
+                        to="/my-bookings"
+                        onClick={() => setAccountOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 hover:bg-cyan-50 transition text-sm text-gray-700"
+                      >
+                        <Home size={15} className="text-cyan-500" />
+                        My Bookings
+                      </Link>
+
                       {myBusinesses.length > 0 && (
                         <>
                           <div className="border-t border-gray-100 my-1" />
@@ -372,6 +383,16 @@ export default function Navbar() {
                     onError={(e) => { e.target.onerror = null; e.target.src = fallbackAvatar; }}
                   />
                   Dashboard
+                </Link>
+
+                {/* ✅ NEW — same addition as the desktop dropdown. */}
+                <Link
+                  to="/my-bookings"
+                  onClick={closeMobile}
+                  className="flex items-center gap-3 px-3 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition rounded-xl"
+                >
+                  <Home size={18} className="text-cyan-500" />
+                  My Bookings
                 </Link>
 
                 {myBusinesses.length > 0 && (

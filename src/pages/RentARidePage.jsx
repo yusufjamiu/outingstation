@@ -216,12 +216,14 @@ function RideBookingModal({ ride: r, onClose }) {
   const [hours, setHours] = useState(r.minHours || 1);
   const [creating, setCreating] = useState(false);
   const [pendingBooking, setPendingBooking] = useState(null);
+  // ✅ NEW — same fix as everywhere else in this pass.
+  const [phone, setPhone] = useState('');
 
   const minHours = r.minHours || 1;
   const subtotal = bookingMode === 'trip' ? (r.pricePerTrip || 0) : (r.pricePerHour || 0) * hours;
   const platformFee = Math.round(subtotal * PLATFORM_FEE_RATE);
   const total = subtotal + platformFee;
-  const canProceed = tripDate && tripTime && (bookingMode !== 'hour' || hours >= minHours);
+  const canProceed = tripDate && tripTime && (bookingMode !== 'hour' || hours >= minHours) && phone.trim().length >= 7;
   const todayStr = new Date().toISOString().split('T')[0];
 
   const handleCreateBooking = async () => {
@@ -240,6 +242,8 @@ function RideBookingModal({ ride: r, onClose }) {
         agencyName: r.agencyName || null,
         guestId: currentUser.uid,
         guestEmail: currentUser.email || '',
+        guestName: currentUser.displayName || '',
+        guestPhone: phone.trim(),
         listingTitle: r.title,
         listingImage: (r.images || [])[0] || null,
         vehicleType: r.vehicleType || null,
@@ -317,6 +321,15 @@ function RideBookingModal({ ride: r, onClose }) {
               </button>
             </div>
           )}
+
+          <label className="block text-xs font-bold text-gray-600 mb-1">Contact Phone Number *</label>
+          <input
+            type="tel"
+            value={phone}
+            onChange={e => setPhone(e.target.value)}
+            placeholder="+234 800 000 0000"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4"
+          />
 
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Trip Date & Time</p>
           <div className="grid grid-cols-2 gap-3">
