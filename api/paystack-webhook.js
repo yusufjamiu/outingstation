@@ -839,8 +839,17 @@ function generateExperienceBookingEmail(bookingData, experienceData) {
 // pattern used elsewhere in this codebase.
 function generateBookingConfirmationEmail(bookingData, listingData, type) {
   const isShortlet = type === 'shortlet';
-  const accentColor = isShortlet ? '#b45309' : '#1d4ed8';
-  const accentBg = isShortlet ? '#fffbeb' : '#eff6ff';
+  // ✅ FIXED — was per-type Shortlet-brown/Ride-blue accent colors,
+  // invented rather than using OutingStation's actual brand palette.
+  // Now uses the real brand colors consistently for both booking types:
+  // primary cyan #5ADAEE for accents/highlights, secondary #47A2B6 as
+  // the solid header band (dark enough for white text to stay readable,
+  // which the lighter primary alone wouldn't be), and the same light
+  // cyan wash (#ECFEFF) already used as the background color throughout
+  // the OSB screens in this app.
+  const accentColor = '#5ADAEE';
+  const headerColor = '#47A2B6';
+  const accentBg = '#ECFEFF';
   const label = isShortlet ? 'Shortlet' : 'Ride';
 
   const detailsRows = isShortlet
@@ -863,7 +872,7 @@ function generateBookingConfirmationEmail(bookingData, listingData, type) {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.12);">
 
           <tr>
-            <td style="background: ${accentColor}; padding: 44px 36px; text-align: center;">
+            <td style="background: ${headerColor}; padding: 44px 36px; text-align: center;">
               <p style="color: rgba(255,255,255,0.75); margin: 0 0 6px; font-size: 12px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">OutingStation</p>
               <h1 style="color: #ffffff; margin: 0 0 8px; font-size: 30px; font-weight: 900;">✅ Payment Received!</h1>
               <p style="color: #ffffff; opacity: 0.9; margin: 0; font-size: 15px;">Your payment is held securely until your ${isShortlet ? 'stay' : 'trip'} is confirmed</p>
@@ -904,7 +913,7 @@ function generateBookingConfirmationEmail(bookingData, listingData, type) {
                   : "Your driver's details will be shared once the agency assigns one for your trip. You'll be asked to confirm your trip is complete afterward."}
               </p>
               <p style="margin: 12px 0 0; font-size: 12px; color: #64748b; line-height: 1.6;">
-                Track this booking anytime under <strong>Settings → My Bookings</strong> in the app.
+                Track this booking anytime under <strong>Profile → My Bookings</strong> in the app.
               </p>
             </td>
           </tr>
