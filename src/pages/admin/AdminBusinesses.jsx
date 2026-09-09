@@ -151,6 +151,26 @@ export default function AdminBusinesses() {
       await updateDoc(doc(db, 'businesses', id), { status });
       setBusinesses(prev => prev.map(b => b.id === id ? { ...b, status } : b));
       toast.success(status === 'approved' ? '✅ Business approved' : 'Business rejected');
+
+      // ✅ NEW — was ONLY a toast to the admin here before; the business
+      // owner, who's actually been waiting on this decision, was never
+      // told anything. Fire-and-forget, same pattern as every other
+      // notification trigger in this build — a failed email never blocks
+      // or undoes the approval itself, which already succeeded above.
+      if (status === 'approved') {
+        const biz = businesses.find(b => b.id === id);
+        if (biz?.ownerEmail) {
+          fetch('https://www.outingstation.com/api/notify-business-approved', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ownerEmail: biz.ownerEmail,
+              businessName: biz.businessName,
+              businessType: biz.businessType,
+            }),
+          }).catch(err => console.error('notify-business-approved failed:', err));
+        }
+      }
     } catch (err) {
       console.error(err);
       toast.error('Failed to update business');

@@ -10,7 +10,7 @@ import {
   Store, Clock, Tag, CheckCircle2, Clock as ClockIcon, XCircle, Inbox, MapPin,
   Upload, Plus, Trash2, LayoutDashboard, User, ClipboardList, MessageSquare,
   Ticket, Star, Wallet, Settings, Tent, FileCheck, Menu, BadgeCheck, Lock,
-  Car,
+  Car, CalendarCheck, Phone,
 } from 'lucide-react';
 
 const HOURLY_TYPES = ['DJ', 'MC', 'Musician', 'Photographer'];
@@ -67,6 +67,10 @@ const EVENT_VENDOR_NAV = [
 const SHORTLET_NAV = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'listings', label: 'My Listings', icon: MapPin },
+  // ✅ NEW — owner had zero way to see incoming bookings anywhere on
+  // web until now, same gap just closed on the Flutter side
+  // (osb_bookings_screen.dart).
+  { key: 'bookings', label: 'Bookings', icon: CalendarCheck },
   { key: 'verification', label: 'Verification', icon: FileCheck },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -83,6 +87,10 @@ const SHORTLET_NAV = [
 const RIDE_NAV = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'vehicles', label: 'My Vehicles', icon: Car },
+  // ✅ NEW — same addition as SHORTLET_NAV above. Matters even more here
+  // since this is also where a Ride agency assigns a driver to a paid
+  // booking.
+  { key: 'bookings', label: 'Bookings', icon: CalendarCheck },
   { key: 'verification', label: 'Verification', icon: FileCheck },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -421,6 +429,16 @@ export default function OSBDashboard() {
   const [editingRideId, setEditingRideId] = useState(null);
   const [rideForm, setRideForm] = useState(EMPTY_RIDE_FORM);
   const [savingRide, setSavingRide] = useState(false);
+
+  // ✅ NEW — Bookings, shared by both Shortlet and Ride agencies. Same
+  // owner-side visibility gap closed here as osb_bookings_screen.dart on
+  // mobile — an owner previously had zero way to see a booking for their
+  // own listing anywhere on web.
+  const [bookings, setBookings] = useState([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
+  const [assigningDriverFor, setAssigningDriverFor] = useState(null); // booking id currently being assigned
+  const [driverNameInput, setDriverNameInput] = useState('');
+  const [driverPhoneInput, setDriverPhoneInput] = useState('');
 
   useEffect(() => {
     if (!currentUser) { navigate('/login'); return; }
@@ -904,6 +922,72 @@ export default function OSBDashboard() {
     }
   }, [selectedId, activeSection]);
 
+  // ✅ NEW — mirrors the pattern immediately above. Fires whenever the
+  // Bookings tab is opened for an approved Shortlet or Ride agency.
+  useEffect(() => {
+    if (selectedBusiness && selectedBusiness.status === 'approved' && (isShortletAgency || isRideAgency) && activeSection === 'bookings') {
+      loadBookings();
+    }
+  }, [selectedId, activeSection]);
+
+  const loadBookings = async () => {
+    setLoadingBookings(true);
+    try {
+      const snap = await getDocs(query(collection(db, 'bookings'), where('agencyId', '==', selectedBusiness.id)));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        // paid bookings first — the ones that actually matter day to day
+        .sort((a, b) => (a.paymentStatus === 'paid' ? 0 : 1) - (b.paymentStatus === 'paid' ? 0 : 1));
+      setBookings(list);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoadingBookings(false);
+  };
+
+  // ✅ Matches the bookings/ Firestore rule's agency-driver-assignment
+  // clause exactly: only these three fields, verified via the business
+  // doc's ownerId — same as osb_bookings_screen.dart's _assignDriver on
+  // mobile.
+  const saveDriverAssignment = async (bookingId) => {
+    if (!driverNameInput.trim() || !driverPhoneInput.trim()) {
+      alert('Please enter both driver name and phone.');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'bookings', bookingId), {
+        assignedDriverName: driverNameInput.trim(),
+        assignedDriverPhone: driverPhoneInput.trim(),
+        driverAssignedAt: serverTimestamp(),
+      });
+      const updatedBooking = bookings.find(b => b.id === bookingId);
+      setBookings(prev => prev.map(b => b.id === bookingId
+        ? { ...b, assignedDriverName: driverNameInput.trim(), assignedDriverPhone: driverPhoneInput.trim() }
+        : b));
+      setAssigningDriverFor(null);
+
+      // ✅ NEW — same "actually tell the guest" fix as
+      // osb_bookings_screen.dart's mobile equivalent. Fire-and-forget.
+      if (updatedBooking?.guestEmail) {
+        fetch('https://www.outingstation.com/api/notify-driver-assigned', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            guestEmail: updatedBooking.guestEmail,
+            listingTitle: updatedBooking.listingTitle,
+            driverName: driverNameInput.trim(),
+            driverPhone: driverPhoneInput.trim(),
+          }),
+        }).catch(err => console.error('notify-driver-assigned failed:', err));
+      }
+
+      setDriverNameInput('');
+      setDriverPhoneInput('');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to assign driver. Please try again.');
+    }
+  };
+
   const loadStandEvents = async () => {
     setLoadingStandEvents(true);
     try {
@@ -1240,6 +1324,107 @@ export default function OSBDashboard() {
                               <button onClick={() => deleteRide(ride)}
                                 className="flex-1 py-2.5 text-xs font-bold text-red-500 hover:bg-red-50 transition border-l border-gray-100">Delete</button>
                             </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ✅ NEW — Bookings section, shared by Shortlet and Ride.
+                  Same owner-side visibility closed here as
+                  osb_bookings_screen.dart on mobile. */}
+              {activeSection === 'bookings' && (isShortletAgency || isRideAgency) && (
+                <div className="space-y-4">
+                  <h3 className="font-bold text-gray-800 text-lg">Bookings</h3>
+
+                  {loadingBookings ? (
+                    <p className="text-sm text-gray-400">Loading...</p>
+                  ) : bookings.length === 0 ? (
+                    <div className="bg-white rounded-3xl border-2 border-gray-100 p-10 text-center">
+                      <div className="w-14 h-14 bg-cyan-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <CalendarCheck size={22} className="text-cyan-400" />
+                      </div>
+                      <h4 className="font-bold text-gray-800 mb-1">No bookings yet</h4>
+                      <p className="text-sm text-gray-400">Bookings for your listings will show up here.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {bookings.map(b => {
+                        const isPaid = b.paymentStatus === 'paid';
+                        const needsDriver = isRideAgency && isPaid && !b.assignedDriverName;
+                        const statusConfig = b.disputeStatus === 'reported'
+                          ? { label: 'Disputed', color: 'bg-red-100 text-red-600' }
+                          : !isPaid
+                          ? { label: 'Awaiting Payment', color: 'bg-amber-100 text-amber-700' }
+                          : b.confirmationStatus === 'confirmed'
+                          ? { label: 'Completed', color: 'bg-emerald-100 text-emerald-700' }
+                          : { label: 'Held in Escrow', color: 'bg-blue-100 text-blue-700' };
+                        const subtitle = isShortletAgency
+                          ? (b.checkInDate && b.checkOutDate
+                              ? `${b.checkInDate.toDate().toLocaleDateString()} → ${b.checkOutDate.toDate().toLocaleDateString()}`
+                              : 'Dates unavailable')
+                          : (b.tripDateTime ? b.tripDateTime.toDate().toLocaleDateString() : 'Trip date unavailable');
+
+                        return (
+                          <div key={b.id} className="bg-white rounded-2xl border-2 border-gray-100 p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-bold text-gray-900 text-sm truncate">{b.listingTitle}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
+                                <p className="text-xs text-gray-400 mt-0.5">{b.guestEmail}</p>
+                              </div>
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${statusConfig.color}`}>{statusConfig.label}</span>
+                            </div>
+
+                            <div className="flex items-center gap-4 mt-3 text-xs">
+                              <span className="text-gray-500">Guest paid: <strong className="text-gray-700">₦{Number(b.amount || 0).toLocaleString()}</strong></span>
+                              <span className="text-cyan-600 font-bold">You get: ₦{Number(b.ownerPayout || 0).toLocaleString()}</span>
+                            </div>
+
+                            {isRideAgency && isPaid && (
+                              <div className="mt-3 pt-3 border-t border-gray-100">
+                                {b.assignedDriverName ? (
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Phone size={13} className="text-gray-400" />
+                                      <span className="text-xs text-gray-700">{b.assignedDriverName} · {b.assignedDriverPhone}</span>
+                                    </div>
+                                    <button
+                                      onClick={() => { setAssigningDriverFor(b.id); setDriverNameInput(b.assignedDriverName || ''); setDriverPhoneInput(b.assignedDriverPhone || ''); }}
+                                      className="text-xs font-bold text-cyan-600 hover:text-cyan-700"
+                                    >
+                                      Change
+                                    </button>
+                                  </div>
+                                ) : assigningDriverFor === b.id ? (
+                                  <div className="space-y-2">
+                                    <input type="text" placeholder="Driver name" value={driverNameInput} onChange={e => setDriverNameInput(e.target.value)}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                    <input type="tel" placeholder="Driver phone" value={driverPhoneInput} onChange={e => setDriverPhoneInput(e.target.value)}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                    <div className="flex gap-2">
+                                      <button onClick={() => saveDriverAssignment(b.id)} className="flex-1 bg-cyan-500 text-white py-1.5 rounded-lg text-xs font-bold hover:bg-cyan-600 transition">Save</button>
+                                      <button onClick={() => setAssigningDriverFor(null)} className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600">Cancel</button>
+                                    </div>
+                                  </div>
+                                ) : needsDriver ? (
+                                  <button
+                                    onClick={() => { setAssigningDriverFor(b.id); setDriverNameInput(''); setDriverPhoneInput(''); }}
+                                    className="flex items-center gap-2 text-xs font-bold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg hover:bg-orange-100 transition"
+                                  >
+                                    Assign a driver
+                                  </button>
+                                ) : null}
+                              </div>
+                            )}
+
+                            {b.disputeStatus === 'reported' && (
+                              <div className="mt-3 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                                <p className="text-xs text-red-600"><strong>Issue reported:</strong> {b.disputeReason}</p>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

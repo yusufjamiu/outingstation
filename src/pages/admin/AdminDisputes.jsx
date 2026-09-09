@@ -50,6 +50,27 @@ export default function AdminDisputes() {
         disputeResolvedAt: serverTimestamp(),
       });
       setDisputes(prev => prev.map(d => d.id === bookingId ? { ...d, disputeStatus: decision } : d));
+
+      // ✅ NEW — tells the GUEST the outcome. Fire-and-forget, same
+      // pattern as notify-dispute.js's own call site — a failed email
+      // never undoes the resolution itself, which is already recorded
+      // above regardless. See notify-dispute-resolved.js's file-level
+      // comment for the honest gap on why this can't also email the
+      // owner yet.
+      const resolved = disputes.find(d => d.id === bookingId);
+      if (resolved) {
+        fetch('https://www.outingstation.com/api/notify-dispute-resolved', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bookingId,
+            listingTitle: resolved.listingTitle,
+            guestEmail: resolved.guestEmail,
+            amount: resolved.amount,
+            decision,
+          }),
+        }).catch(err => console.error('notify-dispute-resolved failed:', err));
+      }
     } catch (err) {
       console.error(err);
       alert('Failed to update dispute. Please try again.');

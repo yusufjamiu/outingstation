@@ -1227,6 +1227,49 @@ export default async function handler(req, res) {
         console.error('❌ Failed to send booking confirmation email:', emailErr);
       }
 
+      // ✅ NEW — closes the "how will OSB know?" gap: right up until now,
+      // an owner only ever found out about a paid booking by manually
+      // opening their own Bookings tab. Wrapped in its OWN try/catch,
+      // separate from the guest email block above — a failure sending to
+      // the owner should never be able to affect (or be affected by)
+      // whether the guest's own confirmation email went out, since
+      // they're two independent notifications about the same event.
+      try {
+        const businessDoc = await getDoc(doc(db, 'businesses', bookingData.agencyId));
+        const ownerEmail = businessDoc.exists() ? businessDoc.data().ownerEmail : null;
+
+        if (ownerEmail) {
+          const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+          });
+          const isShortletLabel = isShortlet ? 'Shortlet' : 'Ride';
+          await transporter.sendMail({
+            from: `"OutingStation Business" <${process.env.GMAIL_USER}>`,
+            to: ownerEmail,
+            subject: `🎉 New ${isShortletLabel} booking — ${bookingData.listingTitle}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+                <div style="background: #ECFEFF; border-radius: 16px; padding: 24px;">
+                  <p style="margin: 0 0 4px; color: #0891B2; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">New Booking</p>
+                  <h2 style="margin: 0 0 16px; color: #0F172A; font-size: 20px;">${bookingData.listingTitle}</h2>
+                  <p style="margin: 0 0 16px; font-size: 14px; color: #374151;">
+                    A guest just paid ₦${Number(amountPaid).toLocaleString()} — you'll receive ₦${Number(ownerPayout).toLocaleString()} once the booking is confirmed.
+                  </p>
+                  ${!isShortlet ? '<p style="margin: 0 0 16px; font-size: 13px; color: #92400E; background: #FFFBEB; padding: 10px 14px; border-radius: 8px;">Don\'t forget to assign a driver from your OSB Bookings tab.</p>' : ''}
+                  <p style="margin: 0; font-size: 12px; color: #64748B;">View full details under Bookings in your OSB dashboard.</p>
+                </div>
+              </div>
+            `,
+          });
+          console.log(`📧 New booking alert sent to owner: ${ownerEmail}`);
+        } else {
+          console.log(`⚠️ No ownerEmail on file for agency ${bookingData.agencyId} — owner booking alert skipped`);
+        }
+      } catch (ownerEmailErr) {
+        console.error('❌ Failed to send owner booking-alert email:', ownerEmailErr);
+      }
+
       // Note: booking payments do not generate ambassador commission —
       // same explicit design choice as vendor stands above, not an
       // oversight; revisit if that changes.
