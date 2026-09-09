@@ -902,11 +902,27 @@ function generateBookingConfirmationEmail(bookingData, listingData, type) {
                 <p style="margin: 0; font-size: 18px; font-weight: 900; color: ${accentColor}; font-family: 'Courier New', monospace; letter-spacing: 1px;">${bookingData.paymentReference}</p>
               </div>
               <table cellpadding="0" cellspacing="0" width="100%">
-                <tr><td style="padding-bottom: 10px;">
-                  <p style="margin: 0 0 2px; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Amount Paid</p>
-                  <p style="margin: 0; font-size: 22px; color: ${accentColor}; font-weight: 900;">₦${Number(bookingData.amount || 0).toLocaleString()}</p>
+                <tr><td style="padding-bottom: 8px;">
+                  <table cellpadding="0" cellspacing="0" width="100%">
+                    <tr>
+                      <td style="font-size: 13px; color: #64748b; padding: 3px 0;">${isShortlet ? `₦${Number(bookingData.pricePerNight || 0).toLocaleString()} × ${bookingData.nights || 0} night${(bookingData.nights || 0) === 1 ? '' : 's'}` : 'Trip fare'}</td>
+                      <td align="right" style="font-size: 13px; color: #0f172a; font-weight: 600; padding: 3px 0;">₦${Number(bookingData.subtotal || 0).toLocaleString()}</td>
+                    </tr>
+                    <tr>
+                      <td style="font-size: 13px; color: #64748b; padding: 3px 0;">Service fee</td>
+                      <td align="right" style="font-size: 13px; color: #0f172a; font-weight: 600; padding: 3px 0;">₦${Number(bookingData.platformFee || 0).toLocaleString()}</td>
+                    </tr>
+                    <tr><td colspan="2" style="padding: 6px 0;"><div style="border-top: 1px solid #e2e8f0;"></div></td></tr>
+                    <tr>
+                      <td style="font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding-top: 2px;">Amount Paid</td>
+                      <td align="right" style="font-size: 22px; color: ${accentColor}; font-weight: 900; padding-top: 2px;">₦${Number(bookingData.amount || 0).toLocaleString()}</td>
+                    </tr>
+                  </table>
                 </td></tr>
               </table>
+              <p style="margin: 10px 0 0; font-size: 11px; color: #94a3b8; line-height: 1.5;">
+                The service fee is non-refundable. If this booking is cancelled, any refund follows the ${isShortlet ? "property's cancellation policy" : "trip's cancellation policy"} and applies to the ${isShortlet ? 'stay cost' : 'trip fare'} only.
+              </p>
               <p style="margin: 16px 0 0; font-size: 12px; color: #64748b; line-height: 1.6;">
                 ${isShortlet
                   ? "The property's full address will be shared once your booking is confirmed. You'll be asked to confirm check-in 24 hours after your check-in date."
@@ -1180,6 +1196,17 @@ export default async function handler(req, res) {
         const emailBookingData = {
           ...bookingData,
           amount: amountPaid,
+          // ✅ FIXED — was letting these fall through from the spread
+          // above, which is the PRE-payment snapshot (fetched via
+          // getDoc before this webhook's own updateDoc call) — i.e. the
+          // client's original numbers, not the server-recomputed ones
+          // this function just calculated a few lines up. Explicitly
+          // overriding with the authoritative values so the email always
+          // shows exactly what was actually charged and split, even in
+          // the (should-be-rare) case those ever drift from what the
+          // client originally proposed.
+          subtotal,
+          platformFee,
           paymentReference: paymentData.reference,
           checkInDateFormatted: bookingData.checkInDate ? formatEventDate({ date: bookingData.checkInDate }) : null,
           checkOutDateFormatted: bookingData.checkOutDate ? formatEventDate({ date: bookingData.checkOutDate }) : null,
