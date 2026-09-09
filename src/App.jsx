@@ -95,6 +95,7 @@ const AmbassadorNotifications = lazy(() => import('./pages/ambassador/Ambassador
 const SubmittedEvents = lazy(() => import('./pages/ambassador/SubmittedEvents'));
 const AmbassadorTracking = lazy(() => import('./pages/ambassador/AmbassadorTracking'));
 const AdminBusinesses = lazy(() => import('./pages/admin/AdminBusinesses'));
+const AdminDisputes = lazy(() => import('./pages/admin/AdminDisputes'));
 const AdminPlaceClaims = lazy(() => import('./pages/admin/AdminPlaceClaims'));
 const CityAmbassadorCreate = lazy(() => import('./pages/ambassador/CityAmbassadorCreate'));
 
@@ -509,6 +510,13 @@ function App() {
                 <Route path="/admin/businesses" element={
                   <AdminRoute>
                     <AdminBusinesses />
+                  </AdminRoute>
+                } />
+                {/* ✅ NEW — admin-side dispute review, pairs with
+                    notify-dispute.js's email alert. */}
+                <Route path="/admin/disputes" element={
+                  <AdminRoute>
+                    <AdminDisputes />
                   </AdminRoute>
                 } />
                 <Route path="/admin/place-claims" element={

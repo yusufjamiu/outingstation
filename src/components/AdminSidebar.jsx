@@ -3,6 +3,7 @@ import {
   Home, Calendar, Users, Grid, GraduationCap, BarChart3, Unlock, LogOut, X,
   FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag, ClipboardList,
   Wallet, Store, ChevronDown, BadgeCheck, Siren, Music, Sparkles, CalendarCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -20,6 +21,10 @@ const GROUPS = [
       { icon: Sparkles, label: 'Experiences', path: '/admin/experiences' },
       { icon: ShoppingBag, label: 'Vendors', path: '/admin/vendors' },
       { icon: Store, label: 'Businesses', path: '/admin/businesses' },
+      // ✅ NEW — surfaces bookings guests have reported an issue on.
+      // notify-dispute.js already emails admin the moment one comes in;
+      // this is where admin actually works through the full list.
+      { icon: AlertTriangle, label: 'Disputes', path: '/admin/disputes' },
       // ✅ NEW — Tier 2 of the ride approval model. Sits right after
       // Businesses since a Ride Provider agency's vehicles are the thing
       // that actually needs review after the agency itself is approved
