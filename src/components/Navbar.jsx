@@ -8,8 +8,9 @@ import {
   Compass, Store, ListPlus, Handshake, LayoutDashboard,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { bookingAwaitsConfirmation } from '../utils/bookingHelpers';
 import OutingStation from '../assets/OutingStation.png';
 import googlePlayBadge from '../assets/google-play.png';
 import appStoreBadge from '../assets/app-store.svg';
@@ -159,6 +160,14 @@ export default function Navbar() {
   const [mobileSection, setMobileSection] = useState(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [myBusinesses, setMyBusinesses] = useState([]);
+  // ✅ NEW — live count of bookings awaiting the guest's check-in/trip
+  // confirmation, feeding the small red dot next to "My Bookings" in
+  // this dropdown. Same shared bookingAwaitsConfirmation() check as
+  // MyBookingsPage.jsx's own card highlight and the Flutter equivalents
+  // (main_screen.dart's nav badge, home_screen.dart's banner) — one
+  // source of truth for this threshold, mirrored across every surface
+  // that shows it.
+  const [pendingBookingCount, setPendingBookingCount] = useState(0);
   const navigate = useNavigate();
   const { currentUser, userProfile, logout } = useAuth();
   const accountRef = useRef(null);
@@ -175,6 +184,23 @@ export default function Navbar() {
       }
     };
     loadMyBusinesses();
+  }, [currentUser]);
+
+  // ✅ NEW — live listener, not a one-off fetch, so the badge updates
+  // immediately if a booking enters its confirm window or gets
+  // confirmed while this dropdown is open, without needing a page
+  // refresh.
+  useEffect(() => {
+    if (!currentUser) { setPendingBookingCount(0); return; }
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'bookings'), where('guestId', '==', currentUser.uid), where('paymentStatus', '==', 'paid'), where('confirmationStatus', '==', 'pending')),
+      (snap) => {
+        const count = snap.docs.filter(d => bookingAwaitsConfirmation(d.data())).length;
+        setPendingBookingCount(count);
+      },
+      (err) => console.error('Error listening for pending bookings:', err)
+    );
+    return () => unsubscribe();
   }, [currentUser]);
 
   const handleLogout = async () => {
@@ -292,6 +318,12 @@ export default function Navbar() {
                       >
                         <Home size={15} className="text-cyan-500" />
                         My Bookings
+                        {/* ✅ NEW — small red dot when a booking is
+                            waiting on confirmation, matching the mobile
+                            nav badge. */}
+                        {pendingBookingCount > 0 && (
+                          <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                        )}
                       </Link>
 
                       {myBusinesses.length > 0 && (
@@ -393,6 +425,9 @@ export default function Navbar() {
                 >
                   <Home size={18} className="text-cyan-500" />
                   My Bookings
+                  {pendingBookingCount > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                  )}
                 </Link>
 
                 {myBusinesses.length > 0 && (

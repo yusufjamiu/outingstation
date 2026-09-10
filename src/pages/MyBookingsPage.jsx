@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { PaystackButton } from 'react-paystack';
+import { bookingAwaitsConfirmation } from '../utils/bookingHelpers';
 import { X, MapPin, Phone, Car, Home as HomeIcon } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -78,6 +80,117 @@ function calculateRefundPercentage({ isShortlet, cancellationPolicy, hoursUntil 
     if (hoursUntil >= 1) return 0.5;
     return 0.0;
   }
+}
+
+function BookingListCard({ booking: b, onSelect, onUpdated }) {
+  const { currentUser } = useAuth();
+  const [deleting, setDeleting] = useState(false);
+  const isShortlet = b.type === 'shortlet';
+  const isPending = b.paymentStatus !== 'paid';
+  const needsAction = bookingAwaitsConfirmation(b);
+  const subtitle = isShortlet
+    ? (b.checkInDate && b.checkOutDate ? `${b.checkInDate.toDate().toLocaleDateString()} → ${b.checkOutDate.toDate().toLocaleDateString()}` : 'Dates unavailable')
+    : (b.tripDateTime ? b.tripDateTime.toDate().toLocaleString() : 'Trip date unavailable');
+
+  // ✅ NEW — "Continue Payment" for an unpaid booking. Reuses the
+  // EXISTING paymentReference (confirmed present even on an abandoned
+  // checkout, from real Firestore data) so this resumes the same
+  // transaction rather than creating an orphaned duplicate — matches
+  // my_bookings_screen.dart's mobile equivalent. Uses PaystackButton
+  // directly (the same client-side, public-key pattern
+  // ShortletBookingModal/RideBookingModal already use for a brand-new
+  // booking) rather than the server-initialize flow mobile needs —
+  // web never needed that server round-trip to begin with.
+  const paystackConfig = isPending ? {
+    reference: b.paymentReference || `${isShortlet ? 'SHORTLET' : 'RIDE'}-${b.id}-${Date.now()}`,
+    email: currentUser?.email || '',
+    amount: Number(b.amount || 0) * 100,
+    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+    metadata: {
+      custom_fields: [
+        { display_name: 'PurchaseType', variable_name: 'purchase_type', value: isShortlet ? 'shortlet_booking' : 'ride_booking' },
+        { display_name: 'BookingID', variable_name: 'booking_id', value: b.id },
+      ],
+      purchase_type: isShortlet ? 'shortlet_booking' : 'ride_booking',
+      booking_id: b.id,
+    },
+  } : null;
+
+  // ✅ NEW — soft delete only, matching the Firestore rule's
+  // paymentStatus != 'paid' guard exactly (enforced server-side, not
+  // just by this button being hidden for a paid booking).
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this booking? This removes it from your list. This can't be undone.")) return;
+    setDeleting(true);
+    try {
+      await updateDoc(doc(db, 'bookings', b.id), { paymentStatus: 'abandoned' });
+      onUpdated();
+    } catch (err) {
+      console.error(err);
+      alert('Something went wrong. Please try again.');
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div
+      className={`w-full bg-white rounded-2xl p-4 text-left transition ${needsAction ? 'border-2 border-orange-400' : 'border border-gray-100 hover:border-gray-300'}`}
+    >
+      <button onClick={() => !isPending && onSelect(b)} className="w-full flex items-center gap-3 text-left" disabled={isPending}>
+        {b.listingImage ? (
+          <img src={b.listingImage} alt={b.listingTitle} className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
+        ) : (
+          <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+            {isShortlet ? <HomeIcon size={20} className="text-gray-400" /> : <Car size={20} className="text-gray-400" />}
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-gray-900 truncate">{b.listingTitle}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
+          <div className="flex items-center gap-2 mt-1.5">
+            {/* ✅ NEW — same "which one needs my attention" fix as mobile:
+                shown INSTEAD of the normal status pill when action is
+                needed. */}
+            {needsAction ? (
+              <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-orange-100 text-orange-700">Action Needed</span>
+            ) : (
+              <StatusPill booking={b} />
+            )}
+            <span className="text-xs font-bold" style={{ color: isShortlet ? _kShortletBrown : _kRideBlue }}>
+              ₦{Number(b.amount || 0).toLocaleString()}
+            </span>
+          </div>
+        </div>
+      </button>
+
+      {/* ✅ NEW — fixes the "pending booking has no actions" gap, same as
+          mobile. Only ever shown for an unpaid booking. */}
+      {isPending && (
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="flex-1 border border-red-500 text-red-600 text-xs font-bold py-2 rounded-xl hover:bg-red-50 transition disabled:opacity-50"
+          >
+            Delete
+          </button>
+          {paystackConfig && (
+            <PaystackButton
+              {...paystackConfig}
+              text="Continue Payment"
+              onSuccess={() => {
+                alert('Payment received! Your booking is being confirmed.');
+                onUpdated();
+              }}
+              onClose={() => {}}
+              className="flex-[2] text-center text-xs font-bold text-white py-2 rounded-xl transition"
+              style={{ backgroundColor: isShortlet ? _kShortletBrown : _kRideBlue }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function BookingDetailModal({ booking: initialBooking, onClose, onUpdated }) {
@@ -450,37 +563,9 @@ export default function MyBookingsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {visibleBookings.map(b => {
-              const isShortlet = b.type === 'shortlet';
-              const subtitle = isShortlet
-                ? (b.checkInDate && b.checkOutDate ? `${b.checkInDate.toDate().toLocaleDateString()} → ${b.checkOutDate.toDate().toLocaleDateString()}` : 'Dates unavailable')
-                : (b.tripDateTime ? b.tripDateTime.toDate().toLocaleString() : 'Trip date unavailable');
-              return (
-                <button
-                  key={b.id}
-                  onClick={() => setSelectedBooking(b)}
-                  className="w-full bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 text-left hover:border-gray-300 transition"
-                >
-                  {b.listingImage ? (
-                    <img src={b.listingImage} alt={b.listingTitle} className="w-14 h-14 rounded-xl object-cover flex-shrink-0" />
-                  ) : (
-                    <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      {isShortlet ? <HomeIcon size={20} className="text-gray-400" /> : <Car size={20} className="text-gray-400" />}
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate">{b.listingTitle}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <StatusPill booking={b} />
-                      <span className="text-xs font-bold" style={{ color: isShortlet ? _kShortletBrown : _kRideBlue }}>
-                        ₦{Number(b.amount || 0).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+            {visibleBookings.map(b => (
+              <BookingListCard key={b.id} booking={b} onSelect={setSelectedBooking} onUpdated={loadBookings} />
+            ))}
           </div>
         )}
       </div>
