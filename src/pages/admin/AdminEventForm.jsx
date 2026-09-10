@@ -51,6 +51,45 @@ const OPPORTUNITY_TYPES = ['Internship', 'Scholarship', 'Competition', 'Career E
 const LOCATION_TYPES = ['On-site', 'Remote', 'International'];
 const OPPORTUNITY_CITIES = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Others'];
 
+// ✅ NEW — same Nigerian states list used across the app (AdminPlaceForm,
+// mobile city pickers, marketplace city filter) so event locations are
+// stored consistently and become filterable instead of free text.
+const NIGERIAN_CITIES = [
+  'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue',
+  'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu',
+  'FCT (Abuja)', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina',
+  'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo',
+  'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara',
+];
+
+// ✅ NEW — existing events were saved with `location` as free text (e.g.
+// "Lagos, Yaba") from before the city dropdown existed. A <select>'s
+// value only shows as selected on an exact match, so loading that raw
+// string straight into the dropdown left it blank when editing. This
+// matches the raw value against the known city list and folds any
+// leftover text (the "Yaba" part) into Address so it isn't silently lost.
+const resolveCityAndAddress = (rawLocation, existingAddress) => {
+  if (!rawLocation) return { city: '', address: existingAddress || '' };
+  if (NIGERIAN_CITIES.includes(rawLocation)) {
+    return { city: rawLocation, address: existingAddress || '' };
+  }
+  const lower = rawLocation.toLowerCase();
+  const matchedCity = NIGERIAN_CITIES.find(city =>
+    lower.includes(city.toLowerCase().replace(' (abuja)', ''))
+  );
+  if (!matchedCity) {
+    // No known city found in the legacy string at all — leave the
+    // dropdown for the admin to set, but don't lose the old text.
+    return { city: '', address: existingAddress || rawLocation };
+  }
+  const leftover = rawLocation
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => s && s.toLowerCase() !== matchedCity.toLowerCase().replace(' (abuja)', ''))
+    .join(', ');
+  return { city: matchedCity, address: existingAddress || leftover };
+};
+
 function TicketTierBuilder({ tiers, onChange }) {
   const addTier = () => {
     if (tiers.length >= 5) return;
@@ -271,6 +310,17 @@ export default function AdminEventForm() {
             if (data.endDate instanceof Timestamp) formattedData.endDate = data.endDate.toDate().toISOString().split('T')[0];
             if (data.deadline instanceof Timestamp) formattedData.deadline = data.deadline.toDate().toISOString().split('T')[0];
             if (!formattedData.images) formattedData.images = [];
+
+            // ✅ NEW — resolve legacy free-text location into a valid
+            // dropdown value (see resolveCityAndAddress above). Only
+            // applies to non-opportunity events since opportunities use
+            // their own OPPORTUNITY_CITIES list untouched.
+            if (data.eventType !== 'opportunities') {
+              const { city, address } = resolveCityAndAddress(data.location, data.address);
+              formattedData.location = city;
+              formattedData.address = address;
+            }
+
             setFormData(prev => ({ ...prev, ...formattedData }));
             if (data.ticketingOption) {
               setTicketingOption(data.ticketingOption);
@@ -1033,7 +1083,23 @@ export default function AdminEventForm() {
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Location</h3>
                   <div className="space-y-4">
-                    <input type="text" name="location" value={formData.location} onChange={handleChange} required className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="City (e.g. Lagos, Nigeria)" />
+                    {/* ✅ CHANGED — was a free-text "City (e.g. Lagos, Nigeria)"
+                    input. Now a dropdown of the same Nigerian states list
+                    used across the app (matches AdminPlaceForm.jsx), so the
+                    value is consistent and filterable. Street-level detail
+                    still goes in Full Address below. */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">City *</label>
+                      <select
+                        name="location" value={formData.location} onChange={handleChange} required
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none"
+                      >
+                        <option value="">Select city</option>
+                        {NIGERIAN_CITIES.map(city => (
+                          <option key={city} value={city}>{city}</option>
+                        ))}
+                      </select>
+                    </div>
                     <input type="text" name="address" value={formData.address} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Full venue address" />
                     <input type="url" name="mapLocation" value={formData.mapLocation} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-400 outline-none" placeholder="Google Maps link (optional)" />
                   </div>
