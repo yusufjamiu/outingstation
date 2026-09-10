@@ -198,18 +198,23 @@ function BookingDetailModal({ booking: initialBooking, onClose, onUpdated }) {
       setBooking(prev => ({ ...prev, disputeStatus: 'reported', disputeReason: reportReason.trim() }));
       onUpdated();
 
-      fetch('https://www.outingstation.com/api/notify-dispute', {
+      // ✅ FIXED — was calling the now-removed /api/notify-dispute
+      // (merged into /api/notify to stay under Vercel's 12-function
+      // Hobby limit). booking.type renamed to bookingType to avoid
+      // colliding with the new dispatch 'type' field.
+      fetch('https://www.outingstation.com/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          type: 'dispute_reported',
           bookingId: booking.id,
           listingTitle: booking.listingTitle,
           guestEmail: booking.guestEmail,
           amount: booking.amount,
           disputeReason: reportReason.trim(),
-          type: booking.type,
+          bookingType: booking.type,
         }),
-      }).catch(err => console.error('notify-dispute failed:', err));
+      }).catch(err => console.error('notify (dispute_reported) failed:', err));
 
       setShowReportForm(false);
       alert('Issue reported. Our team will review it.');

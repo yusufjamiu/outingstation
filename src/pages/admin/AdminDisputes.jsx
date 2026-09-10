@@ -51,25 +51,27 @@ export default function AdminDisputes() {
       });
       setDisputes(prev => prev.map(d => d.id === bookingId ? { ...d, disputeStatus: decision } : d));
 
-      // ✅ NEW — tells the GUEST the outcome. Fire-and-forget, same
-      // pattern as notify-dispute.js's own call site — a failed email
-      // never undoes the resolution itself, which is already recorded
-      // above regardless. See notify-dispute-resolved.js's file-level
-      // comment for the honest gap on why this can't also email the
-      // owner yet.
+      // ✅ FIXED — was calling the now-removed
+      // /api/notify-dispute-resolved (merged into /api/notify to stay
+      // under Vercel's 12-function Hobby limit). Fire-and-forget, same
+      // as before — a failed email never undoes the resolution, already
+      // recorded above regardless. Same honest owner-email gap still
+      // applies — see notify.js's buildDisputeResolvedEmail for that
+      // note now.
       const resolved = disputes.find(d => d.id === bookingId);
       if (resolved) {
-        fetch('https://www.outingstation.com/api/notify-dispute-resolved', {
+        fetch('https://www.outingstation.com/api/notify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            type: 'dispute_resolved',
             bookingId,
             listingTitle: resolved.listingTitle,
             guestEmail: resolved.guestEmail,
             amount: resolved.amount,
             decision,
           }),
-        }).catch(err => console.error('notify-dispute-resolved failed:', err));
+        }).catch(err => console.error('notify (dispute_resolved) failed:', err));
       }
 
       // ✅ FIXED — this button previously only ever recorded the

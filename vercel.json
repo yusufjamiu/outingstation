@@ -30,6 +30,10 @@
     {
       "path": "/api/cron/rollover-ambassador-cycles",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/refund?cron=1",
+      "schedule": "0 6 * * *"
     }
   ]
 }

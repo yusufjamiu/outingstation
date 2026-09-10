@@ -966,17 +966,21 @@ export default function OSBDashboard() {
 
       // ✅ NEW — same "actually tell the guest" fix as
       // osb_bookings_screen.dart's mobile equivalent. Fire-and-forget.
+      // ✅ FIXED — was calling the now-removed
+      // /api/notify-driver-assigned (merged into /api/notify to stay
+      // under Vercel's 12-function Hobby limit). No naming collision.
       if (updatedBooking?.guestEmail) {
-        fetch('https://www.outingstation.com/api/notify-driver-assigned', {
+        fetch('https://www.outingstation.com/api/notify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            type: 'driver_assigned',
             guestEmail: updatedBooking.guestEmail,
             listingTitle: updatedBooking.listingTitle,
             driverName: driverNameInput.trim(),
             driverPhone: driverPhoneInput.trim(),
           }),
-        }).catch(err => console.error('notify-driver-assigned failed:', err));
+        }).catch(err => console.error('notify (driver_assigned) failed:', err));
       }
 
       setDriverNameInput('');

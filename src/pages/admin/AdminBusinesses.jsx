@@ -157,18 +157,23 @@ export default function AdminBusinesses() {
       // told anything. Fire-and-forget, same pattern as every other
       // notification trigger in this build — a failed email never blocks
       // or undoes the approval itself, which already succeeded above.
+      // ✅ FIXED — was calling the now-removed
+      // /api/notify-business-approved (merged into /api/notify to stay
+      // under Vercel's 12-function Hobby limit). No naming collision —
+      // businessType is a distinct field from the dispatch 'type'.
       if (status === 'approved') {
         const biz = businesses.find(b => b.id === id);
         if (biz?.ownerEmail) {
-          fetch('https://www.outingstation.com/api/notify-business-approved', {
+          fetch('https://www.outingstation.com/api/notify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              type: 'business_approved',
               ownerEmail: biz.ownerEmail,
               businessName: biz.businessName,
               businessType: biz.businessType,
             }),
-          }).catch(err => console.error('notify-business-approved failed:', err));
+          }).catch(err => console.error('notify (business_approved) failed:', err));
         }
       }
     } catch (err) {
