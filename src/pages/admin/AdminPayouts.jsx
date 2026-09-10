@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Wallet, MapPin, Car, CheckCircle2 } from 'lucide-react';
 
@@ -43,7 +43,36 @@ export default function AdminPayouts() {
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(b => b.payoutStatus === 'manual_pending' || b.payoutStatus === 'paid_out')
           .sort((a, b) => (b.payoutMarkedAt?.seconds || 0) - (a.payoutMarkedAt?.seconds || 0));
-        setBookings(list);
+
+        // ✅ NEW — closes the "only shows bank NAME, not the account
+        // number" gap. Unlike a refund (which goes back to the guest's
+        // original payment method automatically — nothing to look up),
+        // a payout genuinely needs admin to see the owner's actual
+        // account number to send it manually. Fetched from the SAME
+        // businesses/ doc osb_profile_screen.dart's Payout section
+        // already writes bankAccountNumber/bankName/accountName to —
+        // one fetch per unique agency, not per booking, to avoid
+        // hitting Firestore once per row for agencies that appear
+        // multiple times in this list.
+        const agencyIds = [...new Set(list.map(b => b.agencyId).filter(Boolean))];
+        const agencyBankDetails = {};
+        await Promise.all(agencyIds.map(async (agencyId) => {
+          try {
+            const bizDoc = await getDoc(doc(db, 'businesses', agencyId));
+            if (bizDoc.exists()) {
+              const biz = bizDoc.data();
+              agencyBankDetails[agencyId] = {
+                bankName: biz.bankName || 'Not set',
+                accountNumber: biz.bankAccountNumber || 'Not set',
+                accountName: biz.accountName || '',
+              };
+            }
+          } catch (err) {
+            console.error(`Failed to load bank details for agency ${agencyId}:`, err);
+          }
+        }));
+
+        setBookings(list.map(b => ({ ...b, _bankDetails: agencyBankDetails[b.agencyId] || null })));
       } else {
         // ✅ NEW — refunds. No single "== confirmed" filter to start
         // from since a refund can happen on a booking at any
@@ -188,6 +217,27 @@ export default function AdminPayouts() {
                 {!isPayouts && b.refundDestination && (
                   <div className="mt-2 bg-gray-50 rounded-lg px-3 py-2">
                     <p className="text-xs text-gray-600">Refunds to: <span className="font-semibold text-gray-800">{b.refundDestination}</span></p>
+                  </div>
+                )}
+
+                {/* ✅ NEW — closes the "only shows bank name, not the
+                    account number" gap. Unlike a refund, a payout
+                    genuinely needs the full account number visible so
+                    admin can actually send it manually in Paystack. */}
+                {isPayouts && (
+                  <div className="mt-2 bg-gray-50 rounded-lg px-3 py-2">
+                    {b._bankDetails ? (
+                      <>
+                        <p className="text-xs text-gray-600">
+                          <span className="font-semibold text-gray-800">{b._bankDetails.bankName}</span> — {b._bankDetails.accountNumber}
+                        </p>
+                        {b._bankDetails.accountName && (
+                          <p className="text-xs text-gray-500 mt-0.5">{b._bankDetails.accountName}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-red-500">No bank details on file for this agency yet.</p>
+                    )}
                   </div>
                 )}
 
