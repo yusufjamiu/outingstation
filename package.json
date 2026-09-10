@@ -15,7 +15,7 @@
   "dependencies": {
     "canvg": "^4.0.3",
     "firebase": "^12.11.0",
-    "firebase-admin": "^13.7.0",
+    "firebase-admin": "^13.10.0",
     "gh-pages": "^6.3.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",

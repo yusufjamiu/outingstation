@@ -3,7 +3,7 @@ import {
   Home, Calendar, Users, Grid, GraduationCap, BarChart3, Unlock, LogOut, X,
   FileText, Bell, Ticket, Mail, Star, MapPin, ShoppingBag, ClipboardList,
   Wallet, Store, ChevronDown, BadgeCheck, Siren, Music, Sparkles, CalendarCheck,
-  AlertTriangle,
+  AlertTriangle, Banknote,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -25,6 +25,16 @@ const GROUPS = [
       // notify-dispute.js already emails admin the moment one comes in;
       // this is where admin actually works through the full list.
       { icon: AlertTriangle, label: 'Disputes', path: '/admin/disputes' },
+      // ✅ NEW — closes the loop with refund.js's lifecycle-check, which
+      // now flags a booking payoutStatus: 'manual_pending' the moment
+      // it's confirmed and emails admin — this is where that list
+      // actually lives, with a "Mark as Paid" action once sent by hand.
+      // ✅ CHANGED label from "Payouts" to "Money" — this page now
+      // covers manual refunds too, not just payouts to owners (both are
+      // fully manual for the same reason: pending Paystack Compliance
+      // approval, plus genuine uncertainty on refund's settlement
+      // behavior once tested for real).
+      { icon: Banknote, label: 'Money', path: '/admin/payouts' },
       // ✅ NEW — Tier 2 of the ride approval model. Sits right after
       // Businesses since a Ride Provider agency's vehicles are the thing
       // that actually needs review after the agency itself is approved

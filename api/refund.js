@@ -174,6 +174,73 @@ async function handleLifecycleCheck(req, res) {
       }
     }
 
+    // ─── Pass 3: flag newly-confirmed bookings for manual payout ───
+    // ✅ NEW — separate query, deliberately not folded into the loop
+    // above: that loop only ever sees PENDING bookings (guests who
+    // haven't confirmed yet). A booking reaches 'confirmed' two
+    // different ways — the guest tapping "Yes" directly in the app
+    // (client-side, never touches this cron at all), or Pass 2 above
+    // auto-releasing it — so catching BOTH paths needs its own query
+    // over confirmed bookings, checked for whether they've already been
+    // flagged (payoutStatus set) rather than assuming only today's
+    // auto-releases need marking.
+    //
+    // ⚠️ HONEST GAP, same shape as everywhere else in this build: this
+    // only ever marks payoutStatus: 'manual_pending' and alerts admin —
+    // it does NOT send any money. transfer.js's actual logic (blocked on
+    // Manual Payouts + Compliance approval) is what would eventually
+    // replace this pass with real automation; until then, this is the
+    // bridge that makes sure a booking owed a payout is at least VISIBLE
+    // and ALERTED on, not silently forgotten.
+    try {
+      const confirmedSnap = await getDocs(query(
+        collection(db, 'bookings'),
+        where('confirmationStatus', '==', 'confirmed')
+      ));
+      const needsPayoutFlag = confirmedSnap.docs.filter(d => !d.data().payoutStatus);
+
+      if (needsPayoutFlag.length > 0) {
+        const transporter2 = nodemailer.createTransport({
+          service: 'gmail',
+          auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+        });
+        for (const bookingDoc of needsPayoutFlag) {
+          const booking = bookingDoc.data();
+          try {
+            await updateDoc(doc(db, 'bookings', bookingDoc.id), {
+              payoutStatus: 'manual_pending',
+              payoutMarkedAt: serverTimestamp(),
+            });
+            await transporter2.sendMail({
+              from: `"OutingStation Alerts" <${process.env.GMAIL_USER}>`,
+              to: 'admin@outingstation.com',
+              subject: `💰 Payout owed — ${booking.listingTitle}`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+                  <div style="background: #ECFEFF; border-radius: 16px; padding: 24px;">
+                    <p style="margin: 0 0 4px; color: #0891B2; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Manual Payout Needed</p>
+                    <h2 style="margin: 0 0 16px; color: #0F172A; font-size: 18px;">${booking.listingTitle}</h2>
+                    <p style="margin: 0 0 8px; font-size: 14px; color: #374151;">Agency: ${booking.agencyName || 'Unknown'}</p>
+                    <p style="margin: 0 0 16px; font-size: 20px; font-weight: 800; color: #0891B2;">₦${Number(booking.ownerPayout || 0).toLocaleString()}</p>
+                    <p style="margin: 0; font-size: 12px; color: #64748B;">
+                      Automated transfers are still pending Paystack Compliance approval. Process this manually and mark it paid in the admin Payouts view once sent.
+                    </p>
+                  </div>
+                </div>
+              `,
+            });
+            results.payoutsFlagged = (results.payoutsFlagged || 0) + 1;
+            console.log(`💰 Flagged booking ${bookingDoc.id} for manual payout — admin alerted`);
+          } catch (payoutErr) {
+            console.error(`❌ Failed to flag payout for booking ${bookingDoc.id}:`, payoutErr);
+            results.errors++;
+          }
+        }
+      }
+    } catch (payoutPassErr) {
+      console.error('❌ Payout-flagging pass failed:', payoutPassErr);
+    }
+
     console.log(`✅ Lifecycle check complete:`, results);
     return res.status(200).json({ success: true, ...results });
   } catch (error) {
@@ -299,6 +366,30 @@ export default async function handler(req, res) {
       refundAmount = booking.amountPaid || 0;
     }
 
+    // ✅ NEW — the double-loss guard. If this booking's payout was
+    // ALREADY sent to the owner (payoutStatus: 'paid_out', set from the
+    // admin Payouts view once a manual transfer was actually made), a
+    // refund here would pull the same money out of OUR balance a SECOND
+    // time — Paystack's Refund API only knows about the original
+    // charge, it has no awareness that we already sent the owner's cut
+    // out separately, and it can't claw back a transfer automatically.
+    // Real risk, not hypothetical: OutingStation would be down both the
+    // payout already sent AND the refund just issued, with nothing
+    // coming back to offset it. Refuses to call Paystack in this case —
+    // this becomes a human problem (contacting the owner directly to
+    // return the money) rather than something the API can resolve, so
+    // it's flagged for manual reconciliation instead of silently
+    // creating a loss.
+    if (booking.payoutStatus === 'paid_out') {
+      await updateDoc(bookingRef, {
+        refundStatus: 'manual_reconciliation',
+        refundPercentage,
+        refundAmount,
+      });
+      console.error(`⚠️ ADMIN ATTENTION — booking ${bookingId} cancelled AFTER its payout was already sent. Refund blocked to prevent double-loss. Contact the owner (${booking.agencyName || 'unknown agency'}) directly to arrange returning ₦${refundAmount}.`);
+      return res.status(200).json({ success: true, manualReconciliationNeeded: true });
+    }
+
     // ─── No refund owed — still valid (0% cancellation policy), just skip Paystack ───
     // Note: this branch is only realistically reachable via the
     // cancellation path — a dispute refund is always refundPercentage =
@@ -319,46 +410,65 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, refundAmount: 0 });
     }
 
-    // ─── Call Paystack ───
-    const paystackRes = await fetch('https://api.paystack.co/refund', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        transaction: booking.paymentReference,
-        amount: refundAmount * 100, // kobo
-      }),
-    });
-
-    const data = await paystackRes.json();
-
-    if (!data.status) {
-      console.error('❌ Paystack refund request failed:', data.message);
-      await updateDoc(bookingRef, {
-        refundStatus: 'failed',
-        refundPercentage,
-        refundAmount,
-        refundError: data.message || 'Unknown error',
-        ...(isDisputeRefund ? {} : { cancelledAt: serverTimestamp() }),
-      });
-      return res.status(400).json({ error: data.message || 'Refund request failed' });
-    }
-
-    // Refunds are async — 'pending' here, moved to 'refunded' or 'failed'
-    // by paystack-webhook.js's refund.processed/refund.failed branch
-    // once Paystack actually finishes processing it.
+    // ✅ CHANGED — was calling Paystack's Refund API automatically at
+    // this point. Now deliberately does NOT — same "everything manual
+    // for now" decision already made for owner payouts, extended to
+    // refunds too, given the genuine uncertainty around how Paystack's
+    // settlement-based refund deduction behaves once money has actually
+    // reached the bank (our one real test happened only 3 minutes after
+    // payment, before T+1 settlement — it proved the mechanism works
+    // while funds are still in the Paystack balance, not the harder
+    // case). Rather than risk a refund failing unpredictably days after
+    // a guest expects it, this marks the booking for manual processing
+    // and alerts admin immediately — same shape as the payout-flagging
+    // pass in handleLifecycleCheck above, just triggered by cancellation
+    // instead of confirmation.
+    //
+    // Once admin actually processes this in Paystack's own dashboard,
+    // paystack-webhook.js's existing refund.processed/refund.failed
+    // branch still fires normally (Paystack sends that webhook
+    // regardless of whether a refund was created via API or by hand in
+    // the dashboard) — so refundStatus still gets moved to 'refunded'
+    // automatically once it actually completes. This code doesn't need
+    // to change for that; it already does the right thing.
     await updateDoc(bookingRef, {
-      refundStatus: 'pending',
+      refundStatus: 'manual_pending',
       refundPercentage,
       refundAmount,
-      refundReference: data.data?.id || null,
       ...(isDisputeRefund ? {} : { cancelledAt: serverTimestamp() }),
     });
 
-    console.log(`✅ Refund of ₦${refundAmount} initiated for booking ${bookingId} (${isDisputeRefund ? 'dispute resolution' : `${Math.round(refundPercentage * 100)}% cancellation policy`})`);
-    return res.status(200).json({ success: true, refundAmount, refundPercentage });
+    try {
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+      });
+      await transporter.sendMail({
+        from: `"OutingStation Alerts" <${process.env.GMAIL_USER}>`,
+        to: 'admin@outingstation.com',
+        subject: `💸 Refund owed — ${booking.listingTitle}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+            <div style="background: #FEF2F2; border-radius: 16px; padding: 24px;">
+              <p style="margin: 0 0 4px; color: #DC2626; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">Manual Refund Needed</p>
+              <h2 style="margin: 0 0 16px; color: #0F172A; font-size: 18px;">${booking.listingTitle}</h2>
+              <p style="margin: 0 0 8px; font-size: 14px; color: #374151;">Guest: ${booking.guestEmail}</p>
+              <p style="margin: 0 0 16px; font-size: 20px; font-weight: 800; color: #DC2626;">₦${Number(refundAmount).toLocaleString()}</p>
+              <p style="margin: 0 0 8px; font-size: 12px; color: #64748B;">Paystack reference: <strong>${booking.paymentReference}</strong></p>
+              <p style="margin: 0; font-size: 12px; color: #64748B;">
+                Process this manually in Paystack's dashboard using the reference above. Once completed there, it updates automatically here — no need to mark it manually.
+              </p>
+            </div>
+          </div>
+        `,
+      });
+      console.log(`📧 Admin alerted of manual refund needed for booking ${bookingId}`);
+    } catch (emailErr) {
+      console.error('❌ Failed to send manual-refund admin alert:', emailErr);
+    }
+
+    console.log(`💸 Booking ${bookingId} flagged for manual refund — ₦${refundAmount} (${isDisputeRefund ? 'dispute resolution' : `${Math.round(refundPercentage * 100)}% cancellation policy`})`);
+    return res.status(200).json({ success: true, refundAmount, refundPercentage, manual: true });
   } catch (error) {
     console.error('❌ refund.js error:', error);
     return res.status(500).json({ error: 'Failed to process refund' });

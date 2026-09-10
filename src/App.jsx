@@ -97,6 +97,7 @@ const SubmittedEvents = lazy(() => import('./pages/ambassador/SubmittedEvents'))
 const AmbassadorTracking = lazy(() => import('./pages/ambassador/AmbassadorTracking'));
 const AdminBusinesses = lazy(() => import('./pages/admin/AdminBusinesses'));
 const AdminDisputes = lazy(() => import('./pages/admin/AdminDisputes'));
+const AdminPayouts = lazy(() => import('./pages/admin/AdminPayouts'));
 const AdminPlaceClaims = lazy(() => import('./pages/admin/AdminPlaceClaims'));
 const CityAmbassadorCreate = lazy(() => import('./pages/ambassador/CityAmbassadorCreate'));
 
@@ -519,6 +520,13 @@ function App() {
                 <Route path="/admin/disputes" element={
                   <AdminRoute>
                     <AdminDisputes />
+                  </AdminRoute>
+                } />
+                {/* ✅ NEW — the manual payout bridge, pairs with
+                    refund.js's lifecycle-check payout-flagging pass. */}
+                <Route path="/admin/payouts" element={
+                  <AdminRoute>
+                    <AdminPayouts />
                   </AdminRoute>
                 } />
                 <Route path="/admin/place-claims" element={
