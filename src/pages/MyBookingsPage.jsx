@@ -303,7 +303,15 @@ function BookingDetailModal({ booking: initialBooking, onClose, onUpdated }) {
         body: JSON.stringify({ bookingId: booking.id }),
       }).catch(err => console.error('refund trigger failed:', err));
 
-      alert('Booking cancelled. Your refund is being processed.');
+      // ✅ FIXED — was a vague "Your refund is being processed." Now
+      // states the actual percentage and a realistic timeframe, same
+      // fix as my_bookings_screen.dart's mobile equivalent.
+      // "2-7 working days" reflects that refunds are now fully manual.
+      alert(
+        refundPercentage > 0
+          ? `Booking cancelled. ${Math.round(refundPercentage * 100)}% (₦${refundPreview.toLocaleString()}) will be refunded within 2–7 working days.`
+          : 'Booking cancelled. This cancellation was not eligible for a refund.'
+      );
     } catch (err) {
       console.error(err);
       alert('Something went wrong. Please try again.');

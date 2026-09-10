@@ -431,10 +431,46 @@ export default async function handler(req, res) {
     // the dashboard) — so refundStatus still gets moved to 'refunded'
     // automatically once it actually completes. This code doesn't need
     // to change for that; it already does the right thing.
+    // ✅ NEW — closes the "admin can't see which account this goes
+    // back to" gap. Important distinction worth being clear about: a
+    // REFUND is never sent to a bank account you specify — Paystack
+    // automatically sends it back to whatever the guest ORIGINALLY paid
+    // with (their card, or the bank account they transferred from).
+    // There's nothing for admin to type in. What was genuinely missing
+    // was just VISIBILITY into what that original payment method was,
+    // for confidence before confirming — this fetches it from Paystack's
+    // own transaction record (via the stored paymentReference) and
+    // saves a human-readable summary directly on the booking, so
+    // AdminPayouts.jsx can show it without a live API call from the
+    // browser.
+    let refundDestination = 'See Paystack dashboard for payment method';
+    try {
+      const verifyRes = await fetch(`https://api.paystack.co/transaction/verify/${booking.paymentReference}`, {
+        headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      });
+      const verifyData = await verifyRes.json();
+      const auth = verifyData?.data?.authorization;
+      if (auth) {
+        if (auth.channel === 'card') {
+          refundDestination = `Card ending ${auth.last4 || '????'} (${auth.bank || auth.card_type || 'Unknown bank'})`;
+        } else if (auth.channel === 'bank' || auth.channel === 'bank_transfer') {
+          refundDestination = `Bank transfer — ${auth.bank || 'Unknown bank'}${auth.account_name ? ` (${auth.account_name})` : ''}`;
+        } else if (auth.channel) {
+          refundDestination = `${auth.channel} — ${auth.bank || 'Unknown bank'}`;
+        }
+      }
+    } catch (verifyErr) {
+      console.error('⚠️ Could not fetch payment method for refund destination display:', verifyErr);
+      // Falls back to the default string above — this is a nice-to-have
+      // for admin visibility, never worth blocking the actual refund
+      // flag over.
+    }
+
     await updateDoc(bookingRef, {
       refundStatus: 'manual_pending',
       refundPercentage,
       refundAmount,
+      refundDestination,
       ...(isDisputeRefund ? {} : { cancelledAt: serverTimestamp() }),
     });
 
@@ -455,6 +491,7 @@ export default async function handler(req, res) {
               <p style="margin: 0 0 8px; font-size: 14px; color: #374151;">Guest: ${booking.guestEmail}</p>
               <p style="margin: 0 0 16px; font-size: 20px; font-weight: 800; color: #DC2626;">₦${Number(refundAmount).toLocaleString()}</p>
               <p style="margin: 0 0 8px; font-size: 12px; color: #64748B;">Paystack reference: <strong>${booking.paymentReference}</strong></p>
+              <p style="margin: 0 0 8px; font-size: 12px; color: #64748B;">Refunds to: <strong>${refundDestination}</strong></p>
               <p style="margin: 0; font-size: 12px; color: #64748B;">
                 Process this manually in Paystack's dashboard using the reference above. Once completed there, it updates automatically here — no need to mark it manually.
               </p>
