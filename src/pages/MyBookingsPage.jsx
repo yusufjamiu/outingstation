@@ -2,7 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { PaystackButton } from 'react-paystack';
+// ✅ FIXED — was `import { PaystackButton } from 'react-paystack'`, the
+// library's pre-built button component. Confirmed via a real browser
+// console dump that nothing was crashing — no error anywhere mentioned
+// PaystackButton, MyBookingsPage, or BookingListCard — yet the button
+// still rendered nothing at all (Delete took the full row width, its
+// only flex sibling missing entirely). Since there's no evidence of A
+// CRASH, this points to the library's own internal rendering logic
+// quietly returning null for some reason I can't verify without its
+// source. Switched to usePaystackPayment (the HOOK integration style,
+// documented as an equally-supported alternative) instead — it returns
+// a plain FUNCTION, and the actual button rendered is fully mine (a
+// normal <button>), which can never "disappear" the way a black-box
+// component's internals might.
+import { usePaystackPayment } from 'react-paystack';
 import { bookingAwaitsConfirmation } from '../utils/bookingHelpers';
 import { X, MapPin, Phone, Car, Home as HomeIcon } from 'lucide-react';
 import Navbar from '../components/Navbar';
@@ -92,17 +105,18 @@ function BookingListCard({ booking: b, onSelect, onUpdated }) {
     ? (b.checkInDate && b.checkOutDate ? `${b.checkInDate.toDate().toLocaleDateString()} → ${b.checkOutDate.toDate().toLocaleDateString()}` : 'Dates unavailable')
     : (b.tripDateTime ? b.tripDateTime.toDate().toLocaleString() : 'Trip date unavailable');
 
-  // ✅ NEW — "Continue Payment" for an unpaid booking. Reuses the
-  // EXISTING paymentReference (confirmed present even on an abandoned
-  // checkout, from real Firestore data) so this resumes the same
-  // transaction rather than creating an orphaned duplicate — matches
-  // my_bookings_screen.dart's mobile equivalent. Uses PaystackButton
-  // directly (the same client-side, public-key pattern
-  // ShortletBookingModal/RideBookingModal already use for a brand-new
-  // booking) rather than the server-initialize flow mobile needs —
-  // web never needed that server round-trip to begin with.
-  const paystackConfig = isPending ? {
-    reference: b.paymentReference || `${isShortlet ? 'SHORTLET' : 'RIDE'}-${b.id}-${Date.now()}`,
+  // ✅ FIXED (again) — was reusing the EXISTING paymentReference
+  // (Paystack rejects that — confirmed against their own error docs,
+  // single-use even for an abandoned attempt) — that fix is still here,
+  // a fresh reference every render. ALSO switched from the
+  // <PaystackButton> component to the usePaystackPayment HOOK — see the
+  // import comment above for why. React hooks can't be called
+  // conditionally, so this is always called (safe — it doesn't submit
+  // anything by itself), and the returned initializePayment function is
+  // only ever actually INVOKED from the button below, which itself only
+  // renders when isPending is true.
+  const paystackConfig = {
+    reference: `${isShortlet ? 'SHORTLET' : 'RIDE'}-${b.id}-${Date.now()}`,
     email: currentUser?.email || '',
     amount: Number(b.amount || 0) * 100,
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
@@ -114,7 +128,25 @@ function BookingListCard({ booking: b, onSelect, onUpdated }) {
       purchase_type: isShortlet ? 'shortlet_booking' : 'ride_booking',
       booking_id: b.id,
     },
-  } : null;
+  };
+  const initializePayment = usePaystackPayment(paystackConfig);
+
+  const handleContinuePayment = () => {
+    // ✅ Positional arguments, not an options object — confirmed against
+    // the docs already fetched for this fix (PaystackConsumer's own
+    // example: `initializePayment(handleSuccess, handleClose)`). Caught
+    // my own mistake here before delivering it — first draft wrote this
+    // as `initializePayment({ onSuccess: ..., onClose: ... })`, the
+    // wrong shape, which would have been a second guessed-API bug
+    // introduced while fixing the first one.
+    initializePayment(
+      () => {
+        alert('Payment received! Your booking is being confirmed.');
+        onUpdated();
+      },
+      () => {}
+    );
+  };
 
   // ✅ NEW — soft delete only, matching the Firestore rule's
   // paymentStatus != 'paid' guard exactly (enforced server-side, not
@@ -174,19 +206,18 @@ function BookingListCard({ booking: b, onSelect, onUpdated }) {
           >
             Delete
           </button>
-          {paystackConfig && (
-            <PaystackButton
-              {...paystackConfig}
-              text="Continue Payment"
-              onSuccess={() => {
-                alert('Payment received! Your booking is being confirmed.');
-                onUpdated();
-              }}
-              onClose={() => {}}
-              className="flex-[2] text-center text-xs font-bold text-white py-2 rounded-xl transition"
-              style={{ backgroundColor: isShortlet ? _kShortletBrown : _kRideBlue }}
-            />
-          )}
+          {/* ✅ FIXED — a plain button I fully control, calling the
+              usePaystackPayment hook's initializePayment() on click,
+              instead of <PaystackButton> (which rendered nothing at all
+              for reasons I couldn't verify without its source — no
+              crash, no console error, it just silently didn't appear). */}
+          <button
+            onClick={handleContinuePayment}
+            className="flex-[2] text-center text-xs font-bold text-white py-2 rounded-xl transition"
+            style={{ backgroundColor: isShortlet ? _kShortletBrown : _kRideBlue }}
+          >
+            Continue Payment
+          </button>
         </div>
       )}
     </div>
