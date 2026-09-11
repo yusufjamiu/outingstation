@@ -61,11 +61,23 @@ export default function AdminPayouts() {
             const bizDoc = await getDoc(doc(db, 'businesses', agencyId));
             if (bizDoc.exists()) {
               const biz = bizDoc.data();
-              agencyBankDetails[agencyId] = {
-                bankName: biz.bankName || 'Not set',
-                accountNumber: biz.bankAccountNumber || 'Not set',
-                accountName: biz.accountName || '',
-              };
+              // ✅ FIXED — was substituting the literal string 'Not set'
+              // as a stand-in VALUE whenever bankName/bankAccountNumber
+              // were missing, which meant the object below was always
+              // truthy (the business doc itself exists, even if its
+              // bank fields don't) — so the "No bank details on file"
+              // warning never actually triggered, and the card showed
+              // "Not set — Not set" as if it were real data instead.
+              // Now only populates this at all when BOTH fields
+              // genuinely have real values — otherwise leaves it
+              // undefined, which correctly falls through to the warning.
+              if (biz.bankName && biz.bankAccountNumber) {
+                agencyBankDetails[agencyId] = {
+                  bankName: biz.bankName,
+                  accountNumber: biz.bankAccountNumber,
+                  accountName: biz.accountName || '',
+                };
+              }
             }
           } catch (err) {
             console.error(`Failed to load bank details for agency ${agencyId}:`, err);
