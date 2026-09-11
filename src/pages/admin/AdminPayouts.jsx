@@ -207,16 +207,34 @@ export default function AdminPayouts() {
                   <span className="font-mono text-gray-400">{b.id}</span>
                 </div>
 
-                {/* ✅ NEW — closes the "admin can't see which account
-                    this refunds to" gap. Never a manually-entered
-                    account — Paystack always refunds back to whatever
-                    the guest originally paid with; this is just
-                    visibility into what that was, fetched from
-                    Paystack's own transaction record when refund.js
-                    flagged this booking. */}
-                {!isPayouts && b.refundDestination && (
+                {/* ✅ CHANGED — refunds no longer go through Paystack's
+                    own refund mechanism at all (same balance/settlement
+                    risk either way, automatic or manual-in-dashboard).
+                    Now sent as a direct bank transfer, same as an owner
+                    payout, using the account details the GUEST provided
+                    directly at cancellation time — this is the
+                    PRIMARY info admin needs to actually send it. */}
+                {!isPayouts && (
                   <div className="mt-2 bg-gray-50 rounded-lg px-3 py-2">
-                    <p className="text-xs text-gray-600">Refunds to: <span className="font-semibold text-gray-800">{b.refundDestination}</span></p>
+                    {b.refundBankName && b.refundAccountNumber ? (
+                      <>
+                        <p className="text-xs text-gray-600">
+                          <span className="font-semibold text-gray-800">{b.refundBankName}</span> — {b.refundAccountNumber}
+                        </p>
+                        {b.refundAccountName && (
+                          <p className="text-xs text-gray-500 mt-0.5">{b.refundAccountName}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-red-500">No bank details provided by guest yet.</p>
+                    )}
+                    {/* Secondary cross-reference — Paystack's own record
+                        of the original payment method, useful to
+                        confirm the guest's provided details roughly
+                        match how they actually paid. */}
+                    {b.refundDestination && (
+                      <p className="text-xs text-gray-400 mt-1">Originally paid via: {b.refundDestination}</p>
+                    )}
                   </div>
                 )}
 

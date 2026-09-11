@@ -35,6 +35,21 @@ import Footer from '../components/Footer';
 const _kShortletBrown = '#B45309';
 const _kRideBlue = '#1D4ED8';
 
+// ✅ NEW — same bank list as osb_registration_screen.dart's
+// _kNigerianBanks / my_bookings_screen.dart's mobile equivalent,
+// duplicated here rather than shared — kept in sync deliberately.
+const NIGERIAN_BANKS = [
+  ['Access Bank', '044'], ['Citibank Nigeria', '023'], ['Ecobank Nigeria', '050'],
+  ['Fidelity Bank', '070'], ['First Bank of Nigeria', '011'], ['First City Monument Bank', '214'],
+  ['Globus Bank', '00103'], ['Guaranty Trust Bank', '058'], ['Heritage Bank', '030'],
+  ['Jaiz Bank', '301'], ['Keystone Bank', '082'], ['Kuda Microfinance Bank', '50211'],
+  ['Moniepoint MFB', '50515'], ['Opay', '999992'], ['PalmPay', '999991'],
+  ['Parallex Bank', '104'], ['Polaris Bank', '076'], ['Providus Bank', '101'],
+  ['Stanbic IBTC Bank', '221'], ['Standard Chartered Bank', '068'], ['Sterling Bank', '232'],
+  ['Suntrust Bank', '100'], ['Union Bank of Nigeria', '032'], ['United Bank For Africa', '033'],
+  ['Unity Bank', '215'], ['Wema Bank', '035'], ['Zenith Bank', '057'],
+];
+
 function StatusPill({ booking }) {
   const paymentStatus = booking.paymentStatus || 'pending';
   const confirmationStatus = booking.confirmationStatus || 'pending';
@@ -231,6 +246,18 @@ function BookingDetailModal({ booking: initialBooking, onClose, onUpdated }) {
   const [submitting, setSubmitting] = useState(false);
   const [showReportForm, setShowReportForm] = useState(false);
   const [reportReason, setReportReason] = useState('');
+  // ✅ NEW — same reasoning as my_bookings_screen.dart's mobile
+  // equivalent: refunds no longer go through Paystack's own mechanism
+  // at all (that draws from the same balance/pending-settlement pool
+  // regardless of automatic vs. manual-in-dashboard, so it carries the
+  // same "already settled to the bank, nothing left" risk either way).
+  // Sent as a direct bank transfer instead, same as an owner payout,
+  // which genuinely needs the guest's own account details.
+  const [showBankForm, setShowBankForm] = useState(false);
+  const [bankCode, setBankCode] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
 
   const isShortlet = booking.type === 'shortlet';
   const accent = isShortlet ? _kShortletBrown : _kRideBlue;
@@ -283,17 +310,45 @@ function BookingDetailModal({ booking: initialBooking, onClose, onUpdated }) {
     }
   })();
 
-  const handleCancel = async () => {
+  // ✅ NEW — entry point for the "Cancel Booking" button. If a refund is
+  // actually owed, reveals the bank-details form instead of proceeding
+  // directly — same reasoning as my_bookings_screen.dart's mobile
+  // equivalent: refunds are now sent as a direct bank transfer, which
+  // genuinely needs the guest's own account details first.
+  const handleCancelClick = () => {
+    if (refundPercentage > 0) {
+      setShowBankForm(true);
+      return;
+    }
+    // No refund owed — same simple confirm flow as before, no bank
+    // details to collect for nothing.
+    if (!window.confirm("Cancel this booking?\n\nBased on the cancellation policy, this cancellation is not eligible for a refund. This can't be undone.")) return;
+    handleCancel(null);
+  };
+
+  const handleConfirmWithBank = () => {
+    if (!bankCode || accountNumber.trim().length !== 10 || !accountName.trim()) return;
     const subtotal = booking.subtotal || 0;
     const refundPreview = Math.round(subtotal * refundPercentage);
-    const message = refundPercentage > 0
-      ? `Based on the cancellation policy, you'll receive ₦${refundPreview.toLocaleString()} back (${Math.round(refundPercentage * 100)}% of the ${isShortlet ? 'stay cost' : 'trip fare'}). The service fee is never refunded. This can't be undone.`
-      : `Based on the cancellation policy, this cancellation is not eligible for a refund. This can't be undone.`;
-    if (!window.confirm(`Cancel this booking?\n\n${message}`)) return;
+    if (!window.confirm(`Cancel this booking?\n\nBased on the cancellation policy, you'll receive ₦${refundPreview.toLocaleString()} back (${Math.round(refundPercentage * 100)}% of the ${isShortlet ? 'stay cost' : 'trip fare'}). The service fee is never refunded. This can't be undone.`)) return;
+    handleCancel({ bankCode, bankName, accountNumber: accountNumber.trim(), accountName: accountName.trim() });
+  };
+
+  const handleCancel = async (bankDetails) => {
+    const subtotal = booking.subtotal || 0;
+    const refundPreview = Math.round(subtotal * refundPercentage);
 
     setSubmitting(true);
     try {
-      await updateDoc(doc(db, 'bookings', booking.id), { confirmationStatus: 'cancelled' });
+      await updateDoc(doc(db, 'bookings', booking.id), {
+        confirmationStatus: 'cancelled',
+        ...(bankDetails ? {
+          refundBankName: bankDetails.bankName,
+          refundBankCode: bankDetails.bankCode,
+          refundAccountNumber: bankDetails.accountNumber,
+          refundAccountName: bankDetails.accountName,
+        } : {}),
+      });
       setBooking(prev => ({ ...prev, confirmationStatus: 'cancelled' }));
       onUpdated();
 
@@ -466,13 +521,62 @@ function BookingDetailModal({ booking: initialBooking, onClose, onUpdated }) {
                   ? `Cancelling now refunds ${Math.round(refundPercentage * 100)}% of the ${isShortlet ? 'stay cost' : 'trip fare'} (service fee is never refunded).`
                   : 'Cancelling now is not eligible for a refund, based on the cancellation policy.'}
               </p>
-              <button
-                onClick={handleCancel}
-                disabled={submitting}
-                className="w-full border border-red-500 text-red-600 text-sm font-bold py-2 rounded-xl hover:bg-red-50 transition disabled:opacity-50"
-              >
-                Cancel Booking
-              </button>
+              {!showBankForm ? (
+                <button
+                  onClick={handleCancelClick}
+                  disabled={submitting}
+                  className="w-full border border-red-500 text-red-600 text-sm font-bold py-2 rounded-xl hover:bg-red-50 transition disabled:opacity-50"
+                >
+                  Cancel Booking
+                </button>
+              ) : (
+                // ✅ NEW — only revealed when a refund is actually owed.
+                // Refunds are now sent as a direct bank transfer from
+                // OutingStation's own account (same mechanism as an
+                // owner payout) rather than through Paystack's own
+                // refund mechanism — see the state declaration comment
+                // above for the full reasoning.
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-gray-700">Where should we send your refund?</p>
+                  <select
+                    value={bankCode}
+                    onChange={e => {
+                      const bank = NIGERIAN_BANKS.find(b => b[1] === e.target.value);
+                      setBankCode(bank ? bank[1] : '');
+                      setBankName(bank ? bank[0] : '');
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  >
+                    <option value="">Select your bank</option>
+                    {NIGERIAN_BANKS.map(([name, code]) => <option key={code} value={code}>{name}</option>)}
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Account Number"
+                    value={accountNumber}
+                    maxLength={10}
+                    onChange={e => setAccountNumber(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Account Name"
+                    value={accountName}
+                    onChange={e => setAccountName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowBankForm(false)} className="flex-1 border border-gray-200 text-gray-600 text-sm py-2 rounded-xl">Back</button>
+                    <button
+                      onClick={handleConfirmWithBank}
+                      disabled={submitting || !bankCode || accountNumber.trim().length !== 10 || !accountName.trim()}
+                      className="flex-1 bg-red-600 text-white text-sm font-bold py-2 rounded-xl hover:bg-red-700 transition disabled:opacity-50"
+                    >
+                      Confirm Cancellation
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

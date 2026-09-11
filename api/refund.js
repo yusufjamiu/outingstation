@@ -454,7 +454,7 @@ export default async function handler(req, res) {
         if (auth.channel === 'card') {
           refundDestination = `Card ending ${auth.last4 || '????'} (${auth.bank || auth.card_type || 'Unknown bank'})`;
         } else if (auth.channel === 'bank' || auth.channel === 'bank_transfer') {
-          refundDestination = `Bank transfer — ${auth.bank || 'Unknown bank'}${auth.account_name ? ` (${auth.account_name})` : ''}`;
+          refundDestination = `Bank transfer — ${auth.bank || 'Unknown bank'}`;
         } else if (auth.channel) {
           refundDestination = `${auth.channel} — ${auth.bank || 'Unknown bank'}`;
         }
@@ -464,6 +464,19 @@ export default async function handler(req, res) {
       // Falls back to the default string above — this is a nice-to-have
       // for admin visibility, never worth blocking the actual refund
       // flag over.
+    }
+
+    // ✅ FIXED — was trying to include Paystack's own
+    // `authorization.account_name` in parentheses, e.g. "Bank transfer
+    // — OPay (Guest Name)". Confirmed via a real refund (OPay channel)
+    // that Paystack doesn't reliably populate that field for every
+    // channel — it was silently just missing, no name shown at all.
+    // Switched to the booking's OWN guestName field instead, which is
+    // always reliably available (captured directly at checkout, not
+    // dependent on what Paystack's API happens to return) — this now
+    // always shows the guest's name regardless of payment channel.
+    if (booking.guestName) {
+      refundDestination = `${refundDestination} — Guest: ${booking.guestName}`;
     }
 
     await updateDoc(bookingRef, {
