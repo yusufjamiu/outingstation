@@ -1256,6 +1256,123 @@ export default async function handler(req, res) {
       const platformFee = Math.round(subtotal * PLATFORM_FEE_PERCENTAGE);
       const ownerPayout = amountPaid - platformFee;
 
+      // ─── Layer 2 of the double-booking fix ──────────────────────────
+      // ✅ NEW — the actual safety net. The client-side check
+      // (shortlet_booking_screen.dart / ride_booking_screen.dart and
+      // their web equivalents) reduces the LIKELIHOOD of a
+      // double-booking but can't fully prevent one — two guests could
+      // both pass that check within seconds of each other, before
+      // either has actually paid, since Paystack payment isn't instant.
+      // This webhook is the one moment we know for CERTAIN a payment
+      // genuinely completed, so it re-checks for a real conflict right
+      // here, against every OTHER already-paid, non-cancelled booking
+      // for this same listing (excluding this one).
+      //
+      // ⚠️ Same default-duration assumption as the client-side Ride
+      // check for a 'trip' mode booking — see ride_booking_screen.dart's
+      // _kDefaultTripBlockHours comment for the full reasoning.
+      const DEFAULT_TRIP_BLOCK_HOURS = 3;
+      let hasConflict = false;
+      try {
+        const otherBookingsSnap = await getDocs(query(
+          collection(db, 'bookings'),
+          where('listingId', '==', bookingData.listingId),
+          where('paymentStatus', '==', 'paid')
+        ));
+        for (const otherDoc of otherBookingsSnap.docs) {
+          if (otherDoc.id === metadata.bookingId) continue; // never compare against itself
+          const other = otherDoc.data();
+          if (other.confirmationStatus === 'cancelled') continue;
+
+          if (isShortlet) {
+            const otherCheckIn = other.checkInDate?.toDate();
+            const otherCheckOut = other.checkOutDate?.toDate();
+            const thisCheckIn = bookingData.checkInDate?.toDate();
+            const thisCheckOut = bookingData.checkOutDate?.toDate();
+            if (!otherCheckIn || !otherCheckOut || !thisCheckIn || !thisCheckOut) continue;
+            if (thisCheckIn < otherCheckOut && thisCheckOut > otherCheckIn) { hasConflict = true; break; }
+          } else {
+            const otherStart = other.tripDateTime?.toDate();
+            const thisStart = bookingData.tripDateTime?.toDate();
+            if (!otherStart || !thisStart) continue;
+            const otherHours = other.bookingMode === 'hour' ? (other.hours || 1) : DEFAULT_TRIP_BLOCK_HOURS;
+            const thisHours = bookingData.bookingMode === 'hour' ? (bookingData.hours || 1) : DEFAULT_TRIP_BLOCK_HOURS;
+            const otherEnd = new Date(otherStart.getTime() + otherHours * 60 * 60 * 1000);
+            const thisEnd = new Date(thisStart.getTime() + thisHours * 60 * 60 * 1000);
+            if (thisStart < otherEnd && thisEnd > otherStart) { hasConflict = true; break; }
+          }
+        }
+      } catch (conflictCheckErr) {
+        console.error('❌ Double-booking conflict check failed:', conflictCheckErr);
+        // Fails OPEN here specifically, unlike the client-side checks —
+        // by this point the guest has genuinely already been charged;
+        // refusing to confirm a real payment over a check that itself
+        // failed would be worse than the rare conflict this check
+        // exists to catch. Logged loudly so it's never silent either way.
+      }
+
+      if (hasConflict) {
+        // The charge is real and already happened — that can't be
+        // undone by refusing to acknowledge it. What CAN happen: mark it
+        // paid (honest about the fact), immediately cancel it (it can
+        // never actually be honored), and trigger a full, automatic
+        // refund — the guest did nothing wrong here, this is entirely a
+        // system-timing issue, not something their cancellation policy
+        // percentage should apply to.
+        await updateDoc(bookingRef, {
+          paymentStatus: 'paid',
+          escrowStatus: 'held',
+          amountPaid,
+          platformFee,
+          ownerPayout,
+          paymentReference: paymentData.reference,
+          paidAt: serverTimestamp(),
+          bookingConflict: true,
+          confirmationStatus: 'cancelled',
+        });
+        console.error(`⚠️ DOUBLE-BOOKING CONFLICT — booking ${metadata.bookingId} for listing ${bookingData.listingId} overlaps an already-paid booking. Auto-cancelling and triggering a full refund.`);
+
+        try {
+          await fetch('https://www.outingstation.com/api/refund', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bookingId: metadata.bookingId, source: 'booking_conflict' }),
+          });
+        } catch (refundTriggerErr) {
+          console.error('❌ Failed to trigger conflict refund:', refundTriggerErr);
+        }
+
+        // Guest gets a plain, honest explanation — not the normal
+        // booking confirmation email, since this booking was never
+        // actually going to be honored.
+        try {
+          const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+          });
+          await transporter.sendMail({
+            from: `"OutingStation" <${process.env.GMAIL_USER}>`,
+            to: paymentData.customer.email,
+            subject: `We're sorry — a scheduling conflict on ${bookingData.listingTitle}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+                <div style="background: #FEF2F2; border-radius: 16px; padding: 24px;">
+                  <h2 style="margin: 0 0 12px; color: #0F172A; font-size: 18px;">${bookingData.listingTitle}</h2>
+                  <p style="margin: 0 0 16px; font-size: 14px; color: #374151; line-height: 1.6;">
+                    We're sorry — your payment went through, but these dates/time were booked by someone else moments before you. This booking has been cancelled and you'll receive a full refund of ₦${amountPaid.toLocaleString()}.
+                  </p>
+                  <p style="margin: 0; font-size: 12px; color: #64748B;">Our team has already been notified and your refund is being processed.</p>
+                </div>
+              </div>
+            `,
+          });
+        } catch (conflictEmailErr) {
+          console.error('❌ Failed to send conflict apology email:', conflictEmailErr);
+        }
+
+        return res.status(200).json({ success: true, conflict: true, bookingId: metadata.bookingId });
+      }
+
       await updateDoc(bookingRef, {
         paymentStatus: 'paid',
         escrowStatus: 'held',

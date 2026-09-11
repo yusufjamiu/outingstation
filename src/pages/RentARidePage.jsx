@@ -226,6 +226,41 @@ function RideBookingModal({ ride: r, onClose }) {
   const canProceed = tripDate && tripTime && (bookingMode !== 'hour' || hours >= minHours) && phone.trim().length >= 7;
   const todayStr = new Date().toISOString().split('T')[0];
 
+  // ⚠️ ASSUMPTION — same as ride_booking_screen.dart's mobile
+  // equivalent: a 'trip' mode booking (flat price, no explicit duration
+  // captured) is treated as blocking the vehicle for this many hours
+  // for overlap-checking purposes only. An 'hour' mode booking uses its
+  // own real, stored `hours` value instead.
+  const DEFAULT_TRIP_BLOCK_HOURS = 3;
+
+  // ✅ NEW — Layer 1 of the double-booking fix, same reasoning as the
+  // mobile equivalent.
+  const checkTimeSlotAvailable = async (newStart) => {
+    const newEnd = new Date(newStart.getTime() + (bookingMode === 'hour' ? hours : DEFAULT_TRIP_BLOCK_HOURS) * 60 * 60 * 1000);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'bookings'),
+        where('listingId', '==', r.id),
+        where('paymentStatus', '==', 'paid')
+      ));
+      for (const docSnap of snap.docs) {
+        const existing = docSnap.data();
+        if (existing.confirmationStatus === 'cancelled') continue;
+        const existingStart = existing.tripDateTime?.toDate();
+        if (!existingStart) continue;
+        const existingHours = existing.bookingMode === 'hour' ? (existing.hours || 1) : DEFAULT_TRIP_BLOCK_HOURS;
+        const existingEnd = new Date(existingStart.getTime() + existingHours * 60 * 60 * 1000);
+        if (newStart < existingEnd && newEnd > existingStart) {
+          return false; // genuine overlap found
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error('Error checking time slot availability:', err);
+      return false;
+    }
+  };
+
   const handleCreateBooking = async () => {
     if (!currentUser) {
       alert('Please log in to book.');
@@ -233,8 +268,16 @@ function RideBookingModal({ ride: r, onClose }) {
     }
     if (!canProceed) return;
     setCreating(true);
+
+    const tripDateTime = new Date(`${tripDate}T${tripTime}`);
+    const available = await checkTimeSlotAvailable(tripDateTime);
+    if (!available) {
+      alert('This time slot is no longer available. Please choose a different time.');
+      setCreating(false);
+      return;
+    }
+
     try {
-      const tripDateTime = new Date(`${tripDate}T${tripTime}`);
       const bookingRef = await addDoc(collection(db, 'bookings'), {
         type: 'ride',
         listingId: r.id,

@@ -219,6 +219,39 @@ function ShortletBookingModal({ shortlet: s, onClose }) {
     ? new Date(new Date(checkIn).getTime() + minNights * 86400000).toISOString().split('T')[0]
     : todayStr;
 
+  // ✅ NEW — Layer 1 of the double-booking fix, same reasoning as the
+  // mobile equivalents (shortlet_booking_screen.dart). Firestore can't
+  // express "any overlapping date range" in one query, so this fetches
+  // every PAID, non-cancelled booking for this one listing and checks
+  // overlap in code.
+  const checkDatesAvailable = async () => {
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'bookings'),
+        where('listingId', '==', s.id),
+        where('paymentStatus', '==', 'paid')
+      ));
+      for (const docSnap of snap.docs) {
+        const existing = docSnap.data();
+        if (existing.confirmationStatus === 'cancelled') continue;
+        const existingCheckIn = existing.checkInDate?.toDate();
+        const existingCheckOut = existing.checkOutDate?.toDate();
+        if (!existingCheckIn || !existingCheckOut) continue;
+        const newCheckIn = new Date(checkIn);
+        const newCheckOut = new Date(checkOut);
+        if (newCheckIn < existingCheckOut && newCheckOut > existingCheckIn) {
+          return false; // genuine overlap found
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error('Error checking date availability:', err);
+      // Fails CLOSED — refuse to proceed rather than risk a real
+      // double-booking slipping through if this check itself fails.
+      return false;
+    }
+  };
+
   const handleCreateBooking = async () => {
     if (!currentUser) {
       alert('Please log in to book.');
@@ -226,6 +259,14 @@ function ShortletBookingModal({ shortlet: s, onClose }) {
     }
     if (!canProceed) return;
     setCreating(true);
+
+    const available = await checkDatesAvailable();
+    if (!available) {
+      alert('These dates are no longer available. Please choose different dates.');
+      setCreating(false);
+      return;
+    }
+
     try {
       // ✅ Pending booking doc — same shape as shortlet_booking_screen.dart's
       // (mobile), same trust model: paymentStatus/escrowStatus start

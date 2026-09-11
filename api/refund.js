@@ -285,6 +285,12 @@ export default async function handler(req, res) {
     // money.
     const { bookingId, source } = req.body;
     const isDisputeRefund = source === 'admin_dispute';
+    // ✅ NEW — the double-booking safety net's refund path. Triggered by
+    // paystack-webhook.js when it catches a genuine scheduling conflict
+    // at the one moment a payment is confirmed real. Always 100% — the
+    // guest did nothing wrong here, this is entirely a system-timing
+    // issue, so no cancellation-policy percentage should ever apply.
+    const isConflictRefund = source === 'booking_conflict';
 
     if (!bookingId) {
       return res.status(400).json({ error: 'Missing bookingId' });
@@ -335,12 +341,14 @@ export default async function handler(req, res) {
     const isShortlet = booking.type === 'shortlet';
     const subtotal = booking.subtotal || 0;
 
-    // ─── Calculate the refund amount — the two paths diverge here ───
+    // ─── Calculate the refund amount — the paths diverge here ───
     let refundPercentage;
-    if (isDisputeRefund) {
+    if (isDisputeRefund || isConflictRefund) {
       // A dispute refund is always the FULL subtotal — admin already
       // made the judgment call that the guest is owed it back; there's
-      // no policy percentage to apply on top of that decision.
+      // no policy percentage to apply on top of that decision. A
+      // conflict refund is the same for a different reason — see the
+      // isConflictRefund declaration above.
       refundPercentage = 1.0;
     } else {
       // Cancellation path — original policy-based calculation, unchanged.
