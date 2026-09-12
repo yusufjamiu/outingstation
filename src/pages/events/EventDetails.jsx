@@ -1455,10 +1455,41 @@ export default function EventDetails() {
     }
   };
 
-  const handleShare = (platform) => {
-    const shareUrl = event?.slug
-      ? `https://www.outingstation.com/e/${event.slug}`
-      : `https://www.outingstation.com/event/${event.id}`;
+  // ✅ FIXED — was falling back to /event/{id} (the raw Firestore ID,
+  // no short link at all) whenever event.slug was missing — which is
+  // ALWAYS the case for an Experience or a Place, since only genuine
+  // Events have a real slug field. A THIRD separate spot with the same
+  // underlying issue already fixed for the card link and the "Open in
+  // App" banner. Now genuinely GENERATES a shareCode on the spot for a
+  // real experience (checked by actual document existence in the
+  // `experiences` collection — not a mapped field like subCategory,
+  // which a mobile-side bug already proved unreliable to trust) rather
+  // than just hoping one already exists. Made async to support the
+  // Firestore write this needs.
+  const slugify = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+  const handleShare = async (platform) => {
+    let shareUrl;
+    if (event?.slug) {
+      shareUrl = `https://www.outingstation.com/e/${event.slug}`;
+    } else {
+      try {
+        const expDoc = await getDoc(doc(db, 'experiences', event.id));
+        if (expDoc.exists()) {
+          let code = expDoc.data().shareCode;
+          if (!code) {
+            code = Array.from({ length: 6 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+            await updateDoc(doc(db, 'experiences', event.id), { shareCode: code });
+          }
+          shareUrl = `https://www.outingstation.com/e/${slugify(event.title)}-${code}`;
+        } else {
+          shareUrl = `https://www.outingstation.com/event/${event.id}`;
+        }
+      } catch (err) {
+        console.error('Error generating share code:', err);
+        shareUrl = `https://www.outingstation.com/event/${event.id}`;
+      }
+    }
     const text = `Check out this event: ${event.title}`;
     const shareUrls = {
       facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
