@@ -10,7 +10,9 @@
           "/place/*",
           "/vendor/*",
           "/campus/*",
-          "/signup*"
+          "/signup*",
+          "/s/*",
+          "/r/*"
         ]
       }
     ]
