@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/e/(.*)",
-      "destination": "https://og-vawapehfla-uc.a.run.app/e/$1"
+      "destination": "/api/og?type=event&id=$1"
     },
     {
       "source": "/s/(.*)",
@@ -24,13 +24,19 @@
     {
       "source": "/.well-known/apple-app-site-association",
       "headers": [
-        { "key": "Content-Type", "value": "application/json" }
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
       ]
     },
     {
       "source": "/.well-known/assetlinks.json",
       "headers": [
-        { "key": "Content-Type", "value": "application/json" }
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
       ]
     }
   ],

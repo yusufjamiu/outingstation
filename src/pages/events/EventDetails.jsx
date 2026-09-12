@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import SEO from '../../components/SEO';
 import {
@@ -1109,7 +1109,38 @@ const handleRegister = (event, currentUser, navigate) => {
 export default function EventDetails() {
   const { id, slug } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser } = useAuth();
+
+  // ✅ NEW — same "Open in App" banner as ShortletsPage.jsx /
+  // RentARidePage.jsx's equivalent. Shown only when arriving via the
+  // short /e/ share link specifically (not /event/:id, the older
+  // direct-ID route) and only on an actual phone. main.dart's deep-link
+  // handler ALREADY has working 'e'/'event' cases wired in — this
+  // banner is the piece that was actually missing, the visible trigger
+  // for logic that was otherwise unreachable.
+  const [showOpenAppBanner, setShowOpenAppBanner] = useState(
+    typeof window !== 'undefined' && location.pathname.startsWith('/e/')
+  );
+  const isMobileUA = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+
+  const handleOpenInApp = () => {
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    const appLink = `outingstation://open?type=event&id=${encodeURIComponent(slug || id || '')}`;
+    const storeLink = isIOS
+      ? 'https://apps.apple.com/ng/app/outingstation/id6774141538'
+      : 'https://play.google.com/store/apps/details?id=com.outingstation';
+
+    const fallbackTimer = setTimeout(() => { window.location.href = storeLink; }, 1500);
+    const onHide = () => {
+      if (document.hidden) {
+        clearTimeout(fallbackTimer);
+        document.removeEventListener('visibilitychange', onHide);
+      }
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.location.href = appLink;
+  };
 
   const [event, setEvent] = useState(null);
   const [gateCodeInput, setGateCodeInput] = useState('');
@@ -1441,6 +1472,21 @@ export default function EventDetails() {
 
       <div className="min-h-screen bg-gray-50">
         <Navbar />
+
+        {/* ✅ NEW — "Open in App" banner, only shown for a real phone
+            visitor arriving via the short /e/ share link. Dismissible —
+            never forced. */}
+        {showOpenAppBanner && isMobileUA && (
+          <div className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold">Open this in the OutingStation app for the best experience</p>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button onClick={handleOpenInApp} className="bg-cyan-400 text-gray-900 text-xs font-bold px-4 py-2 rounded-lg">
+                Open in App
+              </button>
+              <button onClick={() => setShowOpenAppBanner(false)} className="text-gray-400 text-lg px-1" aria-label="Dismiss">×</button>
+            </div>
+          </div>
+        )}
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
           <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition">

@@ -74,75 +74,112 @@ export default async function handler(req, res) {
   let title = 'OutingStation - Everything Your City Has To Offer';
   let description = 'Discover events and places in Lagos, Abuja and more.';
   let image = 'https://www.outingstation.com/og-image.png';
-
-  // Same shareCode extraction as before — the code is always the LAST
-  // hyphen-separated segment, the slug portion in front of it may
-  // contain any number of hyphens.
-  const shareCode = rawId.includes('-') ? rawId.split('-').pop() : rawId;
   const shareUrl = `https://www.outingstation.com/${pathPrefix}/${rawId}`;
 
-  if (collectionId && shareCode) {
-    try {
-      const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
-      const apiKey = process.env.VITE_FIREBASE_API_KEY;
+  try {
+    const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
+    const apiKey = process.env.VITE_FIREBASE_API_KEY;
 
-      const queryResponse = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            structuredQuery: {
-              from: [{ collectionId }],
-              where: {
-                fieldFilter: {
-                  field: { fieldPath: 'shareCode' },
-                  op: 'EQUAL',
-                  value: { stringValue: shareCode },
-                },
-              },
-              limit: 1,
-            },
-          }),
-        }
+    if (type === 'event') {
+      // ✅ NEW — Events already have a real, stored `slug` field (unlike
+      // Shortlet/Ride, which needed the shareCode system built from
+      // scratch) — confirmed directly from main.dart's own
+      // _resolveEventDocId, which tries the incoming value as a raw doc
+      // ID first, then falls back to a slug query if that doesn't
+      // match. Mirrors that exact same two-step strategy here, so a
+      // link works whether it embeds a slug or a raw ID.
+      let fields = null;
+
+      const byIdRes = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/events/${rawId}?key=${apiKey}`
       );
-
-      if (queryResponse.ok) {
-        const queryData = await queryResponse.json();
-        const doc = queryData[0]?.document;
-
-        if (doc?.fields) {
-          const fields = doc.fields;
-          const listingTitle = fields.title?.stringValue || (type === 'shortlet' ? 'Shortlet' : 'Ride');
-          const city = fields.city?.stringValue || '';
-          title = `${listingTitle} - OutingStation`;
-
-          if (type === 'shortlet') {
-            const price = fields.pricePerNight?.integerValue || fields.pricePerNight?.doubleValue;
-            description = price ? `₦${price}/night in ${city}` : `Available in ${city}`;
-          } else {
-            const tripPrice = fields.tripPrice?.integerValue || fields.tripPrice?.doubleValue;
-            const hourPrice = fields.hourPrice?.integerValue || fields.hourPrice?.doubleValue;
-            const priceParts = [];
-            if (tripPrice) priceParts.push(`₦${tripPrice}/trip`);
-            if (hourPrice) priceParts.push(`₦${hourPrice}/hour`);
-            description = priceParts.length ? `${priceParts.join(' · ')} in ${city}` : `Available in ${city}`;
-          }
-
-          // ⚠️ ASSUMPTION — images stored as an array field named
-          // 'images', first entry used as the preview image.
-          const imagesArray = fields.images?.arrayValue?.values;
-          if (imagesArray && imagesArray.length > 0) {
-            image = imagesArray[0]?.stringValue || image;
-          }
-        }
-      } else {
-        console.error(`Firestore query failed for ${type} shareCode ${shareCode}: ${queryResponse.status}`);
+      if (byIdRes.ok) {
+        const data = await byIdRes.json();
+        if (data.fields) fields = data.fields;
       }
-    } catch (err) {
-      console.error(`Error fetching ${type} (shareCode ${shareCode}) for OG preview:`, err);
-      // Falls through to the generic OutingStation defaults set above.
+
+      if (!fields) {
+        const queryRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              structuredQuery: {
+                from: [{ collectionId: 'events' }],
+                where: { fieldFilter: { field: { fieldPath: 'slug' }, op: 'EQUAL', value: { stringValue: rawId } } },
+                limit: 1,
+              },
+            }),
+          }
+        );
+        if (queryRes.ok) {
+          const queryData = await queryRes.json();
+          fields = queryData[0]?.document?.fields || null;
+        }
+      }
+
+      if (fields) {
+        title = `${fields.title?.stringValue || 'Event'} - OutingStation`;
+        description = fields.description?.stringValue?.substring(0, 150) || description;
+        image = fields.imageUrl?.stringValue || image;
+      }
+    } else {
+      // Shortlet / Ride — shareCode-based lookup, unchanged from before.
+      const shareCode = rawId.includes('-') ? rawId.split('-').pop() : rawId;
+      if (collectionId && shareCode) {
+        const queryResponse = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              structuredQuery: {
+                from: [{ collectionId }],
+                where: { fieldFilter: { field: { fieldPath: 'shareCode' }, op: 'EQUAL', value: { stringValue: shareCode } } },
+                limit: 1,
+              },
+            }),
+          }
+        );
+
+        if (queryResponse.ok) {
+          const queryData = await queryResponse.json();
+          const doc = queryData[0]?.document;
+
+          if (doc?.fields) {
+            const fields = doc.fields;
+            const listingTitle = fields.title?.stringValue || (type === 'shortlet' ? 'Shortlet' : 'Ride');
+            const city = fields.city?.stringValue || '';
+            title = `${listingTitle} - OutingStation`;
+
+            if (type === 'shortlet') {
+              const price = fields.pricePerNight?.integerValue || fields.pricePerNight?.doubleValue;
+              description = price ? `₦${price}/night in ${city}` : `Available in ${city}`;
+            } else {
+              const tripPrice = fields.tripPrice?.integerValue || fields.tripPrice?.doubleValue;
+              const hourPrice = fields.hourPrice?.integerValue || fields.hourPrice?.doubleValue;
+              const priceParts = [];
+              if (tripPrice) priceParts.push(`₦${tripPrice}/trip`);
+              if (hourPrice) priceParts.push(`₦${hourPrice}/hour`);
+              description = priceParts.length ? `${priceParts.join(' · ')} in ${city}` : `Available in ${city}`;
+            }
+
+            // ⚠️ ASSUMPTION — images stored as an array field named
+            // 'images', first entry used as the preview image.
+            const imagesArray = fields.images?.arrayValue?.values;
+            if (imagesArray && imagesArray.length > 0) {
+              image = imagesArray[0]?.stringValue || image;
+            }
+          }
+        } else {
+          console.error(`Firestore query failed for ${type} shareCode ${shareCode}: ${queryResponse.status}`);
+        }
+      }
     }
+  } catch (err) {
+    console.error(`Error fetching ${type} (${rawId}) for OG preview:`, err);
+    // Falls through to the generic OutingStation defaults set above.
   }
 
   // Minimal page — a crawler never runs this JavaScript or looks past
