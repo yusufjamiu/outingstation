@@ -1126,7 +1126,19 @@ export default function EventDetails() {
 
   const handleOpenInApp = () => {
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
-    const appLink = `outingstation://open?type=event&id=${encodeURIComponent(slug || id || '')}`;
+    // ✅ FIXED — was hardcoded to type=event regardless of what
+    // actually resolved on this page. An Experience (or a Place —
+    // business/shortlet) reached via the fallback chain would send
+    // type=event to the app, which only ever knows how to look
+    // something up in the `events` collection — guaranteed to fail
+    // for anything else. Uses event.subCategory (already set correctly
+    // by the fallback chain above) to send the right type. Also
+    // prefers event.shareCode when present — the same code the mobile
+    // share buttons generate — falling back to the raw id only if a
+    // code was never generated for this specific item.
+    const deepLinkType = event?.subCategory === 'experiences' ? 'experience' : 'event';
+    const deepLinkId = event?.shareCode || slug || id || '';
+    const appLink = `outingstation://open?type=${deepLinkType}&id=${encodeURIComponent(deepLinkId)}`;
     const storeLink = isIOS
       ? 'https://apps.apple.com/ng/app/outingstation/id6774141538'
       : 'https://play.google.com/store/apps/details?id=com.outingstation';
