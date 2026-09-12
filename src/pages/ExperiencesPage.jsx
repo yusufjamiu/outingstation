@@ -8,8 +8,8 @@
 // goes to /event/{id}, which EventDetails.jsx already resolves via its
 // fourth fallback (events → businesses → shortlets → experiences).
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { collection, getDocs } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
+import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Search, MapPin, Sparkles } from 'lucide-react';
 import Navbar from '../components/Navbar';
@@ -34,20 +34,40 @@ const upcomingSessionCount = (exp) => {
 };
 
 function ExperienceCard({ exp }) {
+  const navigate = useNavigate();
   const images = exp.images || [];
   const imageUrl = exp.imageUrl || images[0] || 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=600&q=80';
   const upcoming = upcomingSessionCount(exp);
 
+  // ✅ FIXED — was a plain <Link to={`/e/${exp.id}`}>, wrapping the raw
+  // Firestore ID directly. That produces exactly the "nonsense link"
+  // reported — a real, working URL, but not a short, readable one.
+  // Now generates the exact same lazy shareCode already used by
+  // experiences_screen.dart's mobile share button and every other
+  // listing type in this build — reused if the experience already has
+  // one, generated and saved on the spot if it doesn't — so browsing
+  // on web and sharing from mobile always converge on the identical
+  // link format for the same experience.
+  const slugify = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+  const handleOpen = async () => {
+    let code = exp.shareCode;
+    if (!code) {
+      code = Array.from({ length: 6 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+      try {
+        await updateDoc(doc(db, 'experiences', exp.id), { shareCode: code });
+      } catch (err) {
+        console.error('Error saving share code, falling back to raw ID:', err);
+        code = exp.id;
+      }
+    }
+    navigate(`/e/${slugify(exp.title)}-${code}`);
+  };
+
   return (
-    <Link
-      // ✅ FIXED — was /event/{id}. Same destination component either
-      // way (App.jsx routes both /event/:id and /e/:slug to
-      // EventDetails), but /e/ is the short, shareable prefix api/og.js
-      // actually generates real Open Graph previews for — /event/ was
-      // never wired into that preview system at all, so cards linked
-      // to a URL shape nobody could get a rich preview from if shared.
-      to={`/e/${exp.id}`}
-      className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-200 group border border-gray-100"
+    <button
+      onClick={handleOpen}
+      className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-200 group border border-gray-100 text-left w-full"
     >
       <div className="relative h-48 overflow-hidden">
         <img
@@ -78,7 +98,7 @@ function ExperienceCard({ exp }) {
           )}
         </div>
       </div>
-    </Link>
+    </button>
   );
 }
 
