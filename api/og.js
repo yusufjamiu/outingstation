@@ -1,28 +1,24 @@
-// api/og/[type]/[id].js
+// api/og.js
 //
-// ✅ CONSOLIDATED — replaces api/og/event/[id].js, which was genuinely
-// dead code in production: vercel.json's /e/ rewrite points DIRECTLY at
-// the external Cloud Run service (https://og-vawapehfla-uc.a.run.app),
-// never at this file, so it was never actually reached by real traffic.
-// Repurposed into one generalized handler covering Shortlet, Ride, AND
-// Event (as a working fallback/alternative to Cloud Run) — same
-// function slot, net-zero change to Vercel's 12-function Hobby limit.
+// ✅ FIXED — was api/og/[type]/[id].js, a DOUBLE-nested dynamic route
+// (a [type] folder containing a [id].js file). Confirmed via direct
+// testing that even hitting this exact path (bypassing every rewrite
+// entirely) fell through to the React app instead of ever reaching the
+// function — React Router's own "No routes matched" warning fired,
+// meaning Vercel served index.html for this path, not the function.
+// The file itself was verified present and correct in Vercel's source
+// viewer, ruling out a deploy/caching issue — this points at Vercel's
+// build step not reliably registering a doubly-nested dynamic folder
+// structure as an actual invokable function. Rebuilt as ONE flat file
+// with no dynamic folders at all — type and id now arrive as query
+// parameters instead of path segments, entirely sidestepping whatever
+// limitation caused the original structure to silently fail.
 //
-// Closes a real gap: sharing a Shortlet or Ride from the app only ever
-// sent plain text (e.g. "Check out coxzy coxzy on OutingStation —
-// ₦45/night in Lagos.") with no link at all — nothing for WhatsApp to
-// generate a preview card from. This serves real Open Graph meta tags
-// (title, description, image) for a specific listing, then redirects a
-// real visitor into the actual React app — same pattern already proven
-// working for events via Cloud Run, just self-contained here instead.
-//
-// Route shape: /api/og/[type]/[id] where type is 'shortlet', 'ride', or
-// 'event'. Paired with vercel.json rewrites so a shared link looks like
-// outingstation.com/s/{id} or outingstation.com/r/{id} — short, clean,
-// and only shows the redirect page to bots/crawlers scanning for a
-// preview; matches og-proxy.js's own bot-detection pattern for
-// consistency, though this file also works correctly if hit directly by
-// a real visitor (redirects immediately either way).
+// Same job as before: serves real Open Graph meta tags (title,
+// description, image) for a specific Shortlet or Ride listing, then
+// redirects a real visitor into the actual React app. vercel.json's
+// rewrites now map /s/{id} → /api/og?type=shortlet&id={id} and
+// /r/{id} → /api/og?type=ride&id={id}.
 
 const COLLECTION_BY_TYPE = {
   shortlet: 'shortlets',
@@ -44,20 +40,17 @@ export default async function handler(req, res) {
   let title = 'OutingStation - Everything Your City Has To Offer';
   let description = 'Discover events and places in Lagos, Abuja and more.';
   let image = 'https://www.outingstation.com/og-image.png';
-  // ✅ FIXED — was pointing the redirect at itself (the short /s/{id}
-  // link, which is THIS endpoint) instead of the real in-app page a
-  // visitor should actually land on. shareUrl is the short link shown
-  // in og:url and put in the shared text message; destinationUrl is
-  // where a real (non-bot) visitor actually gets redirected — the new
-  // dedicated route per listing, synced with the existing modal so
-  // browsing still feels exactly the same, just with a real URL behind
-  // it now.
+  // shareUrl is the short link shown in og:url and put in the shared
+  // text message; destinationUrl is where a real (non-bot) visitor
+  // actually gets redirected — the dedicated route per listing, synced
+  // with the existing modal.
   const shareUrl = `https://www.outingstation.com/${pathPrefix}/${id}`;
   const destinationPath = type === 'shortlet' ? `/shortlets/${id}` : type === 'ride' ? `/rent-a-ride/${id}` : `/e/${id}`;
   const destinationUrl = `https://www.outingstation.com${destinationPath}`;
 
-  if (!collectionId) {
-    // Unknown type — still redirect somewhere sane rather than error out.
+  if (!collectionId || !id) {
+    // Unknown type or missing id — still redirect somewhere sane rather
+    // than error out.
     res.setHeader('Content-Type', 'text/html');
     return res.status(200).send(`<!DOCTYPE html><html><head><script>window.location.replace("https://www.outingstation.com");</script></head><body></body></html>`);
   }
@@ -99,17 +92,16 @@ export default async function handler(req, res) {
           }
 
           // ⚠️ ASSUMPTION — images stored as an array field named
-          // 'images', first entry used as the preview image. Matches
-          // the field name used elsewhere in this build
-          // (shortlet_detail_screen.dart / RideDetailSheet's own image
-          // carousels) — adjust here if the actual stored field name
-          // differs.
+          // 'images', first entry used as the preview image. Adjust
+          // here if the actual stored field name differs.
           const imagesArray = fields.images?.arrayValue?.values;
           if (imagesArray && imagesArray.length > 0) {
             image = imagesArray[0]?.stringValue || image;
           }
         }
       }
+    } else {
+      console.error(`Firestore fetch failed for ${type}/${id}: ${response.status}`);
     }
   } catch (err) {
     console.error(`Error fetching ${type} ${id} for OG preview:`, err);

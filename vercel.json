@@ -9,11 +9,11 @@
     },
     {
       "source": "/s/(.*)",
-      "destination": "/api/og/shortlet/$1"
+      "destination": "/api/og?type=shortlet&id=$1"
     },
     {
       "source": "/r/(.*)",
-      "destination": "/api/og/ride/$1"
+      "destination": "/api/og?type=ride&id=$1"
     },
     {
       "source": "/(.*)",
