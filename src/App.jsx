@@ -209,9 +209,16 @@ function App() {
                     opens/closes so browsing still feels exactly the
                     same as before. */}
                 <Route path="/shortlets/:id" element={<ShortletsPage />} />
+                {/* ✅ NEW — the actual short share-link route. Same
+                    component, same deep-link logic — the address bar
+                    now genuinely never changes away from this URL for a
+                    real visitor, since api/og.js serves the React app
+                    directly here instead of redirecting anywhere. */}
+                <Route path="/s/:id" element={<ShortletsPage />} />
                 <Route path="/rent-a-ride" element={<RentARidePage />} />
                 {/* ✅ NEW — same pattern as Shortlet's equivalent above. */}
                 <Route path="/rent-a-ride/:id" element={<RentARidePage />} />
+                <Route path="/r/:id" element={<RentARidePage />} />
                 <Route path="/my-bookings" element={<MyBookingsPage />} /> {/* ✅ NEW */}
                 <Route path="/marketplace" element={<MarketplacePage />} />
                 <Route path="/marketplace/:slug" element={<MarketplaceCategoryPage />} />

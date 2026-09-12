@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { collection, getDocs, addDoc, serverTimestamp, query, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PaystackButton } from 'react-paystack';
@@ -485,6 +485,7 @@ export default function ShortletsPage() {
   // change) still works identically.
   const { id: urlId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [shortlets, setShortlets] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -500,6 +501,35 @@ export default function ShortletsPage() {
   // ✅ NEW — closes the "ugly raw ID in the link" gap for regular
   // browsing too, not just shared links, so both are consistent.
   const slugify = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+  // ✅ NEW — the "Open in App" prompt, moved from being its own separate
+  // page (api/og.js) into a banner INSIDE the actual app now that real
+  // visitors land here directly instead of being redirected. Only shown
+  // when arriving via the short /s/ link specifically (not when just
+  // browsing normally via /shortlets/:id or the grid) and only on an
+  // actual phone — there's no app to open on desktop.
+  const [showOpenAppBanner, setShowOpenAppBanner] = useState(
+    typeof window !== 'undefined' && location.pathname.startsWith('/s/')
+  );
+  const isMobileUA = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+
+  const handleOpenInApp = () => {
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    const appLink = `outingstation://open?type=shortlet&id=${encodeURIComponent(urlId || '')}`;
+    const storeLink = isIOS
+      ? 'https://apps.apple.com/ng/app/outingstation/id6774141538'
+      : 'https://play.google.com/store/apps/details?id=com.outingstation';
+
+    const fallbackTimer = setTimeout(() => { window.location.href = storeLink; }, 1500);
+    const onHide = () => {
+      if (document.hidden) {
+        clearTimeout(fallbackTimer);
+        document.removeEventListener('visibilitychange', onHide);
+      }
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.location.href = appLink;
+  };
 
   // ✅ NEW — opening a listing now updates the URL (so it's a real,
   // shareable, bookmarkable link) without disrupting the existing
@@ -602,6 +632,21 @@ export default function ShortletsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
+
+      {/* ✅ NEW — "Open in App" banner, only shown for a real phone
+          visitor arriving via the short /s/ share link. Dismissible —
+          never forced, and never shown again this session once closed. */}
+      {showOpenAppBanner && isMobileUA && (
+        <div className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold">Open this in the OutingStation app for the best experience</p>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={handleOpenInApp} className="bg-cyan-400 text-gray-900 text-xs font-bold px-4 py-2 rounded-lg">
+              Open in App
+            </button>
+            <button onClick={() => setShowOpenAppBanner(false)} className="text-gray-400 text-lg px-1" aria-label="Dismiss">×</button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white border-b border-gray-100 py-8 px-4">
         <div className="max-w-7xl mx-auto">

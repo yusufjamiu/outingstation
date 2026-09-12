@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc, addDoc, serverTimestamp, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PaystackButton } from 'react-paystack';
@@ -453,6 +453,7 @@ export default function RentARidePage() {
   // ✅ NEW — same slug+id extraction as ShortletsPage.jsx's equivalent.
   const { id: urlId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser } = useAuth();
   const [vehicles, setVehicles] = useState([]);
   const [filtered, setFiltered] = useState([]);
@@ -471,6 +472,30 @@ export default function RentARidePage() {
   // ShortletsPage.jsx's equivalent, for both shared AND regular
   // browsing links.
   const slugify = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+  // ✅ NEW — same "Open in App" banner as ShortletsPage.jsx's equivalent.
+  const [showOpenAppBanner, setShowOpenAppBanner] = useState(
+    typeof window !== 'undefined' && location.pathname.startsWith('/r/')
+  );
+  const isMobileUA = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '');
+
+  const handleOpenInApp = () => {
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    const appLink = `outingstation://open?type=ride&id=${encodeURIComponent(urlId || '')}`;
+    const storeLink = isIOS
+      ? 'https://apps.apple.com/ng/app/outingstation/id6774141538'
+      : 'https://play.google.com/store/apps/details?id=com.outingstation';
+
+    const fallbackTimer = setTimeout(() => { window.location.href = storeLink; }, 1500);
+    const onHide = () => {
+      if (document.hidden) {
+        clearTimeout(fallbackTimer);
+        document.removeEventListener('visibilitychange', onHide);
+      }
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.location.href = appLink;
+  };
 
   // ✅ NEW — same real deep-linking fix as ShortletsPage.jsx's
   // equivalent. Opening a listing updates the URL to a real, shareable
@@ -576,6 +601,20 @@ export default function RentARidePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
+
+      {/* ✅ NEW — same "Open in App" banner as ShortletsPage.jsx's
+          equivalent. */}
+      {showOpenAppBanner && isMobileUA && (
+        <div className="bg-gray-900 text-white px-4 py-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold">Open this in the OutingStation app for the best experience</p>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={handleOpenInApp} className="bg-cyan-400 text-gray-900 text-xs font-bold px-4 py-2 rounded-lg">
+              Open in App
+            </button>
+            <button onClick={() => setShowOpenAppBanner(false)} className="text-gray-400 text-lg px-1" aria-label="Dismiss">×</button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white border-b border-gray-100 py-8 px-4">
         <div className="max-w-7xl mx-auto">
