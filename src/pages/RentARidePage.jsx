@@ -451,8 +451,7 @@ function RideBookingModal({ ride: r, onClose }) {
 
 export default function RentARidePage() {
   // ✅ NEW — same slug+id extraction as ShortletsPage.jsx's equivalent.
-  const { id: rawUrlId } = useParams();
-  const urlId = rawUrlId && rawUrlId.length > 20 ? rawUrlId.slice(-20) : rawUrlId;
+  const { id: urlId } = useParams();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [vehicles, setVehicles] = useState([]);
@@ -489,22 +488,22 @@ export default function RentARidePage() {
   useEffect(() => { if (currentUser) loadSaved(); }, [currentUser]);
   useEffect(() => { applyFilters(); }, [vehicles, search, city, vehicleType]);
 
-  // ✅ NEW — same deep-link auto-open logic as ShortletsPage.jsx's
-  // equivalent. Checks the already-loaded list first, falls back to a
-  // direct fetch-by-id if it's not there (different filter active,
-  // hasn't loaded yet, etc.).
+  // ✅ CHANGED — same shareCode-based lookup fix as ShortletsPage.jsx's
+  // equivalent.
   useEffect(() => {
     if (!urlId) { setSelectedRide(null); return; }
-    const alreadyLoaded = vehicles.find(v => v.id === urlId);
+    const shareCode = urlId.includes('-') ? urlId.split('-').pop() : urlId;
+    const alreadyLoaded = vehicles.find(v => v.shareCode === shareCode);
     if (alreadyLoaded) {
       setSelectedRide(alreadyLoaded);
       return;
     }
     (async () => {
       try {
-        const snap = await getDoc(doc(db, 'rides', urlId));
-        if (snap.exists()) {
-          setSelectedRide({ id: snap.id, ...snap.data() });
+        const snap = await getDocs(query(collection(db, 'rides'), where('shareCode', '==', shareCode)));
+        if (!snap.empty) {
+          const docSnap = snap.docs[0];
+          setSelectedRide({ id: docSnap.id, ...docSnap.data() });
         }
       } catch (err) {
         console.error('Error fetching shared ride:', err);

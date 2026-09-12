@@ -483,8 +483,7 @@ export default function ShortletsPage() {
   // regardless of what slug text sits in front of it. A bare 20-char
   // ID with no slug prefix (old links already shared before this
   // change) still works identically.
-  const { id: rawUrlId } = useParams();
-  const urlId = rawUrlId && rawUrlId.length > 20 ? rawUrlId.slice(-20) : rawUrlId;
+  const { id: urlId } = useParams();
   const navigate = useNavigate();
   const [shortlets, setShortlets] = useState([]);
   const [filtered, setFiltered] = useState([]);
@@ -528,18 +527,25 @@ export default function ShortletsPage() {
   // failure cases; if the fetch comes back empty, silently do nothing
   // rather than throw an error for what's likely just a stale/removed
   // listing link.
+  // ✅ CHANGED — was extracting a raw 20-character Firestore ID from
+  // the end of the URL param. Now extracts a genuine short shareCode
+  // instead (the last hyphen-separated segment), matching api/og.js's
+  // own lookup — looks up by that code via a Firestore QUERY, not a
+  // direct doc-ID fetch, since the code isn't the document's real ID.
   useEffect(() => {
     if (!urlId) { setSelectedShortlet(null); return; }
-    const alreadyLoaded = shortlets.find(s => s.id === urlId);
+    const shareCode = urlId.includes('-') ? urlId.split('-').pop() : urlId;
+    const alreadyLoaded = shortlets.find(s => s.shareCode === shareCode);
     if (alreadyLoaded) {
       setSelectedShortlet(alreadyLoaded);
       return;
     }
     (async () => {
       try {
-        const snap = await getDoc(doc(db, 'shortlets', urlId));
-        if (snap.exists()) {
-          setSelectedShortlet({ id: snap.id, ...snap.data() });
+        const snap = await getDocs(query(collection(db, 'shortlets'), where('shareCode', '==', shareCode)));
+        if (!snap.empty) {
+          const docSnap = snap.docs[0];
+          setSelectedShortlet({ id: docSnap.id, ...docSnap.data() });
         }
       } catch (err) {
         console.error('Error fetching shared shortlet:', err);

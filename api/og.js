@@ -34,39 +34,31 @@ const PATH_PREFIX_BY_TYPE = {
 
 export default async function handler(req, res) {
   const { type } = req.query;
-  // ✅ NEW — closes the "ugly raw ID in the link" gap, matching Events'
-  // own pattern (which uses a real, stored slug field). Shortlets/Rides
-  // never had a slug field at all, and adding one would mean a
-  // migration for every existing listing before this could work for
-  // any of them. Instead, the share link embeds a human-readable slug
-  // AND the real Firestore ID together (e.g.
-  // "coxzy-coxzy-F23mE27cQgHWfP0QHPjx") — Firestore's auto-generated
-  // IDs are ALWAYS exactly 20 characters, so the real ID is reliably
-  // extracted as the last 20 characters of whatever arrives here,
-  // regardless of what human-readable text sits in front of it. Works
-  // immediately for every listing that already exists, no backfill
-  // needed. A bare 20-character ID with no slug prefix (old links
-  // already shared before this change) still works identically — the
-  // slice just returns the whole thing.
-  const rawId = req.query.id || '';
-  const id = rawId.length > 20 ? rawId.slice(-20) : rawId;
   const collectionId = COLLECTION_BY_TYPE[type];
   const pathPrefix = PATH_PREFIX_BY_TYPE[type] || 's';
 
   let title = 'OutingStation - Everything Your City Has To Offer';
   let description = 'Discover events and places in Lagos, Abuja and more.';
   let image = 'https://www.outingstation.com/og-image.png';
-  // shareUrl is the short link shown in og:url and put in the shared
-  // text message; destinationUrl is where a real (non-bot) visitor
-  // actually gets redirected — the dedicated route per listing, synced
-  // with the existing modal.
-  const shareUrl = `https://www.outingstation.com/${pathPrefix}/${rawId}`;
-  const destinationPath = type === 'shortlet' ? `/shortlets/${rawId}` : type === 'ride' ? `/rent-a-ride/${rawId}` : `/e/${rawId}`;
-  const destinationUrl = `https://www.outingstation.com${destinationPath}`;
 
-  if (!collectionId || !id) {
-    // Unknown type or missing id — still redirect somewhere sane rather
-    // than error out.
+  // ✅ CHANGED — was extracting a raw 20-character Firestore ID from
+  // the end of the incoming string. Now looks up by a genuine short
+  // code instead (e.g. "coxzy-coxzy-3f8k2p" → code "3f8k2p"), matching
+  // Events' own pattern — a real stored field, found via query, not a
+  // shortened re-encoding of the ID (which isn't mathematically
+  // possible without losing the ability to reverse it). The code is
+  // always the LAST hyphen-separated segment — the slug portion in
+  // front of it may contain any number of hyphens, the code itself
+  // never does (see shortlet_detail_screen.dart / RideDetailSheet's
+  // _generateShareCode — lowercase alphanumeric only).
+  const rawId = req.query.id || '';
+  const shareCode = rawId.includes('-') ? rawId.split('-').pop() : rawId;
+
+  const shareUrl = `https://www.outingstation.com/${pathPrefix}/${rawId}`;
+  let destinationPath = `/e/${rawId}`;
+  let destinationUrl = `https://www.outingstation.com${destinationPath}`;
+
+  if (!collectionId || !shareCode) {
     res.setHeader('Content-Type', 'text/html');
     return res.status(200).send(`<!DOCTYPE html><html><head><script>window.location.replace("https://www.outingstation.com");</script></head><body></body></html>`);
   }
@@ -75,52 +67,72 @@ export default async function handler(req, res) {
     const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
     const apiKey = process.env.VITE_FIREBASE_API_KEY;
 
-    const response = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collectionId}/${id}?key=${apiKey}`
+    // ✅ Query by shareCode — same runQuery REST pattern already proven
+    // for Events' own bySlug lookup.
+    const queryResponse = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: 'shareCode' },
+                op: 'EQUAL',
+                value: { stringValue: shareCode },
+              },
+            },
+            limit: 1,
+          },
+        }),
+      }
     );
 
-    if (response.ok) {
-      const data = await response.json();
-      const fields = data.fields;
+    if (queryResponse.ok) {
+      const queryData = await queryResponse.json();
+      const doc = queryData[0]?.document;
 
-      if (fields) {
-        if (type === 'event') {
-          title = `${fields.title?.stringValue || 'Event'} - OutingStation`;
-          description = fields.description?.stringValue?.substring(0, 150) || description;
-          image = fields.imageUrl?.stringValue || image;
+      if (doc?.fields) {
+        const fields = doc.fields;
+        destinationPath = type === 'shortlet' ? `/shortlets/${rawId}` : `/rent-a-ride/${rawId}`;
+        destinationUrl = `https://www.outingstation.com${destinationPath}`;
+
+        const listingTitle = fields.title?.stringValue || (type === 'shortlet' ? 'Shortlet' : 'Ride');
+        const city = fields.city?.stringValue || '';
+        title = `${listingTitle} - OutingStation`;
+
+        if (type === 'shortlet') {
+          const price = fields.pricePerNight?.integerValue || fields.pricePerNight?.doubleValue;
+          description = price ? `₦${price}/night in ${city}` : `Available in ${city}`;
         } else {
-          // Shortlet / Ride — same field shape for both: title, city,
-          // images (array), pricePerNight or priceLabel-style pricing.
-          const listingTitle = fields.title?.stringValue || (type === 'shortlet' ? 'Shortlet' : 'Ride');
-          const city = fields.city?.stringValue || '';
-          title = `${listingTitle} - OutingStation`;
-
-          if (type === 'shortlet') {
-            const price = fields.pricePerNight?.integerValue || fields.pricePerNight?.doubleValue;
-            description = price ? `₦${price}/night in ${city}` : `Available in ${city}`;
-          } else {
-            const tripPrice = fields.tripPrice?.integerValue || fields.tripPrice?.doubleValue;
-            const hourPrice = fields.hourPrice?.integerValue || fields.hourPrice?.doubleValue;
-            const priceParts = [];
-            if (tripPrice) priceParts.push(`₦${tripPrice}/trip`);
-            if (hourPrice) priceParts.push(`₦${hourPrice}/hour`);
-            description = priceParts.length ? `${priceParts.join(' · ')} in ${city}` : `Available in ${city}`;
-          }
-
-          // ⚠️ ASSUMPTION — images stored as an array field named
-          // 'images', first entry used as the preview image. Adjust
-          // here if the actual stored field name differs.
-          const imagesArray = fields.images?.arrayValue?.values;
-          if (imagesArray && imagesArray.length > 0) {
-            image = imagesArray[0]?.stringValue || image;
-          }
+          const tripPrice = fields.tripPrice?.integerValue || fields.tripPrice?.doubleValue;
+          const hourPrice = fields.hourPrice?.integerValue || fields.hourPrice?.doubleValue;
+          const priceParts = [];
+          if (tripPrice) priceParts.push(`₦${tripPrice}/trip`);
+          if (hourPrice) priceParts.push(`₦${hourPrice}/hour`);
+          description = priceParts.length ? `${priceParts.join(' · ')} in ${city}` : `Available in ${city}`;
         }
+
+        // ⚠️ ASSUMPTION — images stored as an array field named
+        // 'images', first entry used as the preview image.
+        const imagesArray = fields.images?.arrayValue?.values;
+        if (imagesArray && imagesArray.length > 0) {
+          image = imagesArray[0]?.stringValue || image;
+        }
+      } else {
+        // No listing found for this code — land on the grid rather
+        // than a broken preview; reasonable fallback for a stale/
+        // invalid share link.
+        destinationPath = type === 'shortlet' ? '/shortlets' : '/rent-a-ride';
+        destinationUrl = `https://www.outingstation.com${destinationPath}`;
       }
     } else {
-      console.error(`Firestore fetch failed for ${type}/${id}: ${response.status}`);
+      console.error(`Firestore query failed for ${type} shareCode ${shareCode}: ${queryResponse.status}`);
     }
   } catch (err) {
-    console.error(`Error fetching ${type} ${id} for OG preview:`, err);
+    console.error(`Error fetching ${type} (shareCode ${shareCode}) for OG preview:`, err);
     // Falls through to the generic OutingStation defaults set above —
     // never worth blocking the redirect over a failed metadata fetch.
   }
