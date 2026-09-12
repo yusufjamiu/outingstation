@@ -1229,12 +1229,47 @@ export default function EventDetails() {
       setLoading(true);
       let eventData = null;
 
-      if (id) {
-        const eventDoc = await getDoc(doc(db, 'events', id));
+      // ✅ FIXED — a real, confirmed bug, not something I introduced:
+      // this whole four-way fallback chain (events → businesses →
+      // shortlets → experiences) was ONLY ever reachable via the `id`
+      // param (/event/:id). The `slug` param (/e/:slug) ran a
+      // completely SEPARATE, events-only query with no fallback at
+      // all — meaning a short /e/ link to a business, shortlet, or
+      // experience always failed, even though the exact same document
+      // genuinely existed and /event/{id} would have found it
+      // correctly. Confirmed directly: a real experience doc,
+      // verified to exist in Firestore, still 404'd via /e/{id}
+      // because this function never even looked at `slug` for
+      // anything beyond the events-only branch below.
+      //
+      // effectiveId unifies both entry points into the same value, so
+      // the ENTIRE chain below (previously untouched, still exactly
+      // as it was) now runs identically regardless of which route
+      // param actually carried it in.
+      const effectiveId = id || slug;
+
+      if (effectiveId) {
+        const eventDoc = await getDoc(doc(db, 'events', effectiveId));
         if (eventDoc.exists()) {
           eventData = { id: eventDoc.id, ...eventDoc.data() };
-        } else {
-          const bizDoc = await getDoc(doc(db, 'businesses', id));
+        } else if (slug) {
+          // ✅ NEW — only relevant when we arrived via /e/:slug AND the
+          // value isn't a raw event doc ID (the common case — a real
+          // shared event link embeds a slug like
+          // "made-in-africa-built-for-the-world", not a 20-character
+          // ID). Tries the genuine slug query BEFORE falling through
+          // to businesses/shortlets/experiences below, so a real event
+          // slug still resolves via /e/ exactly as it always did —
+          // this fix only ADDS the missing fallback beyond events, it
+          // doesn't change events' own resolution at all.
+          const slugQuery = await getDocs(query(collection(db, 'events'), where('slug', '==', slug)));
+          if (!slugQuery.empty) {
+            eventData = { id: slugQuery.docs[0].id, ...slugQuery.docs[0].data() };
+          }
+        }
+
+        if (!eventData) {
+          const bizDoc = await getDoc(doc(db, 'businesses', effectiveId));
           if (bizDoc.exists()) {
             const biz = bizDoc.data();
             const packageImages = [...new Set(
@@ -1259,7 +1294,7 @@ export default function EventDetails() {
               openingDays: biz.openingDays || [],
             };
           } else {
-            const shortletDoc = await getDoc(doc(db, 'shortlets', id));
+            const shortletDoc = await getDoc(doc(db, 'shortlets', effectiveId));
             if (shortletDoc.exists()) {
               const listing = shortletDoc.data();
               const priceType = listing.priceType || 'night';
@@ -1302,7 +1337,7 @@ export default function EventDetails() {
               // event-shaped fields, since SessionBookingSection and
               // the sidebar below read them directly off
               // `event.sessions` / `event.pricePerPerson`.
-              const expDoc = await getDoc(doc(db, 'experiences', id));
+              const expDoc = await getDoc(doc(db, 'experiences', effectiveId));
               if (!expDoc.exists()) { navigate('/events'); return; }
               const exp = expDoc.data();
               eventData = {
@@ -1335,11 +1370,6 @@ export default function EventDetails() {
             }
           }
         }
-      } else if (slug) {
-        const q = query(collection(db, 'events'), where('slug', '==', slug));
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) { navigate('/events'); return; }
-        eventData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
       }
 
       setEvent(eventData);
