@@ -151,11 +151,80 @@ export default async function handler(req, res) {
   <meta name="twitter:title" content="${title}" />
   <meta name="twitter:description" content="${description}" />
   <meta name="twitter:image" content="${image}" />
-  <meta http-equiv="refresh" content="0; url=${destinationUrl}" />
-  <script>window.location.replace("${destinationUrl}");</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { font-family: -apple-system, sans-serif; margin: 0; padding: 24px; text-align: center; background: #FAFAFA; }
+    img { width: 72px; height: 72px; border-radius: 18px; margin-top: 40px; }
+    h1 { font-size: 18px; color: #0F172A; margin: 16px 0 4px; }
+    p { font-size: 13px; color: #64748B; margin: 0 0 24px; }
+    .btn { display: block; width: 100%; max-width: 320px; margin: 0 auto 12px; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 14px; text-decoration: none; box-sizing: border-box; }
+    .primary { background: #5ADAEE; color: #0F172A; }
+    .secondary { background: white; color: #0F172A; border: 1px solid #E2E8F0; }
+  </style>
 </head>
 <body>
-  <p>Redirecting...</p>
+  <img src="https://www.outingstation.com/og-image.png" alt="OutingStation" />
+  <h1>${title}</h1>
+  <p>${description}</p>
+  <a class="btn primary" id="open-app-btn" href="#">Open in App</a>
+  <a class="btn secondary" href="${destinationUrl}">Continue on Web</a>
+
+  <script>
+    // ✅ NEW — the "Open in App" mechanism. Deliberately NOT an
+    // automatic silent redirect attempt — mobile browsers have gotten
+    // strict about blocking exactly that pattern (ad networks abused it
+    // for years), and a visible button the person actually taps is far
+    // more reliable to test and reason about. Custom scheme
+    // ("outingstation://...") works regardless of install method —
+    // unlike Universal Links, it doesn't depend on Apple/Google's own
+    // domain-verification handshake completing correctly.
+    //
+    // Desktop visitors never see this attempt at all — there's no app
+    // or store to send them to — they land straight on the web
+    // destination via the same auto-redirect this page always did.
+    const ua = navigator.userAgent || '';
+    const isIOS = /iPhone|iPad|iPod/i.test(ua);
+    const isAndroid = /Android/i.test(ua);
+    const isMobile = isIOS || isAndroid;
+
+    // ✅ FIXED — was "outingstation://${pathPrefix}/${rawId}". Confirmed
+    // via direct testing that a custom scheme parses the segment right
+    // after "//" as the URI's HOST, not a path segment — so
+    // "outingstation://s/abc" arrives with host "s" and path "/abc",
+    // never a path segment array containing "s" at all. Using a query
+    // parameter instead sidesteps that ambiguity entirely — parses
+    // identically regardless of scheme.
+    const appLink = "outingstation://open?type=${type}&id=" + encodeURIComponent("${rawId}");
+    const iosStoreLink = "https://apps.apple.com/ng/app/outingstation/id6774141538";
+    const androidStoreLink = "https://play.google.com/store/apps/details?id=com.outingstation";
+    const webLink = "${destinationUrl}";
+
+    if (!isMobile) {
+      // Desktop — no app to open, go straight to web, same as before.
+      window.location.replace(webLink);
+    } else {
+      document.getElementById('open-app-btn').addEventListener('click', function (e) {
+        e.preventDefault();
+        const fallbackTimer = setTimeout(function () {
+          // If we're still here after this delay, the app never caught
+          // the custom scheme — most likely it isn't installed. Send
+          // them to download it rather than silently failing.
+          window.location.href = isIOS ? iosStoreLink : androidStoreLink;
+        }, 1500);
+
+        // If the app DOES open, the tab is backgrounded — cancel the
+        // store-redirect timer so it doesn't fire when they come back.
+        document.addEventListener('visibilitychange', function onHide() {
+          if (document.hidden) {
+            clearTimeout(fallbackTimer);
+            document.removeEventListener('visibilitychange', onHide);
+          }
+        });
+
+        window.location.href = appLink;
+      });
+    }
+  </script>
 </body>
 </html>`;
 
