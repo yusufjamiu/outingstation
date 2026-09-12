@@ -500,9 +500,24 @@ export default function RentARidePage() {
   // ✅ NEW — same real deep-linking fix as ShortletsPage.jsx's
   // equivalent. Opening a listing updates the URL to a real, shareable
   // link without changing the existing modal-based browsing at all.
-  const openRide = (v) => {
+  // ✅ FIXED — same fix as ShortletsPage.jsx's openShortlet equivalent —
+  // was always using the raw Firestore ID, a completely separate ID
+  // scheme from shareCode-based shared links, which was the actual
+  // root cause of the address bar flipping to the wrong format
+  // reported. Now reuses/generates the same shareCode either way.
+  const openRide = async (v) => {
     setSelectedRide(v);
-    navigate(`/rent-a-ride/${slugify(v.title)}-${v.id}`);
+    let code = v.shareCode;
+    if (!code) {
+      code = Array.from({ length: 6 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+      try {
+        await updateDoc(doc(db, 'rides', v.id), { shareCode: code });
+      } catch (err) {
+        console.error('Error saving share code, falling back to raw ID:', err);
+        code = v.id;
+      }
+    }
+    navigate(`/rent-a-ride/${slugify(v.title)}-${code}`);
   };
   const closeRide = () => {
     setSelectedRide(null);

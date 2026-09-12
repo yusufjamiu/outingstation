@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { collection, getDocs, addDoc, serverTimestamp, query, where, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, query, where, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PaystackButton } from 'react-paystack';
 import {
@@ -531,13 +531,33 @@ export default function ShortletsPage() {
     window.location.href = appLink;
   };
 
-  // ✅ NEW — opening a listing now updates the URL (so it's a real,
-  // shareable, bookmarkable link) without disrupting the existing
-  // modal-based browsing experience at all — closing it just navigates
-  // back to the plain grid URL.
-  const openShortlet = (s) => {
+  // ✅ FIXED — was ALWAYS using the raw Firestore ID
+  // (`/shortlets/{slug}-{s.id}`), completely separate from the
+  // shareCode system used for actual shared links. Two different ID
+  // schemes for the same listing was the actual root cause of the
+  // reported bug: the correct short-code link would load fine
+  // initially, but ANYTHING that re-triggered this function afterward
+  // (even something as subtle as a background card still being
+  // clickable underneath the open modal) would silently overwrite the
+  // URL with this raw-ID version instead. Now reuses the listing's
+  // EXISTING shareCode if it already has one (generating one on the
+  // spot, same lazy pattern as shortlet_detail_screen.dart's mobile
+  // share flow, if it doesn't) — there is now only ever one correct
+  // link format for a given listing, everywhere, regardless of how
+  // someone arrives at it.
+  const openShortlet = async (s) => {
     setSelectedShortlet(s);
-    navigate(`/shortlets/${slugify(s.title)}-${s.id}`);
+    let code = s.shareCode;
+    if (!code) {
+      code = Array.from({ length: 6 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+      try {
+        await updateDoc(doc(db, 'shortlets', s.id), { shareCode: code });
+      } catch (err) {
+        console.error('Error saving share code, falling back to raw ID:', err);
+        code = s.id;
+      }
+    }
+    navigate(`/shortlets/${slugify(s.title)}-${code}`);
   };
   const closeShortlet = () => {
     setSelectedShortlet(null);
