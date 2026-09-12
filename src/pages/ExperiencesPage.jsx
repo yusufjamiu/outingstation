@@ -40,7 +40,13 @@ function ExperienceCard({ exp }) {
 
   return (
     <Link
-      to={`/event/${exp.id}`}
+      // ✅ FIXED — was /event/{id}. Same destination component either
+      // way (App.jsx routes both /event/:id and /e/:slug to
+      // EventDetails), but /e/ is the short, shareable prefix api/og.js
+      // actually generates real Open Graph previews for — /event/ was
+      // never wired into that preview system at all, so cards linked
+      // to a URL shape nobody could get a rich preview from if shared.
+      to={`/e/${exp.id}`}
       className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-200 group border border-gray-100"
     >
       <div className="relative h-48 overflow-hidden">

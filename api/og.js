@@ -94,14 +94,23 @@ export default async function handler(req, res) {
     const apiKey = process.env.VITE_FIREBASE_API_KEY;
 
     if (type === 'event') {
-      // ✅ NEW — Events already have a real, stored `slug` field (unlike
-      // Shortlet/Ride, which needed the shareCode system built from
-      // scratch) — confirmed directly from main.dart's own
-      // _resolveEventDocId, which tries the incoming value as a raw doc
-      // ID first, then falls back to a slug query if that doesn't
-      // match. Mirrors that exact same two-step strategy here, so a
-      // link works whether it embeds a slug or a raw ID.
+      // ✅ CHANGED — was only ever checking the `events` collection.
+      // EventDetails.jsx (the real, live component this link renders
+      // through) actually has a FOUR-WAY fallback chain for a single
+      // /event/{id} or /e/{id} link: events → businesses → shortlets →
+      // experiences — confirmed directly from its own loadEventDetails
+      // function. A short link to an Experience or a business "Place"
+      // was correctly RENDERING already (since the real app has that
+      // fallback built in), but the PREVIEW card shown before someone
+      // even taps through never reflected it — a crawler hitting this
+      // endpoint only ever checked `events`, so anything resolved via
+      // fallback #2, #3, or #4 showed the generic OutingStation
+      // default instead of its real title/photo. Mirrors the exact
+      // same chain and field mappings EventDetails.jsx itself uses, in
+      // the same order, so the preview always matches what a real
+      // visitor actually sees once they land.
       let fields = null;
+      let matchedVia = 'events';
 
       const byIdRes = await fetch(
         `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/events/${rawId}?key=${apiKey}`
@@ -132,10 +141,69 @@ export default async function handler(req, res) {
         }
       }
 
+      // Fallback #2 — businesses (a "Place")
+      if (!fields) {
+        const bizRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/businesses/${rawId}?key=${apiKey}`
+        );
+        if (bizRes.ok) {
+          const data = await bizRes.json();
+          if (data.fields) { fields = data.fields; matchedVia = 'businesses'; }
+        }
+      }
+
+      // Fallback #3 — shortlets
+      if (!fields) {
+        const shortletRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/shortlets/${rawId}?key=${apiKey}`
+        );
+        if (shortletRes.ok) {
+          const data = await shortletRes.json();
+          if (data.fields) { fields = data.fields; matchedVia = 'shortlets'; }
+        }
+      }
+
+      // Fallback #4 — experiences
+      if (!fields) {
+        const expRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/experiences/${rawId}?key=${apiKey}`
+        );
+        if (expRes.ok) {
+          const data = await expRes.json();
+          if (data.fields) { fields = data.fields; matchedVia = 'experiences'; }
+        }
+      }
+
       if (fields) {
-        title = `${fields.title?.stringValue || 'Event'} - OutingStation`;
-        description = fields.description?.stringValue?.substring(0, 150) || description;
-        image = fields.imageUrl?.stringValue || image;
+        if (matchedVia === 'events') {
+          title = `${fields.title?.stringValue || 'Event'} - OutingStation`;
+          description = fields.description?.stringValue?.substring(0, 150) || description;
+          image = fields.imageUrl?.stringValue || image;
+        } else if (matchedVia === 'businesses') {
+          // Matches EventDetails.jsx's own businesses mapping:
+          // title: biz.businessName, imageUrl: biz.logoUrl.
+          title = `${fields.businessName?.stringValue || 'Place'} - OutingStation`;
+          const city = fields.city?.stringValue || '';
+          description = city ? `Discover this place in ${city}.` : description;
+          image = fields.logoUrl?.stringValue || image;
+        } else if (matchedVia === 'shortlets') {
+          const listingTitle = fields.title?.stringValue || 'Shortlet';
+          const city = [fields.area?.stringValue, fields.city?.stringValue].filter(Boolean).join(', ');
+          title = `${listingTitle} - OutingStation`;
+          description = city ? `Available in ${city}.` : description;
+          const imagesArray = fields.images?.arrayValue?.values;
+          if (imagesArray && imagesArray.length > 0) image = imagesArray[0]?.stringValue || image;
+        } else if (matchedVia === 'experiences') {
+          // Matches EventDetails.jsx's own experiences mapping exactly:
+          // title: exp.title, imageUrl: exp.imageUrl || images[0].
+          const expTitle = fields.title?.stringValue || 'Experience';
+          const city = fields.city?.stringValue || '';
+          const price = fields.pricePerPerson?.integerValue || fields.pricePerPerson?.doubleValue;
+          title = `${expTitle} - OutingStation`;
+          description = price ? `₦${price}/person${city ? ` in ${city}` : ''}` : (fields.description?.stringValue?.substring(0, 150) || description);
+          const imagesArray = fields.images?.arrayValue?.values;
+          image = fields.imageUrl?.stringValue || (imagesArray && imagesArray.length > 0 ? imagesArray[0]?.stringValue : null) || image;
+        }
       }
     } else {
       // Shortlet / Ride — shareCode-based lookup, unchanged from before.
