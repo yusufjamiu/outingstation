@@ -450,7 +450,9 @@ function RideBookingModal({ ride: r, onClose }) {
 }
 
 export default function RentARidePage() {
-  const { id: urlId } = useParams();
+  // ✅ NEW — same slug+id extraction as ShortletsPage.jsx's equivalent.
+  const { id: rawUrlId } = useParams();
+  const urlId = rawUrlId && rawUrlId.length > 20 ? rawUrlId.slice(-20) : rawUrlId;
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [vehicles, setVehicles] = useState([]);
@@ -466,12 +468,17 @@ export default function RentARidePage() {
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [bookingRide, setBookingRide] = useState(null);
 
+  // ✅ NEW — same "avoid ugly raw ID in the link" fix as
+  // ShortletsPage.jsx's equivalent, for both shared AND regular
+  // browsing links.
+  const slugify = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
   // ✅ NEW — same real deep-linking fix as ShortletsPage.jsx's
   // equivalent. Opening a listing updates the URL to a real, shareable
   // link without changing the existing modal-based browsing at all.
   const openRide = (v) => {
     setSelectedRide(v);
-    navigate(`/rent-a-ride/${v.id}`);
+    navigate(`/rent-a-ride/${slugify(v.title)}-${v.id}`);
   };
   const closeRide = () => {
     setSelectedRide(null);

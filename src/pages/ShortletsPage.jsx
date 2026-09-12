@@ -475,7 +475,16 @@ function guestsMatch(maxGuests, range) {
 }
 
 export default function ShortletsPage() {
-  const { id: urlId } = useParams();
+  // ✅ NEW — the URL param may now be a human-readable slug with the
+  // real Firestore ID embedded at the end (e.g.
+  // "coxzy-coxzy-F23mE27cQgHWfP0QHPjx"), matching api/og.js's own
+  // extraction logic exactly — Firestore auto-IDs are always exactly
+  // 20 characters, so the real ID is reliably the last 20 characters
+  // regardless of what slug text sits in front of it. A bare 20-char
+  // ID with no slug prefix (old links already shared before this
+  // change) still works identically.
+  const { id: rawUrlId } = useParams();
+  const urlId = rawUrlId && rawUrlId.length > 20 ? rawUrlId.slice(-20) : rawUrlId;
   const navigate = useNavigate();
   const [shortlets, setShortlets] = useState([]);
   const [filtered, setFiltered] = useState([]);
@@ -489,13 +498,17 @@ export default function ShortletsPage() {
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [bookingShortlet, setBookingShortlet] = useState(null);
 
+  // ✅ NEW — closes the "ugly raw ID in the link" gap for regular
+  // browsing too, not just shared links, so both are consistent.
+  const slugify = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
   // ✅ NEW — opening a listing now updates the URL (so it's a real,
   // shareable, bookmarkable link) without disrupting the existing
   // modal-based browsing experience at all — closing it just navigates
   // back to the plain grid URL.
   const openShortlet = (s) => {
     setSelectedShortlet(s);
-    navigate(`/shortlets/${s.id}`);
+    navigate(`/shortlets/${slugify(s.title)}-${s.id}`);
   };
   const closeShortlet = () => {
     setSelectedShortlet(null);

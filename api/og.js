@@ -33,7 +33,23 @@ const PATH_PREFIX_BY_TYPE = {
 };
 
 export default async function handler(req, res) {
-  const { type, id } = req.query;
+  const { type } = req.query;
+  // ✅ NEW — closes the "ugly raw ID in the link" gap, matching Events'
+  // own pattern (which uses a real, stored slug field). Shortlets/Rides
+  // never had a slug field at all, and adding one would mean a
+  // migration for every existing listing before this could work for
+  // any of them. Instead, the share link embeds a human-readable slug
+  // AND the real Firestore ID together (e.g.
+  // "coxzy-coxzy-F23mE27cQgHWfP0QHPjx") — Firestore's auto-generated
+  // IDs are ALWAYS exactly 20 characters, so the real ID is reliably
+  // extracted as the last 20 characters of whatever arrives here,
+  // regardless of what human-readable text sits in front of it. Works
+  // immediately for every listing that already exists, no backfill
+  // needed. A bare 20-character ID with no slug prefix (old links
+  // already shared before this change) still works identically — the
+  // slice just returns the whole thing.
+  const rawId = req.query.id || '';
+  const id = rawId.length > 20 ? rawId.slice(-20) : rawId;
   const collectionId = COLLECTION_BY_TYPE[type];
   const pathPrefix = PATH_PREFIX_BY_TYPE[type] || 's';
 
@@ -44,8 +60,8 @@ export default async function handler(req, res) {
   // text message; destinationUrl is where a real (non-bot) visitor
   // actually gets redirected — the dedicated route per listing, synced
   // with the existing modal.
-  const shareUrl = `https://www.outingstation.com/${pathPrefix}/${id}`;
-  const destinationPath = type === 'shortlet' ? `/shortlets/${id}` : type === 'ride' ? `/rent-a-ride/${id}` : `/e/${id}`;
+  const shareUrl = `https://www.outingstation.com/${pathPrefix}/${rawId}`;
+  const destinationPath = type === 'shortlet' ? `/shortlets/${rawId}` : type === 'ride' ? `/rent-a-ride/${rawId}` : `/e/${rawId}`;
   const destinationUrl = `https://www.outingstation.com${destinationPath}`;
 
   if (!collectionId || !id) {
