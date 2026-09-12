@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc, addDoc, serverTimestamp, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PaystackButton } from 'react-paystack';
@@ -449,6 +450,8 @@ function RideBookingModal({ ride: r, onClose }) {
 }
 
 export default function RentARidePage() {
+  const { id: urlId } = useParams();
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [vehicles, setVehicles] = useState([]);
   const [filtered, setFiltered] = useState([]);
@@ -463,9 +466,44 @@ export default function RentARidePage() {
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [bookingRide, setBookingRide] = useState(null);
 
+  // ✅ NEW — same real deep-linking fix as ShortletsPage.jsx's
+  // equivalent. Opening a listing updates the URL to a real, shareable
+  // link without changing the existing modal-based browsing at all.
+  const openRide = (v) => {
+    setSelectedRide(v);
+    navigate(`/rent-a-ride/${v.id}`);
+  };
+  const closeRide = () => {
+    setSelectedRide(null);
+    navigate('/rent-a-ride');
+  };
+
   useEffect(() => { loadVehicles(); }, []);
   useEffect(() => { if (currentUser) loadSaved(); }, [currentUser]);
   useEffect(() => { applyFilters(); }, [vehicles, search, city, vehicleType]);
+
+  // ✅ NEW — same deep-link auto-open logic as ShortletsPage.jsx's
+  // equivalent. Checks the already-loaded list first, falls back to a
+  // direct fetch-by-id if it's not there (different filter active,
+  // hasn't loaded yet, etc.).
+  useEffect(() => {
+    if (!urlId) { setSelectedRide(null); return; }
+    const alreadyLoaded = vehicles.find(v => v.id === urlId);
+    if (alreadyLoaded) {
+      setSelectedRide(alreadyLoaded);
+      return;
+    }
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'rides', urlId));
+        if (snap.exists()) {
+          setSelectedRide({ id: snap.id, ...snap.data() });
+        }
+      } catch (err) {
+        console.error('Error fetching shared ride:', err);
+      }
+    })();
+  }, [urlId, vehicles]);
 
   // ✅ FIXED — was querying `vehicles` (empty, unused) plus flattening
   // approved Ride Provider businesses' pricingTiers. Now queries `rides`
@@ -610,7 +648,7 @@ export default function RentARidePage() {
                       <img
                         src={(v.images || [])[0] || 'https://images.unsplash.com/photo-1502877338535-766e1452684a?w=400&h=300&fit=crop'}
                         alt={v.title}
-                        onClick={() => setSelectedRide(v)}
+                        onClick={() => openRide(v)}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
                       />
                       {currentUser && (
@@ -636,7 +674,7 @@ export default function RentARidePage() {
                     </div>
                     <div className="p-4 flex flex-col flex-1">
                       <h3
-                        onClick={() => setSelectedRide(v)}
+                        onClick={() => openRide(v)}
                         className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 cursor-pointer hover:text-cyan-600 transition"
                       >
                         {v.title}
@@ -699,7 +737,7 @@ export default function RentARidePage() {
       {selectedRide && (
         <RideDetailModal
           ride={selectedRide}
-          onClose={() => setSelectedRide(null)}
+          onClose={() => closeRide()}
           onZoom={(url) => setLightboxUrl(url)}
           onBook={(ride) => { setBookingRide(ride); setSelectedRide(null); }}
         />

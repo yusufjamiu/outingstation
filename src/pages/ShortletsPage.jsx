@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, serverTimestamp, query, where } from 'firebase/firestore';
+import { useParams, useNavigate } from 'react-router-dom';
+import { collection, getDocs, addDoc, serverTimestamp, query, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PaystackButton } from 'react-paystack';
 import {
@@ -474,6 +475,8 @@ function guestsMatch(maxGuests, range) {
 }
 
 export default function ShortletsPage() {
+  const { id: urlId } = useParams();
+  const navigate = useNavigate();
   const [shortlets, setShortlets] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -486,8 +489,50 @@ export default function ShortletsPage() {
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [bookingShortlet, setBookingShortlet] = useState(null);
 
+  // ✅ NEW — opening a listing now updates the URL (so it's a real,
+  // shareable, bookmarkable link) without disrupting the existing
+  // modal-based browsing experience at all — closing it just navigates
+  // back to the plain grid URL.
+  const openShortlet = (s) => {
+    setSelectedShortlet(s);
+    navigate(`/shortlets/${s.id}`);
+  };
+  const closeShortlet = () => {
+    setSelectedShortlet(null);
+    navigate('/shortlets');
+  };
+
   useEffect(() => { loadShortlets(); }, []);
   useEffect(() => { applyFilters(); }, [shortlets, search, city, guests]);
+
+  // ✅ NEW — the other half of real deep-linking: landing directly on
+  // /shortlets/:id (e.g. from a shared link) needs to auto-open that
+  // listing's modal. Checks the already-loaded list first (fast, no
+  // extra fetch for the common case), and falls back to fetching that
+  // ONE listing directly by id if it's not in the current loaded/
+  // filtered set — e.g. a different city filter is active, or the
+  // listing just hasn't loaded yet. Never fully reload the page in
+  // failure cases; if the fetch comes back empty, silently do nothing
+  // rather than throw an error for what's likely just a stale/removed
+  // listing link.
+  useEffect(() => {
+    if (!urlId) { setSelectedShortlet(null); return; }
+    const alreadyLoaded = shortlets.find(s => s.id === urlId);
+    if (alreadyLoaded) {
+      setSelectedShortlet(alreadyLoaded);
+      return;
+    }
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'shortlets', urlId));
+        if (snap.exists()) {
+          setSelectedShortlet({ id: snap.id, ...snap.data() });
+        }
+      } catch (err) {
+        console.error('Error fetching shared shortlet:', err);
+      }
+    })();
+  }, [urlId, shortlets]);
 
   const loadShortlets = async () => {
     try {
@@ -623,7 +668,7 @@ export default function ShortletsPage() {
                           `shortlets` collection, so this almost certainly
                           404'd or rendered nothing for every listing.
                           Now opens the real detail modal below instead. */}
-                      <button onClick={() => setSelectedShortlet(s)} className="block w-full h-full">
+                      <button onClick={() => openShortlet(s)} className="block w-full h-full">
                         <img
                           src={s.images[0] || 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=400&h=300&fit=crop'}
                           alt={s.title}
@@ -640,7 +685,7 @@ export default function ShortletsPage() {
                       </div>
                     </div>
                     <div className="p-4 flex flex-col flex-1">
-                      <button onClick={() => setSelectedShortlet(s)} className="text-left">
+                      <button onClick={() => openShortlet(s)} className="text-left">
                         <h3 className="font-bold text-gray-900 text-sm mb-1 line-clamp-2 hover:text-amber-600 transition">
                           {s.title}
                         </h3>
@@ -705,7 +750,7 @@ export default function ShortletsPage() {
       {selectedShortlet && (
         <ShortletDetailModal
           shortlet={selectedShortlet}
-          onClose={() => setSelectedShortlet(null)}
+          onClose={() => closeShortlet()}
           onZoom={(url) => setLightboxUrl(url)}
           onBook={(shortlet) => { setBookingShortlet(shortlet); setSelectedShortlet(null); }}
         />
