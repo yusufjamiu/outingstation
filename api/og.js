@@ -62,10 +62,23 @@ export default async function handler(req, res) {
       const filePath = path.join(process.cwd(), 'dist', 'index.html');
       const html = fs.readFileSync(filePath, 'utf8');
       res.setHeader('Content-Type', 'text/html');
+      // ✅ FIXED — a real, serious bug: the crawler-facing response
+      // below sets a 1-HOUR cache with no Vary header at all, which
+      // means Vercel's CDN caches purely by URL — it has no way to
+      // know a bot and a real browser should ever get different
+      // content for the SAME url. Once any crawler (WhatsApp's own
+      // preview fetch, for instance) hit a link once, every SUBSEQUENT
+      // visitor — bot or genuine human — got served that same cached
+      // bot-only page for up to an hour, which is exactly the
+      // "just shows the bare title, no real app" symptom reported.
+      // Vary: User-Agent tells the CDN to cache bot and human responses
+      // SEPARATELY for the same URL, closing this off entirely.
+      res.setHeader('Vary', 'User-Agent');
       return res.status(200).send(html);
     } catch (err) {
       console.error('Error reading dist/index.html:', err);
       res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Vary', 'User-Agent');
       return res.status(200).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/></head><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>`);
     }
   }
@@ -207,5 +220,10 @@ export default async function handler(req, res) {
 
   res.setHeader('Content-Type', 'text/html');
   res.setHeader('Cache-Control', 'public, max-age=3600');
+  // ✅ FIXED — see the matching comment on the human branch above for
+  // the full reasoning. Without this, this exact response (meant only
+  // for crawlers) was the one silently served to every real visitor
+  // too, for up to an hour after any bot request touched the same URL.
+  res.setHeader('Vary', 'User-Agent');
   return res.status(200).send(html);
 }
