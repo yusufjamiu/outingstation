@@ -1337,7 +1337,28 @@ export default function EventDetails() {
               // event-shaped fields, since SessionBookingSection and
               // the sidebar below read them directly off
               // `event.sessions` / `event.pricePerPerson`.
-              const expDoc = await getDoc(doc(db, 'experiences', effectiveId));
+              let expDoc = await getDoc(doc(db, 'experiences', effectiveId));
+              // ✅ NEW — closes a real mismatch I introduced myself:
+              // both mobile share buttons (experiences_screen.dart's
+              // _shareExperience and event_details_screen.dart's
+              // _getShareUrlForEvent) and the web grid card now
+              // generate a genuine shareCode-based link
+              // ("slug-abc123"), but this fallback only ever tried a
+              // DIRECT document-ID fetch — which a shareCode string
+              // was never going to match, since it isn't the
+              // document's actual Firestore ID. Confirmed via a real
+              // test: sharing an experience correctly produced
+              // "/e/fggg-2jhn40", which then infinite-redirected back
+              // to /events because this exact lookup never found it.
+              // Falls back to a shareCode QUERY when the direct fetch
+              // comes back empty, mirroring exactly how
+              // ShortletsPage.jsx / RentARidePage.jsx already resolve
+              // their own shareCode-based short links.
+              if (!expDoc.exists() && slug) {
+                const shareCode = slug.includes('-') ? slug.split('-').pop() : slug;
+                const codeQuery = await getDocs(query(collection(db, 'experiences'), where('shareCode', '==', shareCode)));
+                if (!codeQuery.empty) expDoc = codeQuery.docs[0];
+              }
               if (!expDoc.exists()) { navigate('/events'); return; }
               const exp = expDoc.data();
               eventData = {

@@ -174,6 +174,34 @@ export default async function handler(req, res) {
         }
       }
 
+      // ✅ NEW — closes the same mismatch just fixed in EventDetails.jsx:
+      // experience share links now embed a genuine shareCode
+      // ("slug-abc123"), not the raw document ID — a direct fetch by
+      // that string was never going to match. Falls back to a
+      // shareCode query, same pattern already proven for Shortlet/Ride.
+      if (!fields) {
+        const shareCode = rawId.includes('-') ? rawId.split('-').pop() : rawId;
+        const expQueryRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              structuredQuery: {
+                from: [{ collectionId: 'experiences' }],
+                where: { fieldFilter: { field: { fieldPath: 'shareCode' }, op: 'EQUAL', value: { stringValue: shareCode } } },
+                limit: 1,
+              },
+            }),
+          }
+        );
+        if (expQueryRes.ok) {
+          const queryData = await expQueryRes.json();
+          const doc = queryData[0]?.document;
+          if (doc?.fields) { fields = doc.fields; matchedVia = 'experiences'; }
+        }
+      }
+
       if (fields) {
         if (matchedVia === 'events') {
           title = `${fields.title?.stringValue || 'Event'} - OutingStation`;
