@@ -8,6 +8,14 @@
       "destination": "https://og-vawapehfla-uc.a.run.app/e/$1"
     },
     {
+      "source": "/s/(.*)",
+      "destination": "/api/og/shortlet/$1"
+    },
+    {
+      "source": "/r/(.*)",
+      "destination": "/api/og/ride/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

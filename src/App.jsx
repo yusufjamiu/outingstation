@@ -200,7 +200,18 @@ function App() {
                 <Route path="/opportunities" element={<OpportunitiesPage />} />
                 <Route path="/resorts" element={<ResortsPage />} />
                 <Route path="/shortlets" element={<ShortletsPage />} /> {/* ✅ NEW */}
+                {/* ✅ NEW — real, dedicated route per listing, so a
+                    shared link has somewhere genuine to land instead of
+                    just the bare grid. Same component handles both —
+                    ShortletsPage reads the optional :id via useParams()
+                    and auto-opens that listing's existing modal on top
+                    of the grid, syncing the URL as the modal
+                    opens/closes so browsing still feels exactly the
+                    same as before. */}
+                <Route path="/shortlets/:id" element={<ShortletsPage />} />
                 <Route path="/rent-a-ride" element={<RentARidePage />} />
+                {/* ✅ NEW — same pattern as Shortlet's equivalent above. */}
+                <Route path="/rent-a-ride/:id" element={<RentARidePage />} />
                 <Route path="/my-bookings" element={<MyBookingsPage />} /> {/* ✅ NEW */}
                 <Route path="/marketplace" element={<MarketplacePage />} />
                 <Route path="/marketplace/:slug" element={<MarketplaceCategoryPage />} />
