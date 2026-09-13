@@ -25,6 +25,70 @@ const generateSlug = (title) => {
 const generateManageKey = () =>
   Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
 
+// ✅ NEW — builds the live public link exactly the way EventDetails.jsx's
+// canonicalUrl / handleShare do: slug when available, id otherwise. Used
+// only for the approval email's "View Your Live Event" button.
+const buildEventLink = (eventDoc, eventId) =>
+  eventDoc.slug
+    ? `https://www.outingstation.com/e/${eventDoc.slug}`
+    : `https://www.outingstation.com/event/${eventId}`;
+
+// ✅ NEW — builds the manage link exactly the way ManageLinkModal.jsx does.
+// Only meaningful when the event doc actually has a manageKey (ticketing
+// or free-registration submissions do; a plain no-ticketing approval
+// never generates one, so this returns null for those).
+const buildManageLink = (eventDoc) =>
+  eventDoc.manageKey ? `https://outingstation.com/manage/${eventDoc.manageKey}` : null;
+
+// ✅ NEW — fires the submission-approved email. Never blocks or fails the
+// approval flow itself — a failed email send is logged, not surfaced to
+// the admin, since the event is already live by the time this is called.
+const sendApprovalEmail = async (submission, eventDoc, eventId, { referralCredited = null } = {}) => {
+  try {
+    await fetch('/api/send-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'submission-approved',
+        name: submission.organizerName,
+        email: submission.organizerEmail,
+        listingTitle: eventDoc.title,
+        listingType: submission.listingType,
+        eventLink: buildEventLink(eventDoc, eventId),
+        manageLink: buildManageLink(eventDoc),
+        isPrivate: eventDoc.visibility === 'private',
+        privacyMode: eventDoc.privacyMode || null,
+        inviteCount: submission.inviteEmails?.length || 0,
+        accessCode: (submission.groupCodes || [])[0]?.code || null,
+        referralCredited,
+      }),
+    });
+  } catch (err) {
+    console.error('Failed to send approval email:', err);
+  }
+};
+
+// ✅ NEW — fires the submission-rejected email, same fire-and-forget
+// pattern as sendApprovalEmail.
+const sendRejectionEmail = async (submission, reason) => {
+  try {
+    await fetch('/api/send-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'submission-rejected',
+        name: submission.organizerName,
+        email: submission.organizerEmail,
+        listingTitle: submission.eventTitle,
+        listingType: submission.listingType,
+        reason,
+      }),
+    });
+  } catch (err) {
+    console.error('Failed to send rejection email:', err);
+  }
+};
+
 export default function EventSubmissionsPage() {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -423,12 +487,19 @@ export default function EventSubmissionsPage() {
         await notifyUsers(eventDoc.title, docRef.id, eventDoc.visibility === 'private');
 
         let creditMsg = '';
+        let referralCredited = null;
         if (submission.referralCode) {
           const awardedTo = await awardReferralCredit(submission.referralCode);
+          referralCredited = awardedTo;
           creditMsg = awardedTo
             ? `\n✅ Awarded ₦100 credit to ${awardedTo}`
             : `\n⚠️ Referral code "${submission.referralCode}" not found`;
         }
+
+        // ✅ NEW — approval email, sent right alongside the push
+        // notification and referral credit. Fire-and-forget: doesn't
+        // block or fail the approval if the email send has trouble.
+        sendApprovalEmail(submission, eventDoc, docRef.id, { referralCredited });
 
         const inviteMsg = await issueInvitesIfNeeded(submission, docRef.id);
         alert(`✅ ${label.charAt(0).toUpperCase() + label.slice(1)} is now LIVE with free registration!\n\nEvent ID: ${docRef.id}${creditMsg}${inviteMsg}`);
@@ -483,12 +554,18 @@ export default function EventSubmissionsPage() {
       await notifyUsers(eventDoc.title, docRef.id, eventDoc.visibility === 'private');
 
       let creditMsg = '';
+      let referralCredited = null;
       if (submission.referralCode) {
         const awardedTo = await awardReferralCredit(submission.referralCode);
+        referralCredited = awardedTo;
         creditMsg = awardedTo
           ? `\n✅ Awarded ₦100 credit to ${awardedTo}`
           : `\n⚠️ Referral code "${submission.referralCode}" not found`;
       }
+
+      // ✅ NEW — approval email for the plain (non-ticketed,
+      // non-free-registration) approve path.
+      sendApprovalEmail(submission, eventDoc, docRef.id, { referralCredited });
 
       const inviteMsg = await issueInvitesIfNeeded(submission, docRef.id);
       alert(`✅ ${label.charAt(0).toUpperCase() + label.slice(1)} is now LIVE!\n\nEvent ID: ${docRef.id}${creditMsg}${inviteMsg}`);
@@ -531,9 +608,15 @@ export default function EventSubmissionsPage() {
 
       await notifyUsers(eventDoc.title, docRef.id, eventDoc.visibility === 'private');
 
+      let referralCredited = null;
       if (ticketingSubmission.referralCode) {
-        await awardReferralCredit(ticketingSubmission.referralCode);
+        referralCredited = await awardReferralCredit(ticketingSubmission.referralCode);
       }
+
+      // ✅ NEW — approval email for the "set up ticketing then approve"
+      // path. This is the branch where a manageLink will actually exist
+      // (eventDoc.manageKey was just generated inside buildEventDoc).
+      sendApprovalEmail(ticketingSubmission, eventDoc, docRef.id, { referralCredited });
 
       const inviteMsg = await issueInvitesIfNeeded(ticketingSubmission, docRef.id);
 
@@ -572,6 +655,11 @@ export default function EventSubmissionsPage() {
 
       await notifyUsers(eventDoc.title, docRef.id, eventDoc.visibility === 'private');
 
+      // ✅ NEW — approval email for the "publish without ticketing yet"
+      // path. No manageLink here — eventDoc.manageKey was never set
+      // since buildEventDoc was called with ticketingOverride = null.
+      sendApprovalEmail(ticketingSubmission, eventDoc, docRef.id);
+
       const inviteMsg = await issueInvitesIfNeeded(ticketingSubmission, docRef.id);
       alert(`✅ Event published (no ticketing yet)\n\nRemember to:\n• Contact ${ticketingSubmission.organizerEmail}\n• Set up ticketing in the Events editor\n\nEvent ID: ${docRef.id}${inviteMsg}`);
 
@@ -589,10 +677,19 @@ export default function EventSubmissionsPage() {
   const handleReject = async (submissionId) => {
     const reason = prompt('Enter rejection reason:');
     if (!reason) return;
+    const submission = submissions.find(s => s.id === submissionId);
     try {
       await updateDoc(doc(db, 'event_submissions', submissionId), {
         status: 'rejected', rejectionReason: reason, reviewedAt: new Date()
       });
+
+      // ✅ NEW — rejection email, fire-and-forget same as the approval
+      // side. Guarded on `submission` existing since it's looked up from
+      // local state rather than re-fetched from Firestore.
+      if (submission) {
+        sendRejectionEmail(submission, reason);
+      }
+
       fetchSubmissions();
       setSelectedSubmission(null);
     } catch (err) {

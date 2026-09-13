@@ -14,11 +14,15 @@
 // error handling — is preserved exactly as-is, just routed by a `type`
 // field in the request body instead of living in its own file.
 //
+// ✅ NEW — added submission-approved and submission-rejected, sent from
+// EventSubmissionsPage.jsx's admin approve/reject actions. Same
+// transporter, same routing pattern as everything else here.
+//
 // CALLERS MUST UPDATE:
 //   POST /api/send-ambassador-approval-email  →  POST /api/send-notification  { type: 'ambassador-approval', ...sameBodyAsBefore }
 //   POST /api/send-bulk-reminder              →  POST /api/send-notification  { type: 'bulk-reminder', ...sameBodyAsBefore }
 //   POST /api/send-launch-email               →  POST /api/send-notification  { type: 'launch-email', ...sameBodyAsBefore }
-//   POST /api/send-welcome-email              →  POST /api/send-notification  { type: 'welcome-email', ...sameBodyAsBefore }
+//   POST /api/send-welcome-email               →  POST /api/send-notification  { type: 'welcome-email', ...sameBodyAsBefore }
 //   POST /api/send-whatsapp                   →  POST /api/send-notification  { type: 'whatsapp', ...sameBodyAsBefore }
 // i.e. every existing field (name, email, phone, template, variables,
 // eventTitle, users, etc.) stays exactly the same — just add `type` and
@@ -35,6 +39,198 @@ function getTransporter() {
       pass: process.env.GMAIL_APP_PASSWORD,
     },
   });
+}
+
+// ─── Shared email chrome, matching every other template in this file ──────
+const emailHead = (title) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f0f9ff;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0f9ff; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.12);">`;
+
+const emailFooter = () => `
+          <tr>
+            <td style="background: linear-gradient(135deg, #0891b2, #0e7490); padding: 28px 36px; text-align: center;">
+              <p style="margin: 0 0 12px; color: rgba(255,255,255,0.75); font-size: 13px;">— The OutingStation Team</p>
+              <p style="margin: 0; color: rgba(255,255,255,0.4); font-size: 11px;">© ${new Date().getFullYear()} OutingStation Limited. outingstation.com</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+// ─── submission-approved ───────────────────────────────────────────────
+// Fired from every approval path in EventSubmissionsPage.jsx that can
+// create an event/place doc: handleApprove's two branches (free
+// registration + straight approve), handleApproveWithTicketing, and
+// handleApproveWithoutTicketing.
+async function handleSubmissionApproved(req, res) {
+  const {
+    name, email, listingTitle, listingType, // 'event' | 'place'
+    eventLink,          // live public page — https://www.outingstation.com/e/{slug} or /event/{id}
+    manageLink,         // https://outingstation.com/manage/{manageKey} — omit if no ticketing/free-reg was set up
+    isPrivate, privacyMode, // 'invite_only' | 'code_gated' | 'unlisted' — only meaningful when isPrivate
+    inviteCount,        // number of invite emails sent, invite_only private events only
+    accessCode,         // code_gated private events only
+    referralCredited,   // name of the person credited, if a valid referral code was used
+  } = req.body;
+
+  if (!name || !email || !listingTitle || !eventLink) {
+    return res.status(400).json({ error: 'name, email, listingTitle, and eventLink are required' });
+  }
+
+  const transporter = getTransporter();
+  const firstName = name.split(' ')[0];
+  const label = listingType === 'place' ? 'place' : 'event';
+
+  const privacyNote = isPrivate
+    ? `
+              <div style="background: linear-gradient(135deg, #fdf4ff, #fae8ff); border: 1px solid #e9d5ff; border-radius: 14px; padding: 18px 20px; margin-bottom: 24px;">
+                <p style="margin: 0 0 6px; font-size: 14px; color: #7c3aed; font-weight: 800;">🔒 Private ${label} — ${privacyMode === 'invite_only' ? 'Invite-only' : privacyMode === 'code_gated' ? 'Code-gated' : 'Unlisted'}</p>
+                <p style="margin: 0; font-size: 13px; color: #6d28d9; line-height: 1.6;">
+                  Hidden from search, browse, and AI recommendations.
+                  ${privacyMode === 'invite_only' && inviteCount ? `${inviteCount} guest${inviteCount !== 1 ? 's' : ''} already received their ticket by email.` : ''}
+                  ${privacyMode === 'code_gated' && accessCode ? `Your first access code: <strong style="font-family: monospace;">${accessCode}</strong>` : ''}
+                  ${privacyMode === 'unlisted' ? 'Anyone with your direct link can view and register.' : ''}
+                </p>
+              </div>`
+    : '';
+
+  const creditNote = referralCredited
+    ? `
+              <div style="background: linear-gradient(135deg, #ecfeff, #e0f2fe); border: 1px solid #a5f3fc; border-radius: 14px; padding: 16px 20px; margin-bottom: 24px;">
+                <p style="margin: 0; font-size: 14px; color: #0e7490; line-height: 1.6;">
+                  🎁 A ₦100 credit was awarded to <strong>${referralCredited}</strong> for your referral code.
+                </p>
+              </div>`
+    : '';
+
+  const manageSection = manageLink
+    ? `
+              <div style="background-color: #f8fafc; border-radius: 14px; padding: 24px; margin-bottom: 28px;">
+                <p style="font-size: 15px; color: #0f172a; font-weight: 800; margin: 0 0 10px;">🔗 Your Management Link</p>
+                <p style="font-size: 14px; color: #475569; margin: 0 0 16px; line-height: 1.6;">
+                  Use this link anytime to check in guests, see registrations or ticket sales, and export your attendee list. No login needed — keep it private.
+                </p>
+                <p style="background: #ffffff; border: 1px solid #cffafe; border-radius: 10px; padding: 12px 14px; font-family: monospace; font-size: 13px; color: #0e7490; word-break: break-all; margin: 0 0 18px;">
+                  ${manageLink}
+                </p>
+                <div style="text-align: center;">
+                  <a href="${manageLink}"
+                     style="display: inline-block; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 50px; font-weight: 800; font-size: 14px;">
+                    Open Management Page →
+                  </a>
+                </div>
+              </div>`
+    : '';
+
+  const emailHTML = `${emailHead(`Your ${label} is live!`)}
+          <tr>
+            <td style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 60%, #0e7490 100%); padding: 48px 36px; text-align: center;">
+              <p style="color: rgba(255,255,255,0.75); margin: 0 0 8px; font-size: 12px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">OutingStation</p>
+              <h1 style="color: #ffffff; margin: 0 0 10px; font-size: 30px; font-weight: 900;">You're Live! 🎉</h1>
+              <p style="color: #e0f2fe; margin: 0; font-size: 16px;">Your ${label} has been approved and published</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 36px 36px 0;">
+              <p style="font-size: 18px; color: #0f172a; margin: 0 0 16px; font-weight: 800;">Hi ${firstName},</p>
+              <p style="font-size: 15px; color: #475569; margin: 0 0 24px; line-height: 1.7;">
+                Great news — <strong>${listingTitle}</strong> has been reviewed and is now live on OutingStation.
+              </p>
+              <div style="text-align: center; margin-bottom: 24px;">
+                <a href="${eventLink}"
+                   style="display: inline-block; background: #ffffff; color: #0891b2; border: 2px solid #06b6d4; padding: 12px 28px; text-decoration: none; border-radius: 50px; font-weight: 800; font-size: 14px;">
+                  View Your Live ${label === 'place' ? 'Place' : 'Event'} Page →
+                </a>
+              </div>
+              ${privacyNote}
+              ${creditNote}
+              ${manageSection}
+              <p style="font-size: 14px; color: #94a3b8; text-align: center; margin: 0 0 32px; line-height: 1.6;">
+                Questions? Reply to this email or reach us at
+                <a href="mailto:admin@outingstation.com" style="color: #0891b2; text-decoration: none;">admin@outingstation.com</a>
+              </p>
+            </td>
+          </tr>
+${emailFooter()}`;
+
+  await transporter.sendMail({
+    from: '"OutingStation" <' + process.env.GMAIL_USER + '>',
+    to: email,
+    subject: `✅ ${listingTitle} is now live on OutingStation!`,
+    html: emailHTML,
+  });
+
+  console.log('✅ Submission-approved email sent to:', email);
+  return res.status(200).json({ success: true });
+}
+
+// ─── submission-rejected ───────────────────────────────────────────────
+async function handleSubmissionRejected(req, res) {
+  const { name, email, listingTitle, listingType, reason } = req.body;
+
+  if (!name || !email || !listingTitle || !reason) {
+    return res.status(400).json({ error: 'name, email, listingTitle, and reason are required' });
+  }
+
+  const transporter = getTransporter();
+  const firstName = name.split(' ')[0];
+  const label = listingType === 'place' ? 'place' : 'event';
+
+  const emailHTML = `${emailHead(`Update on your ${label} submission`)}
+          <tr>
+            <td style="background: linear-gradient(135deg, #64748b 0%, #475569 100%); padding: 40px 36px; text-align: center;">
+              <p style="color: rgba(255,255,255,0.75); margin: 0 0 8px; font-size: 12px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;">OutingStation</p>
+              <h1 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 900;">Submission Not Approved</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 36px 36px 0;">
+              <p style="font-size: 18px; color: #0f172a; margin: 0 0 16px; font-weight: 800;">Hi ${firstName},</p>
+              <p style="font-size: 15px; color: #475569; margin: 0 0 20px; line-height: 1.7;">
+                Thanks for submitting <strong>${listingTitle}</strong>. After review, we're not able to publish it as submitted.
+              </p>
+              <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 14px; padding: 18px 20px; margin-bottom: 24px;">
+                <p style="margin: 0 0 4px; font-size: 12px; color: #b91c1c; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Reason</p>
+                <p style="margin: 0; font-size: 14px; color: #7f1d1d; line-height: 1.6;">${reason}</p>
+              </div>
+              <p style="font-size: 15px; color: #475569; margin: 0 0 28px; line-height: 1.7;">
+                You're welcome to make changes and submit again. If anything here is unclear, just reply to this email and we'll help sort it out.
+              </p>
+              <div style="text-align: center; margin: 32px 0;">
+                <a href="https://www.outingstation.com"
+                   style="display: inline-block; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 50px; font-weight: 800; font-size: 14px;">
+                  Submit Again →
+                </a>
+              </div>
+              <p style="font-size: 14px; color: #94a3b8; text-align: center; margin: 0 0 32px; line-height: 1.6;">
+                Questions? Reply to this email or reach us at
+                <a href="mailto:admin@outingstation.com" style="color: #0891b2; text-decoration: none;">admin@outingstation.com</a>
+              </p>
+            </td>
+          </tr>
+${emailFooter()}`;
+
+  await transporter.sendMail({
+    from: '"OutingStation" <' + process.env.GMAIL_USER + '>',
+    to: email,
+    subject: `Update on your OutingStation submission: ${listingTitle}`,
+    html: emailHTML,
+  });
+
+  console.log('✅ Submission-rejected email sent to:', email);
+  return res.status(200).json({ success: true });
 }
 
 // ─── ambassador-approval ───────────────────────────────────────────────
@@ -500,6 +696,8 @@ async function handleWhatsapp(req, res) {
 
 // ─── Router ─────────────────────────────────────────────────────────────
 const HANDLERS = {
+  'submission-approved': handleSubmissionApproved,
+  'submission-rejected': handleSubmissionRejected,
   'ambassador-approval': handleAmbassadorApproval,
   'bulk-reminder': handleBulkReminder,
   'launch-email': handleLaunchEmail,

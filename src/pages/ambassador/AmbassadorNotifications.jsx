@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, deleteDoc, doc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, addDoc, deleteDoc, doc, serverTimestamp, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { AmbassadorSidebar } from '../../components/AmbassadorSidebar';
@@ -11,6 +11,12 @@ const notificationTypes = [
   { value: 'promotion', label: 'Promotion', emoji: '🎉' },
   { value: 'update', label: 'Update', emoji: '🔔' },
 ];
+
+// ✅ NEW — same shared-id pattern as AdminNotifications.jsx, linking a
+// broadcast's per-user `notifications` docs to its single
+// `campus_announcements` doc so deleting one can find and remove the
+// other.
+const generateBroadcastId = () => `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
 export default function AmbassadorNotifications() {
   const { userProfile } = useAuth();
@@ -76,7 +82,8 @@ export default function AmbassadorNotifications() {
         if (!data.university || !myCampusNames.includes(data.university)) return;
         const key = `${data.title}|${data.message}|${data.createdAt?.seconds || 0}`;
         if (!grouped[key]) {
-          grouped[key] = { id: d.id, title: data.title, message: data.message, type: data.type, university: data.university, createdAt: data.createdAt, recipients: [] };
+          // ✅ NEW — broadcastId carried through for delete cleanup
+          grouped[key] = { id: d.id, title: data.title, message: data.message, type: data.type, university: data.university, broadcastId: data.broadcastId || null, createdAt: data.createdAt, recipients: [] };
         }
         grouped[key].recipients.push({ id: d.id });
       });
@@ -112,6 +119,10 @@ export default function AmbassadorNotifications() {
         return;
       }
 
+      // ✅ NEW — shared id linking this broadcast's per-user docs to its
+      // single campus_announcements doc.
+      const broadcastId = generateBroadcastId();
+
       await Promise.all(targetUserIds.map(userId =>
         addDoc(collection(db, 'notifications'), {
           userId,
@@ -120,10 +131,29 @@ export default function AmbassadorNotifications() {
           type,
           university: selectedCampus,
           sentByAmbassador: true,
+          broadcastId, // ✅ NEW
           read: false,
           createdAt: serverTimestamp(),
         })
       ));
+
+      // ✅ NEW — one university-level doc, not tied to any single
+      // recipient. Every ambassador send is campus-targeted by
+      // definition, so this always writes (unlike AdminNotifications.jsx,
+      // where it's conditional on the 'university' audience option).
+      // Home's campus Announcements row reads from this collection so a
+      // student who selects this university AFTER the broadcast went
+      // out still sees it, instead of only whoever already followed it
+      // at send time.
+      await addDoc(collection(db, 'campus_announcements'), {
+        university: selectedCampus,
+        title: title.trim(),
+        message: message.trim(),
+        type,
+        broadcastId,
+        source: 'ambassador',
+        createdAt: serverTimestamp(),
+      });
 
       setResult({ type: 'success', message: `✅ Sent to ${targetUserIds.length} follower${targetUserIds.length !== 1 ? 's' : ''} of ${selectedCampus}!` });
       setTitle(''); setMessage(''); setType('university_event');
@@ -139,6 +169,14 @@ export default function AmbassadorNotifications() {
     setDeletingNotif(notification.id);
     try {
       await Promise.all(notification.recipients.map(r => deleteDoc(doc(db, 'notifications', r.id))));
+
+      // ✅ NEW — also remove the matching campus_announcements doc, so a
+      // deleted broadcast doesn't linger in Home's Announcements row.
+      if (notification.broadcastId) {
+        const annSnap = await getDocs(query(collection(db, 'campus_announcements'), where('broadcastId', '==', notification.broadcastId)));
+        await Promise.all(annSnap.docs.map(d => deleteDoc(d.ref)));
+      }
+
       setResult({ type: 'success', message: `✅ Deleted notification for ${notification.recipients.length} user(s)` });
       await loadRecentNotifications();
     } catch (err) {
