@@ -1136,7 +1136,18 @@ export default function EventDetails() {
     // prefers event.shareCode when present — the same code the mobile
     // share buttons generate — falling back to the raw id only if a
     // code was never generated for this specific item.
-    const deepLinkType = event?.subCategory === 'experiences' ? 'experience' : 'event';
+    // ✅ CHANGED — extended to also detect a business (Resort/
+    // Restaurant/other Place), not just Experience vs generic Event.
+    // Safe to trust event.subCategory HERE specifically — unlike the
+    // mobile equivalent (which trusted an opaque model class I'd never
+    // actually seen, and was proven wrong by testing), this exact
+    // value is set directly in THIS file's own mapping code just
+    // above, a few lines up, which I've directly read and confirmed.
+    const deepLinkType = event?.subCategory === 'experiences'
+      ? 'experience'
+      : event?.subCategory === 'places'
+        ? 'place'
+        : 'event';
     const deepLinkId = event?.shareCode || slug || id || '';
     const appLink = `outingstation://open?type=${deepLinkType}&id=${encodeURIComponent(deepLinkId)}`;
     const storeLink = isIOS
@@ -1281,7 +1292,17 @@ export default function EventDetails() {
         }
 
         if (!eventData) {
-          const bizDoc = await getDoc(doc(db, 'businesses', effectiveId));
+          let bizDoc = await getDoc(doc(db, 'businesses', effectiveId));
+          // ✅ NEW — same shareCode fallback as the experiences branch
+          // below. Resorts/Restaurants (both resolved as businesses
+          // here) share links that embed a shareCode
+          // ("resort-name-abc123"), not the raw document ID — a direct
+          // fetch by that string never matches.
+          if (!bizDoc.exists() && slug) {
+            const shareCode = slug.includes('-') ? slug.split('-').pop() : slug;
+            const codeQuery = await getDocs(query(collection(db, 'businesses'), where('shareCode', '==', shareCode)));
+            if (!codeQuery.empty) bizDoc = codeQuery.docs[0];
+          }
           if (bizDoc.exists()) {
             const biz = bizDoc.data();
             const packageImages = [...new Set(
@@ -1468,23 +1489,36 @@ export default function EventDetails() {
   // Firestore write this needs.
   const slugify = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
+  // ✅ NEW — shared helper, used for both Experience and Business
+  // (Resort/Restaurant/Place) share codes, avoiding duplicating this
+  // logic a third time. Checks real document existence directly,
+  // same lesson learned from the mobile fix — never trust a mapped
+  // field like subCategory when a direct check is just as cheap and
+  // completely unambiguous.
+  const getOrCreateShareCode = async (collectionName, id) => {
+    const docRef = doc(db, collectionName, id);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) return null;
+    let code = snap.data().shareCode;
+    if (!code) {
+      code = Array.from({ length: 6 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+      await updateDoc(docRef, { shareCode: code });
+    }
+    return code;
+  };
+
   const handleShare = async (platform) => {
     let shareUrl;
     if (event?.slug) {
       shareUrl = `https://www.outingstation.com/e/${event.slug}`;
     } else {
       try {
-        const expDoc = await getDoc(doc(db, 'experiences', event.id));
-        if (expDoc.exists()) {
-          let code = expDoc.data().shareCode;
-          if (!code) {
-            code = Array.from({ length: 6 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
-            await updateDoc(doc(db, 'experiences', event.id), { shareCode: code });
-          }
-          shareUrl = `https://www.outingstation.com/e/${slugify(event.title)}-${code}`;
-        } else {
-          shareUrl = `https://www.outingstation.com/event/${event.id}`;
-        }
+        // Tries Experience first, then Business — whichever this
+        // event.id actually belongs to. Only one will ever match.
+        const code = (await getOrCreateShareCode('experiences', event.id)) || (await getOrCreateShareCode('businesses', event.id));
+        shareUrl = code
+          ? `https://www.outingstation.com/e/${slugify(event.title)}-${code}`
+          : `https://www.outingstation.com/event/${event.id}`;
       } catch (err) {
         console.error('Error generating share code:', err);
         shareUrl = `https://www.outingstation.com/event/${event.id}`;

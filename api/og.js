@@ -152,6 +152,32 @@ export default async function handler(req, res) {
         }
       }
 
+      // ✅ NEW — same shareCode fallback as the experiences one below.
+      // Resorts/Restaurants (businesses) now generate shareCode-based
+      // links too, not just the raw ID.
+      if (!fields) {
+        const shareCode = rawId.includes('-') ? rawId.split('-').pop() : rawId;
+        const bizQueryRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              structuredQuery: {
+                from: [{ collectionId: 'businesses' }],
+                where: { fieldFilter: { field: { fieldPath: 'shareCode' }, op: 'EQUAL', value: { stringValue: shareCode } } },
+                limit: 1,
+              },
+            }),
+          }
+        );
+        if (bizQueryRes.ok) {
+          const queryData = await bizQueryRes.json();
+          const doc = queryData[0]?.document;
+          if (doc?.fields) { fields = doc.fields; matchedVia = 'businesses'; }
+        }
+      }
+
       // Fallback #3 — shortlets
       if (!fields) {
         const shortletRes = await fetch(

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, getDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Search, SlidersHorizontal, X, MapPin,
   ChevronLeft, ChevronRight, Heart, Clock, Palmtree
@@ -82,6 +82,7 @@ function formatOpeningDays(days) {
 }
 
 export default function ResortsPage() {
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [resorts, setResorts] = useState([]);
   const [filtered, setFiltered] = useState([]);
@@ -274,16 +275,36 @@ export default function ResortsPage() {
             : paginated.map(r => {
                 const isSaved = savedEvents.includes(r.id);
                 const hours = r.alwaysOpen ? '24/7 Open' : (r.operatingHours || 'Check hours');
+                // ✅ FIXED — was <Link to={`/event/${r.id}`}>, wrapping
+                // the raw Firestore ID directly. Same shareCode fix as
+                // ExperiencesPage.jsx's equivalent — reused if this
+                // resort already has one, generated and saved on the
+                // spot if it doesn't.
+                const slugify = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+                const handleOpen = async (e) => {
+                  e.preventDefault();
+                  let code = r.shareCode;
+                  if (!code) {
+                    code = Array.from({ length: 6 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+                    try {
+                      await updateDoc(doc(db, 'businesses', r.id), { shareCode: code });
+                    } catch (err) {
+                      console.error('Error saving share code, falling back to raw ID:', err);
+                      code = r.id;
+                    }
+                  }
+                  navigate(`/e/${slugify(r.title)}-${code}`);
+                };
                 return (
                   <div key={r.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group flex flex-col">
                     <div className="relative h-48 overflow-hidden flex-shrink-0">
-                      <Link to={`/event/${r.id}`}>
+                      <a href={`/e/${r.id}`} onClick={handleOpen}>
                         <img
                           src={r.imageUrl || 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=400&h=300&fit=crop'}
                           alt={r.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
-                      </Link>
+                      </a>
                       {currentUser && (
                         <button
                           onClick={() => toggleSave(r.id)}
@@ -299,11 +320,11 @@ export default function ResortsPage() {
                       </div>
                     </div>
                     <div className="p-4 flex flex-col flex-1">
-                      <Link to={`/event/${r.id}`}>
+                      <a href={`/e/${r.id}`} onClick={handleOpen}>
                         <h3 className="font-bold text-gray-900 text-sm mb-2 line-clamp-2 hover:text-cyan-500 transition">
                           {r.title}
                         </h3>
-                      </Link>
+                      </a>
                       <div className="space-y-1.5 mt-auto">
                         <div className="flex items-center gap-1.5 text-xs text-gray-500">
                           <Clock size={12} className="text-cyan-400 flex-shrink-0" />
