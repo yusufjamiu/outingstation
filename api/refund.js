@@ -19,7 +19,7 @@
 // are async, same as transfers).
 
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, updateDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import nodemailer from 'nodemailer';
 
 const firebaseConfig = {
@@ -65,6 +65,75 @@ function calculateRefundPercentage({ isShortlet, cancellationPolicy, hoursUntil 
     if (hoursUntil >= 1) return 0.5;
     return 0.0;
   }
+}
+
+// ✅ NEW — closes the "unpaid bookings sit around forever" gap. Two
+// genuinely different situations, handled the same way here since both
+// mean "nothing was ever actually paid for, safe to remove completely":
+//
+//   1. A guest never touched it at all — still 'pending', createdAt is
+//      more than 24 hours old. Nobody explicitly cancelled anything;
+//      they just never came back to pay.
+//   2. A guest explicitly deleted it while unpaid (my_bookings_screen.dart's
+//      _deletePendingBooking, which only ever soft-marks paymentStatus:
+//      'abandoned' — that write is the ONLY thing the Firestore rule
+//      allows a guest to do here, real deletion isn't something client
+//      code is trusted to do directly). This pass is what actually
+//      finishes the job — a genuine Firestore delete — since the guest
+//      already made their intent completely clear, no reason to wait
+//      out the same 24-hour window as case 1.
+//
+// A HARD delete, not another soft-flag — no money ever moved for either
+// of these, so there's nothing worth preserving as a financial record.
+// This is fundamentally different from a PAID-then-cancelled booking
+// (handled entirely separately, further down) — those must never be
+// hard-deleted, since a refund may still be owed and the record itself
+// is the only proof of what happened once money was involved.
+async function cleanupUnpaidBookings() {
+  const results = { deleted: 0, errors: 0 };
+  const now = Date.now();
+  const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+
+  try {
+    // Two separate queries rather than one OR'd query — Firestore
+    // doesn't support ORing two different field conditions like this
+    // in a single query without a composite index built specifically
+    // for it, and these are cheap, infrequent, low-volume queries where
+    // two simple round-trips is the more robust choice over adding yet
+    // another index to maintain.
+    const abandonedSnap = await getDocs(query(
+      collection(db, 'bookings'),
+      where('paymentStatus', '==', 'abandoned')
+    ));
+
+    const pendingSnap = await getDocs(query(
+      collection(db, 'bookings'),
+      where('paymentStatus', '==', 'pending')
+    ));
+
+    const toDelete = [...abandonedSnap.docs, ...pendingSnap.docs.filter(d => {
+      const createdAt = d.data().createdAt;
+      if (!createdAt) return false; // no timestamp at all — leave it, don't guess
+      const ageMs = now - createdAt.toDate().getTime();
+      return ageMs >= twentyFourHoursMs;
+    })];
+
+    for (const bookingDoc of toDelete) {
+      try {
+        await deleteDoc(doc(db, 'bookings', bookingDoc.id));
+        results.deleted++;
+      } catch (err) {
+        console.error(`❌ Failed to delete unpaid booking ${bookingDoc.id}:`, err);
+        results.errors++;
+      }
+    }
+
+    console.log(`🧹 Unpaid booking cleanup: deleted ${results.deleted}, errors ${results.errors}`);
+  } catch (err) {
+    console.error('❌ Unpaid booking cleanup pass failed:', err);
+  }
+
+  return results;
 }
 
 // ─── lifecycle check — the 24hr reminder / 48hr auto-release cron ────────
@@ -240,6 +309,12 @@ async function handleLifecycleCheck(req, res) {
     } catch (payoutPassErr) {
       console.error('❌ Payout-flagging pass failed:', payoutPassErr);
     }
+
+    // ─── Pass 4: unpaid booking cleanup ───
+    // ✅ NEW — see cleanupUnpaidBookings()'s own comment above for the
+    // full reasoning. Runs every cron cycle, same as the other passes.
+    const cleanupResults = await cleanupUnpaidBookings();
+    results.unpaidBookingsDeleted = cleanupResults.deleted;
 
     console.log(`✅ Lifecycle check complete:`, results);
     return res.status(200).json({ success: true, ...results });
