@@ -2,8 +2,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Compass, X, Send, RefreshCw, RotateCcw, ChevronDown,
-  Siren, Store, PartyPopper, Ticket, GraduationCap, Heart,
-  MapPin, Phone, MessageCircle,
+  Siren, Store, PartyPopper, Ticket, Heart,
+  MapPin, Phone, MessageCircle, CalendarCheck2,
 } from 'lucide-react';
 import { db, auth } from '../firebase';
 import {
@@ -34,7 +34,7 @@ const STARTERS = [
   { icon: Store,          color: '#D060C0', label: 'Where can I buy something?' },
   { icon: PartyPopper,    color: '#E0794F', label: 'Events in my city this weekend' },
   { icon: Ticket,         color: '#4FD8A8', label: 'Show my tickets' },
-  { icon: GraduationCap,  color: '#47A2B6', label: 'Campus events near me' },
+  { icon: CalendarCheck2, color: '#F59E0B', label: 'Book a stay, ride, or experience' },
   { icon: Heart,          color: '#C98BE0', label: 'Chill spot for a date' },
 ];
 
