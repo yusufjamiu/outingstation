@@ -16,6 +16,10 @@
       "destination": "/api/og?type=ride&id=$1"
     },
     {
+      "source": "/o/(.*)",
+      "destination": "/api/og?type=outing&id=$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

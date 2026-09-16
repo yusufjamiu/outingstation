@@ -1,6 +1,6 @@
 // api/og.js
 //
-// ✅ CHANGED — was always serving a separate landing page (with its own
+// CHANGED — was always serving a separate landing page (with its own
 // "Open in App" button) that then navigated away to either the app or
 // /shortlets/{id} — meaning the address bar always changed away from
 // the short /s/{id} link the moment a real visitor arrived. That broke
@@ -22,6 +22,15 @@
 // banner INSIDE ShortletsPage.jsx / RentARidePage.jsx now, shown only
 // when the URL matches this short-link pattern on a phone — see those
 // files' own comments for that half of this change.
+//
+// NEW — added an 'outing' branch (Moments/short-video posts, shared
+// via outings_feed_screen.dart's own share button). Unlike Shortlet,
+// Ride, or a Business/Experience matched through the 'event' branch's
+// fallback chain, an Outing link carries the raw Firestore document id
+// directly — no shareCode involved at all, since _shareOuting() builds
+// its link straight from outing.id. So this branch does a single
+// direct-by-id fetch from the `outings` collection, no shareCode query
+// or fallback chain needed.
 
 import fs from 'fs';
 import path from 'path';
@@ -30,12 +39,14 @@ const COLLECTION_BY_TYPE = {
   shortlet: 'shortlets',
   ride: 'rides',
   event: 'events',
+  outing: 'outings', // NEW
 };
 
 const PATH_PREFIX_BY_TYPE = {
   shortlet: 's',
   ride: 'r',
   event: 'e',
+  outing: 'o', // NEW
 };
 
 // Same bot-detection regex as og-proxy.js, for consistency — one
@@ -54,7 +65,7 @@ export default async function handler(req, res) {
   const pathPrefix = PATH_PREFIX_BY_TYPE[type] || 's';
   const rawId = req.query.id || '';
 
-  // ✅ Real visitor — serve the actual built React app directly, same
+  // Real visitor — serve the actual built React app directly, same
   // file og-proxy.js itself serves. No redirect, no separate landing
   // page — the address bar stays exactly as-is, permanently.
   if (!isBot) {
@@ -62,7 +73,7 @@ export default async function handler(req, res) {
       const filePath = path.join(process.cwd(), 'dist', 'index.html');
       const html = fs.readFileSync(filePath, 'utf8');
       res.setHeader('Content-Type', 'text/html');
-      // ✅ FIXED — a real, serious bug: the crawler-facing response
+      // FIXED — a real, serious bug: the crawler-facing response
       // below sets a 1-HOUR cache with no Vary header at all, which
       // means Vercel's CDN caches purely by URL — it has no way to
       // know a bot and a real browser should ever get different
@@ -94,7 +105,7 @@ export default async function handler(req, res) {
     const apiKey = process.env.VITE_FIREBASE_API_KEY;
 
     if (type === 'event') {
-      // ✅ CHANGED — was only ever checking the `events` collection.
+      // CHANGED — was only ever checking the `events` collection.
       // EventDetails.jsx (the real, live component this link renders
       // through) actually has a FOUR-WAY fallback chain for a single
       // /event/{id} or /e/{id} link: events → businesses → shortlets →
@@ -152,7 +163,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // ✅ NEW — same shareCode fallback as the experiences one below.
+      // NEW — same shareCode fallback as the experiences one below.
       // Resorts/Restaurants (businesses) now generate shareCode-based
       // links too, not just the raw ID.
       if (!fields) {
@@ -200,7 +211,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // ✅ NEW — closes the same mismatch just fixed in EventDetails.jsx:
+      // NEW — closes the same mismatch just fixed in EventDetails.jsx:
       // experience share links now embed a genuine shareCode
       // ("slug-abc123"), not the raw document ID — a direct fetch by
       // that string was never going to match. Falls back to a
@@ -258,6 +269,39 @@ export default async function handler(req, res) {
           const imagesArray = fields.images?.arrayValue?.values;
           image = fields.imageUrl?.stringValue || (imagesArray && imagesArray.length > 0 ? imagesArray[0]?.stringValue : null) || image;
         }
+      }
+    } else if (type === 'outing') {
+      // NEW — Outing (a Moments/short-video post). Direct by-id fetch
+      // only — outing links never carry a shareCode, so there's no
+      // fallback chain needed here, unlike Shortlet/Ride/Event above.
+      // Maps the same fields outings_feed_screen.dart itself reads:
+      // caption for the description, posterName for the title, and
+      // thumbnailUrl (video posts) or the first entry of imageUrls
+      // (image posts) for the preview image.
+      const outingRes = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/outings/${rawId}?key=${apiKey}`
+      );
+      if (outingRes.ok) {
+        const data = await outingRes.json();
+        const fields = data.fields;
+        if (fields) {
+          const posterName = fields.posterName?.stringValue || 'Someone';
+          const caption = fields.caption?.stringValue || '';
+          title = `${posterName} on OutingStation`;
+          description = caption ? caption.substring(0, 150) : 'Check out this Outing on OutingStation.';
+
+          const postType = fields.postType?.stringValue || 'video';
+          if (postType === 'video') {
+            image = fields.thumbnailUrl?.stringValue || image;
+          } else {
+            const imagesArray = fields.imageUrls?.arrayValue?.values;
+            if (imagesArray && imagesArray.length > 0) {
+              image = imagesArray[0]?.stringValue || image;
+            }
+          }
+        }
+      } else {
+        console.error(`Firestore fetch failed for outing ${rawId}: ${outingRes.status}`);
       }
     } else {
       // Shortlet / Ride — shareCode-based lookup, unchanged from before.
@@ -342,7 +386,7 @@ export default async function handler(req, res) {
 
   res.setHeader('Content-Type', 'text/html');
   res.setHeader('Cache-Control', 'public, max-age=3600');
-  // ✅ FIXED — see the matching comment on the human branch above for
+  // FIXED — see the matching comment on the human branch above for
   // the full reasoning. Without this, this exact response (meant only
   // for crawlers) was the one silently served to every real visitor
   // too, for up to an hour after any bot request touched the same URL.
