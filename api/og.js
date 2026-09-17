@@ -271,15 +271,18 @@ export default async function handler(req, res) {
         }
       }
     } else if (type === 'outing') {
-      // NEW — Outing (a Moments/short-video post). Direct by-id fetch
-      // only — outing links never carry a shareCode, so there's no
-      // fallback chain needed here, unlike Shortlet/Ride/Event above.
-      // Maps the same fields outings_feed_screen.dart itself reads:
-      // caption for the description, posterName for the title, and
-      // thumbnailUrl (video posts) or the first entry of imageUrls
-      // (image posts) for the preview image.
+      // CHANGED — outing links now read {slug}-{id} (matching the
+      // cosmetic pattern shortlet/ride/event links already use)
+      // instead of a bare id, so the real Firestore document id is
+      // whatever comes after the LAST hyphen — same extraction used
+      // for the shareCode-based types elsewhere in this file. Firestore
+      // auto-ids never contain a hyphen themselves, so this split is
+      // always safe. Still a direct by-id fetch, not a query — outings
+      // never carry a separate shareCode field the way shortlets/rides/
+      // experiences do.
+      const outingDocId = rawId.includes('-') ? rawId.split('-').pop() : rawId;
       const outingRes = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/outings/${rawId}?key=${apiKey}`
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/outings/${outingDocId}?key=${apiKey}`
       );
       if (outingRes.ok) {
         const data = await outingRes.json();
