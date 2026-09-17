@@ -271,23 +271,36 @@ export default async function handler(req, res) {
         }
       }
     } else if (type === 'outing') {
-      // CHANGED — outing links now read {slug}-{id} (matching the
-      // cosmetic pattern shortlet/ride/event links already use)
-      // instead of a bare id, so the real Firestore document id is
-      // whatever comes after the LAST hyphen — same extraction used
-      // for the shareCode-based types elsewhere in this file. Firestore
-      // auto-ids never contain a hyphen themselves, so this split is
-      // always safe. Still a direct by-id fetch, not a query — outings
-      // never carry a separate shareCode field the way shortlets/rides/
-      // experiences do.
-      const outingDocId = rawId.includes('-') ? rawId.split('-').pop() : rawId;
-      const outingRes = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/outings/${outingDocId}?key=${apiKey}`
-      );
-      if (outingRes.ok) {
-        const data = await outingRes.json();
-        const fields = data.fields;
-        if (fields) {
+      // CHANGED — outing links now read {slug}-{shareCode}, a short
+      // 6-character code, not the raw 20-character Firestore document
+      // id, which was genuinely too long for a share link. Resolved by
+      // a shareCode QUERY here — same runQuery pattern already used
+      // for shortlet/ride/experience shareCode lookups above, not the
+      // direct by-id fetch this used before.
+      const shareCode = rawId.includes('-') ? rawId.split('-').pop() : rawId;
+      let fields = null;
+      if (shareCode) {
+        const outingQueryRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              structuredQuery: {
+                from: [{ collectionId: 'outings' }],
+                where: { fieldFilter: { field: { fieldPath: 'shareCode' }, op: 'EQUAL', value: { stringValue: shareCode } } },
+                limit: 1,
+              },
+            }),
+          }
+        );
+        if (outingQueryRes.ok) {
+          const queryData = await outingQueryRes.json();
+          fields = queryData[0]?.document?.fields || null;
+        }
+      }
+      if (fields) {
+        {
           const posterName = fields.posterName?.stringValue || 'Someone';
           const caption = fields.caption?.stringValue || '';
           title = `${posterName} on OutingStation`;
