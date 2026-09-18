@@ -24,13 +24,9 @@
 // files' own comments for that half of this change.
 //
 // NEW — added an 'outing' branch (Moments/short-video posts, shared
-// via outings_feed_screen.dart's own share button). Unlike Shortlet,
-// Ride, or a Business/Experience matched through the 'event' branch's
-// fallback chain, an Outing link carries the raw Firestore document id
-// directly — no shareCode involved at all, since _shareOuting() builds
-// its link straight from outing.id. So this branch does a single
-// direct-by-id fetch from the `outings` collection, no shareCode query
-// or fallback chain needed.
+// via outings_feed_screen.dart's own share button). Resolved by a
+// shareCode query, same pattern as shortlet/ride/experience below —
+// outing links read {slug}-{shareCode}, not a raw document id.
 
 import fs from 'fs';
 import path from 'path';
@@ -271,12 +267,24 @@ export default async function handler(req, res) {
         }
       }
     } else if (type === 'outing') {
-      // CHANGED — outing links now read {slug}-{shareCode}, a short
-      // 6-character code, not the raw 20-character Firestore document
-      // id, which was genuinely too long for a share link. Resolved by
-      // a shareCode QUERY here — same runQuery pattern already used
-      // for shortlet/ride/experience shareCode lookups above, not the
-      // direct by-id fetch this used before.
+      // Outing links read {slug}-{shareCode}, a short 6-character
+      // code, not the raw 20-character Firestore document id.
+      // Resolved by a shareCode QUERY, same runQuery pattern used for
+      // shortlet/ride/experience shareCode lookups above.
+      //
+      // FIXED — a real bug from the previous edit: the error-logging
+      // line below referenced "outingRes", a variable name that only
+      // existed in the OLD direct-by-id version of this branch. Once
+      // this was rewritten to use a shareCode query instead (the
+      // variable renamed to outingQueryRes), that log line was never
+      // updated to match — meaning if a shareCode ever failed to
+      // resolve, this would throw a ReferenceError (undefined
+      // variable) instead of just logging cleanly and falling through
+      // to the generic OutingStation preview defaults. Fixed by
+      // logging the shareCode itself instead of a response object that
+      // may not even exist in this branch (the "if (shareCode)" guard
+      // above means outingQueryRes is never declared at all when
+      // shareCode is empty).
       const shareCode = rawId.includes('-') ? rawId.split('-').pop() : rawId;
       let fields = null;
       if (shareCode) {
@@ -297,27 +305,25 @@ export default async function handler(req, res) {
         if (outingQueryRes.ok) {
           const queryData = await outingQueryRes.json();
           fields = queryData[0]?.document?.fields || null;
+        } else {
+          console.error(`Firestore query failed for outing shareCode ${shareCode}: ${outingQueryRes.status}`);
         }
       }
       if (fields) {
-        {
-          const posterName = fields.posterName?.stringValue || 'Someone';
-          const caption = fields.caption?.stringValue || '';
-          title = `${posterName} on OutingStation`;
-          description = caption ? caption.substring(0, 150) : 'Check out this Outing on OutingStation.';
+        const posterName = fields.posterName?.stringValue || 'Someone';
+        const caption = fields.caption?.stringValue || '';
+        title = `${posterName} on OutingStation`;
+        description = caption ? caption.substring(0, 150) : 'Check out this Outing on OutingStation.';
 
-          const postType = fields.postType?.stringValue || 'video';
-          if (postType === 'video') {
-            image = fields.thumbnailUrl?.stringValue || image;
-          } else {
-            const imagesArray = fields.imageUrls?.arrayValue?.values;
-            if (imagesArray && imagesArray.length > 0) {
-              image = imagesArray[0]?.stringValue || image;
-            }
+        const postType = fields.postType?.stringValue || 'video';
+        if (postType === 'video') {
+          image = fields.thumbnailUrl?.stringValue || image;
+        } else {
+          const imagesArray = fields.imageUrls?.arrayValue?.values;
+          if (imagesArray && imagesArray.length > 0) {
+            image = imagesArray[0]?.stringValue || image;
           }
         }
-      } else {
-        console.error(`Firestore fetch failed for outing ${rawId}: ${outingRes.status}`);
       }
     } else {
       // Shortlet / Ride — shareCode-based lookup, unchanged from before.
